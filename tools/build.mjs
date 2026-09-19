@@ -40,6 +40,8 @@ const BOOT_VARS = [
  * anything this cannot handle is a hard error rather than silent bad output.
  * ------------------------------------------------------------------ */
 
+const rel = (p) => (p.startsWith(ROOT) ? p.slice(ROOT.length + 1) : p);
+
 const IMPORT_RE = /^\s*import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]\s*;?\s*$/gm;
 const BARE_IMPORT_RE = /^\s*import\s+(?!\{)[^\n]*$/gm;
 const EXPORT_DECL_RE = /^(\s*)export\s+(?=(?:async\s+)?(?:function|const|let|var|class)\b)/gm;
@@ -72,11 +74,21 @@ function parseModule(path) {
     exported.push(match[1]);
   }
 
+  // Every module ends up in one shared scope, so a module-private name can
+  // collide with another module's just as easily as an exported one --
+  // and that only shows up as a SyntaxError in the browser. Collect all
+  // top-level declarations (column zero, by this codebase's style) so the
+  // build can refuse instead.
+  const declared = [];
+  for (const match of source.matchAll(/^(?:export\s+)?(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z0-9_$]+)/gm)) {
+    declared.push(match[1]);
+  }
+
   const body = source
     .replace(IMPORT_RE, '')
     .replace(EXPORT_DECL_RE, '$1');
 
-  return { path, deps, imported: names, exported, body };
+  return { path, deps, imported: names, exported, declared, body };
 }
 
 /** Depth-first walk of the import graph, entry point last. */
@@ -101,15 +113,24 @@ function bundle(entryPath) {
   };
   visit(entryPath);
 
-  // One shared scope means exported names must be globally unique.
+  // One shared scope means every top-level name must be globally unique,
+  // exported or not.
+  const declarers = new Map();
+  for (const mod of order) {
+    for (const name of mod.declared) {
+      if (declarers.has(name)) {
+        throw new Error(
+          `Top-level name "${name}" is declared in both ${rel(mod.path)} and ${rel(declarers.get(name))}.\n`
+          + '       All modules share one scope after inlining, so these names must be unique.'
+        );
+      }
+      declarers.set(name, mod.path);
+    }
+  }
+
   const owners = new Map();
   for (const mod of order) {
-    for (const name of mod.exported) {
-      if (owners.has(name)) {
-        throw new Error(`Duplicate exported name "${name}" in ${mod.path} and ${owners.get(name)}`);
-      }
-      owners.set(name, mod.path);
-    }
+    for (const name of mod.exported) owners.set(name, mod.path);
   }
   for (const mod of order) {
     for (const name of mod.imported) {
@@ -119,10 +140,7 @@ function bundle(entryPath) {
     }
   }
 
-  const parts = order.map((mod) => {
-    const rel = mod.path.slice(ROOT.length + 1);
-    return `/* ---- ${rel} ---- */\n${mod.body.trim()}\n`;
-  });
+  const parts = order.map((mod) => `/* ---- ${rel(mod.path)} ---- */\n${mod.body.trim()}\n`);
   return `(function(){\n"use strict";\n${parts.join('\n')}\n})();`;
 }
 

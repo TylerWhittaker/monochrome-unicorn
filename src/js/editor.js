@@ -1,8 +1,431 @@
-/* editor.js -- Mode 2: label editor. Filled in next. */
-import { el } from './ui.js';
+/*
+ * editor.js -- Mode 2: create, edit, preview and print stored ZPL labels.
+ *
+ * Two views over one label: a ZPL source editor and a drag-and-drop
+ * canvas. The document model is the canvas's truth and the text is the
+ * source view's truth, so switching direction re-derives the other side.
+ * Going source -> visual can lose ground (ZPL has far more commands than
+ * the canvas models), so anything unrecognised is reported and carried
+ * through untouched rather than discarded.
+ */
 
-export function mountEditor(panel) {
-  panel.append(el('p', { class: 'text-ink-500' }, ['Label Editor — coming up.']));
+import { el, qs, toast, modal, confirmDialog, requirePassword, debounce, formatBytes } from './ui.js';
+import { printer } from './state.js';
+import { listFiles, readScript, saveScript, deleteFile } from './printer.js';
+import { newLabel, newElement, toZpl, parseZpl } from './zpl.js';
+import { createCanvas } from './wysiwyg.js';
+import { renderLabelPanel, renderElementPanel } from './inspector.js';
+import { createCodeEditor } from './codeeditor.js';
+import { createPreview } from './preview.js';
+
+const editorState = {
+  doc: null,
+  /** Authoritative ZPL while the source view is showing. */
+  source: '',
+  view: 'visual',
+  file: null,
+  dirty: false,
+  scripts: [],
+  images: [],
+};
+
+let canvas = null;
+let codeEditor = null;
+let editorPreview = null;
+let editorHost = null;
+let inspectorHost = null;
+let labelPanelHost = null;
+let fileSelect = null;
+let titleNode = null;
+let addBar = null;
+
+/* ------------------------------------------------------------------ *
+ * Document plumbing
+ * ------------------------------------------------------------------ */
+
+function editorZpl() {
+  return editorState.view === 'source' && codeEditor ? codeEditor.getValue() : toZpl(editorState.doc);
 }
 
-export function onEditorShown() {}
+/** Ask the printer to render, unless there is demonstrably nothing to draw. */
+function refreshEditorPreview() {
+  if (!editorPreview) return;
+  if (editorState.view === 'visual' && editorState.doc.elements.length === 0 && !(editorState.doc.passthrough || []).length) {
+    editorPreview.idle('Add an element to see the printed result.');
+    return;
+  }
+  editorPreview.update(editorZpl());
+}
+
+const scheduleEditorPreview = debounce(refreshEditorPreview, 700);
+
+function markDirty() {
+  editorState.dirty = true;
+  renderEditorTitle();
+  scheduleEditorPreview();
+}
+
+/** Called after any change made through the canvas or the inspector. */
+function onDocChanged() {
+  if (canvas) canvas.render();
+  renderEditorInspector();
+  renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
+  markDirty();
+}
+
+function loadDocument(zpl, file) {
+  const { doc, unsupported } = parseZpl(zpl, printer.dpi);
+  editorState.doc = doc;
+  editorState.source = zpl;
+  editorState.file = file || null;
+  editorState.dirty = false;
+
+  if (unsupported.length) {
+    toast(
+      `Opened with ${unsupported.length} command type(s) the visual editor does not model `
+      + `(${unsupported.slice(0, 5).join(' ')}). They are preserved but only editable in the source view.`,
+      'info', { timeout: 9000 }
+    );
+  }
+
+  renderEditorTitle();
+  rebuildEditorView();
+  refreshEditorPreview();
+}
+
+/* ------------------------------------------------------------------ *
+ * Views
+ * ------------------------------------------------------------------ */
+
+async function setView(next) {
+  if (editorState.view === next) return;
+
+  if (next === 'visual') {
+    // Re-parse whatever the user typed; warn before dropping anything.
+    const text = codeEditor ? codeEditor.getValue() : editorState.source;
+    const { doc, unsupported } = parseZpl(text, printer.dpi);
+    if (unsupported.length) {
+      const go = await confirmDialog(
+        'Switch to the visual editor?',
+        `This label uses ${unsupported.join(', ')}, which the visual editor cannot place on the canvas. `
+        + 'They will be kept and re-emitted at the end of the label, but you will not see them until you switch back.',
+        'Switch anyway'
+      );
+      if (!go) return;
+    }
+    editorState.doc = doc;
+    editorState.source = text;
+  } else {
+    editorState.source = toZpl(editorState.doc);
+  }
+
+  editorState.view = next;
+  rebuildEditorView();
+}
+
+function rebuildEditorView() {
+  if (canvas) { canvas.destroy(); canvas = null; }
+  if (codeEditor) { codeEditor.destroy(); codeEditor = null; }
+  editorHost.replaceChildren();
+
+  addBar.hidden = editorState.view !== 'visual';
+  for (const btn of qs('#view-toggle').querySelectorAll('button')) {
+    btn.setAttribute('aria-selected', String(btn.dataset.view === editorState.view));
+    btn.className = btn.dataset.view === editorState.view
+      ? 'btn-primary btn-sm rounded-none'
+      : 'btn-secondary btn-sm rounded-none border-transparent bg-transparent';
+  }
+
+  if (editorState.view === 'visual') {
+    canvas = createCanvas(editorHost, {
+      getDoc: () => editorState.doc,
+      onChange: () => { renderEditorInspector(); markDirty(); },
+      onSelect: () => renderEditorInspector(),
+    });
+    renderEditorInspector();
+    return;
+  }
+
+  const placeholder = el('div', { class: 'p-3 text-[12px] text-ink-400' }, ['Loading the source editor…']);
+  editorHost.append(placeholder);
+  createCodeEditor(editorHost, {
+    value: editorState.source,
+    onChange: (text) => { editorState.source = text; markDirty(); },
+  }).then((editor) => {
+    placeholder.remove();
+    codeEditor = editor;
+    if (editor.engine === 'textarea') {
+      toast('Ace could not be loaded from the CDN; using the built-in editor.', 'info');
+    }
+    editor.resize();
+  });
+  renderEditorInspector();
+}
+
+function renderEditorInspector() {
+  const selectedId = canvas ? canvas.getSelected() : null;
+  const item = selectedId ? editorState.doc.elements.find((e) => e.id === selectedId) : null;
+
+  if (editorState.view === 'source') {
+    inspectorHost.replaceChildren(el('p', { class: 'px-3 py-4 text-[12px] text-ink-400' }, [
+      'Element properties are available in the visual editor.',
+    ]));
+    return;
+  }
+
+  renderElementPanel(inspectorHost, {
+    doc: editorState.doc,
+    item,
+    images: editorState.images,
+    onChange: onDocChanged,
+    onDelete: () => {
+      editorState.doc.elements = editorState.doc.elements.filter((e) => e.id !== selectedId);
+      canvas.setSelected(null);
+      onDocChanged();
+    },
+    onDuplicate: () => {
+      const copy = { ...item, id: `el${Date.now()}`, x: item.x + 20, y: item.y + 20 };
+      editorState.doc.elements.push(copy);
+      canvas.setSelected(copy.id);
+      onDocChanged();
+    },
+  });
+}
+
+function renderEditorTitle() {
+  const name = editorState.file ? `${editorState.file.dev}:${editorState.file.oname}.ZPL` : 'Untitled label';
+  titleNode.textContent = name + (editorState.dirty ? ' •' : '');
+  titleNode.title = editorState.dirty ? 'Unsaved changes' : '';
+}
+
+/* ------------------------------------------------------------------ *
+ * File operations
+ * ------------------------------------------------------------------ */
+
+async function refreshFileList() {
+  try {
+    const files = await listFiles({ dev: 'E', otype: '*  ' });
+    editorState.scripts = files.filter((f) => f.otype === 'ZPL');
+    editorState.images = files.filter((f) => ['PNG', 'GRF', 'BMP', 'PCX'].includes(f.otype));
+  } catch (err) {
+    toast(`Could not list the printer's files: ${err.message}`, 'error');
+    return;
+  }
+
+  fileSelect.replaceChildren(el('option', { value: '' }, ['— stored labels —']));
+  for (const file of editorState.scripts) {
+    fileSelect.append(el('option', {
+      value: `${file.dev}:${file.oname}`,
+      selected: editorState.file && editorState.file.oname === file.oname && editorState.file.dev === file.dev,
+    }, [`${file.name}  (${formatBytes(file.bytes)})`]));
+  }
+}
+
+async function openFile(value) {
+  if (!value) return;
+  const [dev, oname] = value.split(':');
+
+  if (editorState.dirty && !await confirmDialog('Discard changes?', 'The current label has unsaved changes.', 'Discard')) {
+    fileSelect.value = editorState.file ? `${editorState.file.dev}:${editorState.file.oname}` : '';
+    return;
+  }
+
+  const busy = toast(`Opening ${dev}:${oname}.ZPL…`, 'busy', { timeout: 0 });
+  try {
+    const zpl = await readScript({ dev, oname, otype: 'ZPL' });
+    loadDocument(zpl, { dev, oname });
+    busy.close();
+  } catch (err) {
+    busy.update(`Could not open ${oname}: ${err.message}`, 'error');
+  }
+}
+
+async function saveFile({ saveAs }) {
+  let target = editorState.file;
+
+  if (saveAs || !target) {
+    const name = await modal(saveAs ? 'Save label as' : 'Save label', (close) => {
+      const input = el('input', {
+        class: 'field field-mono', type: 'text', maxlength: '16',
+        placeholder: 'LABELNAME', value: target ? target.oname : '',
+        onkeydown: (e) => { if (e.key === 'Enter') close(input.value); },
+      });
+      return el('div', { class: 'space-y-3' }, [
+        el('p', { class: 'text-ink-600' }, [
+          'Object names are upper case, up to 16 characters, no extension.',
+        ]),
+        input,
+        el('div', { class: 'flex justify-end gap-2' }, [
+          el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Cancel']),
+          el('button', { class: 'btn-primary', onclick: () => close(input.value) }, ['Save']),
+        ]),
+      ]);
+    });
+    if (!name) return;
+    const clean = name.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '');
+    if (!clean) { toast('That name has no usable characters.', 'error'); return; }
+    target = { dev: 'E', oname: clean.slice(0, 16) };
+  }
+
+  const password = await requirePassword();
+  if (password === null) return;
+
+  const busy = toast(`Saving ${target.dev}:${target.oname}.ZPL…`, 'busy', { timeout: 0 });
+  try {
+    await saveScript({ dev: target.dev, oname: target.oname, otype: 'ZPL', data: editorZpl(), password });
+    editorState.file = target;
+    editorState.dirty = false;
+    renderEditorTitle();
+    busy.update(`Saved ${target.dev}:${target.oname}.ZPL`, 'success');
+    await refreshFileList();
+    fileSelect.value = `${target.dev}:${target.oname}`;
+  } catch (err) {
+    busy.close();
+    if (/password/i.test(err.message)) {
+      toast('The printer rejected that password.', 'error');
+      await requirePassword({ force: true });
+    } else {
+      toast(`Save failed: ${err.message}`, 'error');
+    }
+  }
+}
+
+async function deleteCurrent() {
+  if (!editorState.file) { toast('This label has not been saved yet.', 'info'); return; }
+  const { dev, oname } = editorState.file;
+
+  if (!await confirmDialog('Delete label?', `${dev}:${oname}.ZPL will be removed from the printer.`, 'Delete')) return;
+  const password = await requirePassword();
+  if (password === null) return;
+
+  try {
+    await deleteFile({ dev, oname, otype: 'ZPL', password });
+    toast(`Deleted ${dev}:${oname}.ZPL`, 'success');
+    editorState.file = null;
+    renderEditorTitle();
+    await refreshFileList();
+  } catch (err) {
+    toast(`Delete failed: ${err.message}`, 'error');
+  }
+}
+
+async function newLabelDoc() {
+  if (editorState.dirty && !await confirmDialog('Discard changes?', 'The current label has unsaved changes.', 'Discard')) return;
+  editorState.doc = newLabel(printer.dpi);
+  editorState.source = toZpl(editorState.doc);
+  editorState.file = null;
+  editorState.dirty = false;
+  fileSelect.value = '';
+  renderEditorTitle();
+  rebuildEditorView();
+  renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
+  refreshEditorPreview();
+}
+
+function addElement(type) {
+  const item = newElement(type, editorState.doc, printer.dpi);
+  // Cascade, so a run of Add clicks does not bury everything in one spot.
+  const step = Math.round(printer.dpi * 0.15);
+  const offset = (editorState.doc.elements.length % 8) * step;
+  item.x += offset;
+  item.y += offset;
+  if (type === 'image' && editorState.images.length) item.source = editorState.images[0].name;
+  editorState.doc.elements.push(item);
+  if (canvas) canvas.setSelected(item.id);
+  onDocChanged();
+}
+
+async function printEditorLabel() {
+  const ok = await confirmDialog(
+    'Print this label?',
+    `The printer will feed and print ${editorState.doc.copies > 1 ? `${editorState.doc.copies} copies` : 'one label'}.`,
+    'Print'
+  );
+  if (!ok) return;
+  editorPreview.print(editorZpl());
+}
+
+/* ------------------------------------------------------------------ *
+ * Mount
+ * ------------------------------------------------------------------ */
+
+export function mountEditor(panel) {
+  editorState.doc = newLabel(printer.dpi);
+  editorState.source = toZpl(editorState.doc);
+
+  titleNode = el('span', { class: 'text-[12px] font-medium text-ink-700' });
+
+  fileSelect = el('select', { class: 'field w-full sm:w-64' });
+  fileSelect.addEventListener('change', () => openFile(fileSelect.value));
+
+  const viewToggle = el('div', {
+    id: 'view-toggle',
+    class: 'flex overflow-hidden rounded border border-ink-300',
+    role: 'tablist',
+  }, [
+    el('button', { class: 'btn-sm', dataset: { view: 'visual' }, onclick: () => setView('visual') }, ['Visual']),
+    el('button', { class: 'btn-sm', dataset: { view: 'source' }, onclick: () => setView('source') }, ['Source']),
+  ]);
+
+  const zoomSelect = el('select', { class: 'field w-24 py-1 text-[12px]' });
+  for (const [value, text] of [['fit', 'Fit'], ['0.25', '25%'], ['0.5', '50%'], ['0.75', '75%'], ['1', '100%']]) {
+    zoomSelect.append(el('option', { value }, [text]));
+  }
+  zoomSelect.addEventListener('change', () => { if (canvas) canvas.setZoom(zoomSelect.value); });
+
+  addBar = el('div', { class: 'toolbar' }, [
+    el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, ['Add']),
+    ...['text', 'barcode', 'image', 'box', 'line'].map((type) => el('button', {
+      class: 'btn-secondary btn-sm capitalize',
+      onclick: () => addElement(type),
+    }, [type])),
+    el('div', { class: 'ml-auto flex items-center gap-2' }, [
+      el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, ['Zoom']),
+      zoomSelect,
+    ]),
+  ]);
+
+  editorHost = el('div', { class: 'flex h-[60vh] min-h-[20rem] flex-col overflow-hidden' });
+  inspectorHost = el('div');
+  labelPanelHost = el('div');
+
+  editorPreview = createPreview();
+
+  panel.append(el('div', { class: 'grid gap-3 xl:grid-cols-[minmax(0,1fr)_22rem]' }, [
+    el('div', { class: 'space-y-3' }, [
+      el('div', { class: 'card overflow-hidden' }, [
+        el('div', { class: 'toolbar' }, [
+          fileSelect,
+          el('button', { class: 'btn-secondary btn-sm', onclick: () => newLabelDoc() }, ['New']),
+          el('button', { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: false }) }, ['Save']),
+          el('button', { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: true }) }, ['Save as…']),
+          el('button', { class: 'btn-danger btn-sm', onclick: () => deleteCurrent() }, ['Delete']),
+          el('div', { class: 'ml-auto flex items-center gap-2' }, [
+            titleNode,
+            viewToggle,
+            el('button', { class: 'btn-primary btn-sm', onclick: () => printEditorLabel() }, ['Print']),
+          ]),
+        ]),
+        addBar,
+        editorHost,
+      ]),
+    ]),
+    el('div', { class: 'space-y-3' }, [
+      editorPreview.node,
+      el('div', { class: 'card overflow-hidden' }, [labelPanelHost, inspectorHost]),
+    ]),
+  ]));
+
+  renderEditorTitle();
+  renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
+  rebuildEditorView();
+  refreshFileList();
+  refreshEditorPreview();
+}
+
+/** Re-read the printer's file list whenever the tab comes back into view. */
+export function onEditorShown() {
+  refreshFileList();
+  if (codeEditor) codeEditor.resize();
+  if (canvas) canvas.render();
+}
