@@ -194,45 +194,6 @@ export async function readScript({ dev, oname, otype = 'ZPL' }) {
   return textarea.value.replace(/\r\n/g, '\n');
 }
 
-/**
- * Render ZPL to a bitmap without using media.
- *
- * The printer draws into a temp object whose name increments on every call
- * (__TMP001, __TMP004, ...), so the returned URL has to be read out of the
- * response rather than assumed.
- */
-export async function previewScript(zpl, { timeout = 45000 } = {}) {
-  const res = await postForm('/zpl', {
-    data: zpl,
-    dev: 'R',
-    oname: 'UNKNOWN',
-    otype: 'ZPL',
-    prev: 'Preview Label',
-  }, { timeout });
-
-  const match = /<IMG\s+SRC="(png\?[^"]+)"/i.exec(res.text);
-  if (!match) {
-    const err = extractPrinterError(res.text);
-    throw new Error(err || 'Printer did not return a preview image');
-  }
-  // Cache-bust: successive previews can reuse a temp name after a reset.
-  return '/' + match[1].replace(/&amp;/g, '&') + '&_=' + Date.now();
-}
-
-/** Send ZPL straight to the print engine. Consumes media. */
-export async function printScript(zpl, { timeout = 45000 } = {}) {
-  const res = await postForm('/zpl', {
-    data: zpl,
-    dev: 'R',
-    oname: 'UNKNOWN',
-    otype: 'ZPL',
-    print: 'Print Label',
-  }, { timeout });
-  const err = extractPrinterError(res.text);
-  if (err) throw new Error(err);
-  return true;
-}
-
 /** Save a script to the printer's filesystem. Requires the printer password. */
 export async function saveScript({ dev = 'E', oname, otype = 'ZPL', data, password }) {
   const res = await postForm('/zpl', {

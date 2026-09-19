@@ -7,7 +7,7 @@
  * itself -- it only has to find the field numbers and collect values.
  */
 
-import { el, qs, toast, confirmDialog, debounce, formatBytes, replaceChildren } from './ui.js';
+import { el, toast, confirmDialog, debounce, formatBytes, replaceChildren } from './ui.js';
 import { printer } from './state.js';
 import { listFiles, readScript } from './printer.js';
 import { findFieldNumbers, buildFormatCall } from './zpl.js';

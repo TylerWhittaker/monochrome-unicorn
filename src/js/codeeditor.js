@@ -17,7 +17,7 @@ const ACE_TIMEOUT = 6000;
 let acePromise = null;
 
 /** Load Ace once. Resolves null (never rejects) when it cannot be reached. */
-export function loadAce() {
+function loadAce() {
   if (acePromise) return acePromise;
 
   acePromise = new Promise((resolve) => {
@@ -43,7 +43,7 @@ export function loadAce() {
  * Tokenize a line of ZPL for highlighting. Kept separate from zpl.js's
  * parser: this one only has to be fast and never throw.
  */
-export function highlightTokens(line) {
+function highlightTokens(line) {
   const tokens = [];
   const re = /(\^FX[^\^~]*)|(\^FD|\^FV)([^\^~]*)|(\^FN\d+)|([\^~][A-Za-z][A-Za-z0-9]?)|([-+]?\d+(?:\.\d+)?)|([^\^~\d]+)/g;
   let match;

@@ -12,7 +12,7 @@
 import { el, qs, toast, modal, confirmDialog, requirePassword, debounce, formatBytes } from './ui.js';
 import { printer } from './state.js';
 import { listFiles, readScript, saveScript, deleteFile } from './printer.js';
-import { newLabel, newElement, toZpl, parseZpl } from './zpl.js';
+import { newLabel, newElement, toZpl, parseZpl, elementId } from './zpl.js';
 import { createCanvas } from './wysiwyg.js';
 import { renderLabelPanel, renderElementPanel } from './inspector.js';
 import { createCodeEditor } from './codeeditor.js';
@@ -188,7 +188,7 @@ function renderEditorInspector() {
       onDocChanged();
     },
     onDuplicate: () => {
-      const copy = { ...item, id: `el${Date.now()}`, x: item.x + 20, y: item.y + 20 };
+      const copy = { ...item, id: elementId(), x: item.x + 20, y: item.y + 20 };
       editorState.doc.elements.push(copy);
       canvas.setSelected(copy.id);
       onDocChanged();
