@@ -7,7 +7,9 @@
  */
 
 import { el, replaceChildren } from './ui.js';
-import { printer, toDots, fromDots, unitStep, UNITS } from './state.js';
+import {
+  printer, toDots, fromDots, unitStep, unitStepFine, saveUnitPreference,
+} from './state.js';
 import { SYMBOLOGIES, ROTATIONS, FONTS } from './zpl.js';
 
 /* ------------------------------------------------------------------ *
@@ -39,11 +41,43 @@ function numberField(value, onCommit, { min, max, step = 1, suffix } = {}) {
   ]);
 }
 
-/** A number field that stores dots but shows the document's unit. */
-function dotsField(dots, unit, onCommit) {
+/**
+ * A number field that stores dots but shows the document's unit.
+ *
+ * `fine` is for the fields only a few dots across -- module widths, line
+ * thicknesses -- where the normal step would move them in huge jumps.
+ */
+function dotsField(dots, unit, onCommit, { fine = false, maxDots } = {}) {
   return numberField(fromDots(dots, unit), (n) => onCommit(toDots(n, unit)), {
-    min: 0, step: unitStep(unit), suffix: unit,
+    min: 0,
+    max: maxDots === undefined ? undefined : fromDots(maxDots, unit),
+    step: fine ? unitStepFine(unit) : unitStep(unit),
+    suffix: unit,
   });
+}
+
+/**
+ * A set of radio buttons. Used for the unit choice, which drives every
+ * length in the editor and so deserves to be visible rather than folded
+ * into a dropdown.
+ */
+function radioField(groupName, value, options, onCommit) {
+  const buttons = options.map(([optValue, optLabel]) => {
+    const input = el('input', {
+      class: 'h-3.5 w-3.5 accent-ink-900',
+      type: 'radio',
+      name: groupName,
+      value: optValue,
+      checked: String(optValue) === String(value),
+    });
+    input.addEventListener('change', () => {
+      if (input.checked) onCommit(optValue);
+    });
+    return el('label', { class: 'flex cursor-pointer items-center gap-1.5 text-ink-700' }, [
+      input, optLabel,
+    ]);
+  });
+  return el('div', { class: 'flex flex-wrap items-center gap-x-4 gap-y-1' }, buttons);
 }
 
 function selectField(value, options, onCommit) {
@@ -78,6 +112,9 @@ function grid(children) {
   return el('div', { class: 'grid grid-cols-2 gap-3' }, children);
 }
 
+/** Radio labels for the unit choice. */
+const UNIT_LABELS = [['in', 'inches'], ['mm', 'mm'], ['dots', 'dots']];
+
 function section(title, children) {
   return el('div', { class: 'space-y-3 border-b border-ink-200 px-3 py-3 last:border-b-0' }, [
     el('h3', { class: 'text-[11px] font-semibold uppercase tracking-wide text-ink-500' }, [title]),
@@ -99,12 +136,14 @@ export function renderLabelPanel(host, { doc, onChange }) {
 
   replaceChildren(host, [
     section('Label', [
-      grid([
-        row('Units', selectField(unit, UNITS.map((u) => [u, u]), commit((v) => { doc.unit = v; }))),
-        row('Orientation', selectField(doc.orientation, [
-          ['N', 'Normal'], ['I', 'Inverted 180°'],
-        ], commit((v) => { doc.orientation = v; }))),
-      ]),
+      // Drives every length in the editor, so it sits on its own row.
+      row('Units', radioField('label-units', unit, UNIT_LABELS, commit((v) => {
+        doc.unit = v;
+        saveUnitPreference(v);
+      }))),
+      row('Orientation', selectField(doc.orientation, [
+        ['N', 'Normal'], ['I', 'Inverted 180°'],
+      ], commit((v) => { doc.orientation = v; }))),
       grid([
         row('Width', dotsField(doc.width, unit, commit((v) => { doc.width = Math.max(8, v); }))),
         row('Height', dotsField(doc.height, unit, commit((v) => { doc.height = Math.max(8, v); }))),
@@ -212,7 +251,9 @@ export function renderElementPanel(host, { doc, item, images, onChange, onDelete
     if (spec.kind === '1d') {
       fields.push(grid([
         row('Bar height', dotsField(item.height, unit, commit((v) => { item.height = Math.max(4, v); }))),
-        row('Module width', numberField(item.moduleWidth, commit((v) => { item.moduleWidth = Math.min(10, Math.max(1, Math.round(v))); }), { min: 1, max: 10, suffix: 'dots' })),
+        row('Module width', dotsField(item.moduleWidth, unit, commit((v) => {
+          item.moduleWidth = Math.min(10, Math.max(1, Math.round(v)));
+        }), { fine: true, maxDots: 10 })),
       ]));
       fields.push(grid([
         row('Wide:narrow', numberField(item.ratio, commit((v) => { item.ratio = v; }), { min: 2, max: 3, step: 0.1 })),
@@ -223,7 +264,9 @@ export function renderElementPanel(host, { doc, item, images, onChange, onDelete
         row('Magnification', numberField(item.magnification, commit((v) => { item.magnification = Math.min(20, Math.max(1, Math.round(v))); }), { min: 1, max: 20 })),
         item.symbology === 'qr'
           ? row('Error correction', selectField(item.errorLevel, [['H', 'H — 30%'], ['Q', 'Q — 25%'], ['M', 'M — 15%'], ['L', 'L — 7%']], commit((v) => { item.errorLevel = v; })))
-          : row('Module width', numberField(item.moduleWidth, commit((v) => { item.moduleWidth = Math.max(1, Math.round(v)); }), { min: 1, max: 20 })),
+          : row('Module width', dotsField(item.moduleWidth, unit, commit((v) => {
+            item.moduleWidth = Math.min(20, Math.max(1, Math.round(v)));
+          }), { fine: true, maxDots: 20 })),
       ]));
     }
     specific.push(section('Barcode', fields));
@@ -254,7 +297,9 @@ export function renderElementPanel(host, { doc, item, images, onChange, onDelete
         row('Height', dotsField(item.h, unit, commit((v) => { item.h = Math.max(1, v); }))),
       ]),
       grid([
-        row('Line thickness', numberField(item.thickness, commit((v) => { item.thickness = Math.max(1, Math.round(v)); }), { min: 1, max: 200, suffix: 'dots' })),
+        row('Line thickness', dotsField(item.thickness, unit, commit((v) => {
+          item.thickness = Math.min(200, Math.max(1, Math.round(v)));
+        }), { fine: true, maxDots: 200 })),
         row('Corner rounding', numberField(item.rounding, commit((v) => { item.rounding = Math.min(8, Math.max(0, Math.round(v))); }), { min: 0, max: 8 })),
       ]),
       checkField('White (knock out)', item.invert, commit((v) => { item.invert = v; })),
@@ -265,7 +310,9 @@ export function renderElementPanel(host, { doc, item, images, onChange, onDelete
     specific.push(section('Line', [
       grid([
         row('Length', dotsField(item.length, unit, commit((v) => { item.length = Math.max(1, v); }))),
-        row('Thickness', numberField(item.thickness, commit((v) => { item.thickness = Math.max(1, Math.round(v)); }), { min: 1, max: 200, suffix: 'dots' })),
+        row('Thickness', dotsField(item.thickness, unit, commit((v) => {
+          item.thickness = Math.min(200, Math.max(1, Math.round(v)));
+        }), { fine: true, maxDots: 200 })),
       ]),
       checkField('Vertical', item.vertical, commit((v) => { item.vertical = v; })),
     ]));

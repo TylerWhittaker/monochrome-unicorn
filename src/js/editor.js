@@ -10,7 +10,7 @@
  */
 
 import { el, qs, toast, modal, confirmDialog, requirePassword, debounce, formatBytes } from './ui.js';
-import { printer } from './state.js';
+import { printer, loadUnitPreference } from './state.js';
 import { listFiles, readScript, saveScript, deleteFile } from './printer.js';
 import { newLabel, newElement, toZpl, parseZpl, elementId } from './zpl.js';
 import { createCanvas } from './wysiwyg.js';
@@ -315,7 +315,9 @@ async function deleteCurrent() {
 
 async function newLabelDoc() {
   if (editorState.dirty && !await confirmDialog('Discard changes?', 'The current label has unsaved changes.', 'Discard')) return;
+  const unit = editorState.doc ? editorState.doc.unit : loadUnitPreference();
   editorState.doc = newLabel(printer.dpi);
+  editorState.doc.unit = unit;
   editorState.source = toZpl(editorState.doc);
   editorState.file = null;
   editorState.dirty = false;
@@ -355,6 +357,7 @@ async function printEditorLabel() {
 
 export function mountEditor(panel) {
   editorState.doc = newLabel(printer.dpi);
+  editorState.doc.unit = loadUnitPreference();
   editorState.source = toZpl(editorState.doc);
 
   titleNode = el('span', { class: 'text-[12px] font-medium text-ink-700' });

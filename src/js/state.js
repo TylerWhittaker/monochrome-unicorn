@@ -120,3 +120,38 @@ export function unitStep(unit) {
   if (unit === 'mm') return 1;
   return 1;
 }
+
+/**
+ * Step of exactly one dot, for the fields that are a handful of dots
+ * across -- bar module widths, line thicknesses. A 0.05in step there
+ * would jump fifteen dots at a time.
+ */
+export function unitStepFine(unit, dpi = printer.dpi) {
+  return fromDots(1, unit, dpi) || 0.001;
+}
+
+/* ------------------------------------------------------------------ *
+ * Unit preference
+ *
+ * Which unit you think in is a property of you, not of the label, so it
+ * outlives both the document and the page.
+ * ------------------------------------------------------------------ */
+
+const UNIT_KEY = 'zebra.unit';
+
+export function loadUnitPreference() {
+  try {
+    const stored = localStorage.getItem(UNIT_KEY);
+    return UNITS.includes(stored) ? stored : 'in';
+  } catch (err) {
+    return 'in';
+  }
+}
+
+export function saveUnitPreference(unit) {
+  try {
+    localStorage.setItem(UNIT_KEY, unit);
+  } catch (err) {
+    /* private mode; the choice just will not persist */
+  }
+}

@@ -13,7 +13,9 @@ Three modes:
 - **Label Editor** — create and edit stored `.ZPL` labels, either by
   dragging text, barcodes, images, boxes, lines and `^FN` fields around a
   canvas or by writing ZPL directly. The preview beside it is the
-  printer's own render, not a simulation.
+  printer's own render, not a simulation. Every length is shown in
+  inches, millimetres or dots, switched by one radio group and
+  remembered between visits.
 - **Format Printer** — pick a stored format, fill in one box per `^FN`
   field, preview and print.
 - **LCD Viewer** — mirror the printer's front panel on an adjustable
