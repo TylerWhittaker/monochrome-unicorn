@@ -28,16 +28,20 @@ export function el(tag, attrs = {}, children = []) {
     } else if (value === true) node.setAttribute(key, '');
     else node.setAttribute(key, value);
   }
-  for (const child of [].concat(children)) {
+  for (const child of [].concat(children).flat(Infinity)) {
     if (child === null || child === undefined || child === false) continue;
     node.append(child.nodeType ? child : document.createTextNode(String(child)));
   }
   return node;
 }
 
-/** Replace an element's children in one shot. */
+/**
+ * Replace an element's children in one shot. Nested arrays are flattened
+ * all the way down, so a helper that returns a group of nodes can be
+ * dropped straight into a child list.
+ */
 export function replaceChildren(node, ...children) {
-  node.replaceChildren(...children.flat().filter(Boolean));
+  node.replaceChildren(...children.flat(Infinity).filter(Boolean));
 }
 
 export function escapeHtml(str) {

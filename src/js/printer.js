@@ -86,22 +86,31 @@ export async function readBranch(branch) {
 }
 
 /**
- * Read live values for every branch. Fetched sequentially: the printer's
- * web server closes each connection and handles one request at a time, so
- * firing these in parallel makes it slower, not faster.
+ * Read live values for every branch, handing each one to `onBranch` as it
+ * lands so the caller can show values arriving rather than waiting for the
+ * whole sweep.
+ *
+ * Fetched sequentially: the printer's web server closes each connection
+ * and handles one request at a time, so firing these in parallel makes it
+ * slower, not faster. A branch is also the finest granularity available --
+ * it is one HTTP request, so its settings arrive together.
  */
-export async function readAllBranches(branches, onProgress) {
-  const values = {};
+export async function readAllBranches(branches, onBranch) {
   const failed = [];
+  let read = 0;
+
   for (let i = 0; i < branches.length; i++) {
+    const branch = branches[i];
+    let values = null;
     try {
-      Object.assign(values, await readBranch(branches[i]));
+      values = await readBranch(branch);
+      read += Object.keys(values).length;
     } catch (err) {
-      failed.push(branches[i]);
+      failed.push(branch);
     }
-    if (onProgress) onProgress(i + 1, branches.length, branches[i]);
+    if (onBranch) onBranch({ branch, values, read, branchesDone: i + 1 });
   }
-  return { values, failed };
+  return { failed, read };
 }
 
 /**

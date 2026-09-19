@@ -14,6 +14,9 @@ import { el, qs, replaceChildren, toast, debounce } from './ui.js';
 import { printer, allSettings } from './state.js';
 import { readBranch, readAllBranches, writeSetting, valuesMatch } from './printer.js';
 
+/** Shown wherever the live value has not been read yet. */
+const UNKNOWN = '\u2014';
+
 /** Live values, keyed by SGD name. Filled in by refresh(). */
 const values = Object.create(null);
 
@@ -24,7 +27,6 @@ const rows = new Map();
 const groups = [];
 
 let filterText = '';
-let writableOnly = false;
 let modifiedOnly = false;
 let listNode = null;
 let countNode = null;
@@ -67,16 +69,24 @@ function buildEditor(meta, current, commit) {
   const choices = parseChoices(meta.range);
   const numeric = parseNumericRange(meta.range);
 
+  const known = current !== undefined;
+
   // bool and enum both present as a picker when we know the options.
   if ((meta.type === 'bool' || meta.type === 'enum') && choices) {
     const select = el('select', { class: 'field w-full sm:w-56' });
+    // Before the live value arrives, a picker would otherwise sit on its
+    // first option and read as if that were the printer's setting.
+    if (!known) select.append(el('option', { value: '', selected: true }, [UNKNOWN]));
     // A value outside the advertised range still has to be selectable,
     // or opening the picker would silently rewrite it.
-    const options = choices.includes(current) || current == null ? choices : [current, ...choices];
+    const options = !known || choices.includes(current) ? choices : [current, ...choices];
     for (const choice of options) {
       select.append(el('option', { value: choice, selected: choice === current }, [choice]));
     }
-    select.addEventListener('change', () => commit(select.value));
+    select.addEventListener('change', () => {
+      if (select.value === '') return;
+      commit(select.value);
+    });
     return select;
   }
 
@@ -85,6 +95,7 @@ function buildEditor(meta, current, commit) {
       class: 'field w-full sm:w-40 field-mono',
       type: 'number',
       value: current ?? '',
+      placeholder: known ? '' : UNKNOWN,
       step: meta.type === 'double' ? 'any' : '1',
     });
     if (numeric) {
@@ -102,7 +113,7 @@ function buildEditor(meta, current, commit) {
       inputmode: 'numeric',
       value: current ?? '',
       pattern: '^(\\d{1,3}\\.){3}\\d{1,3}$',
-      placeholder: '0.0.0.0',
+      placeholder: known ? '0.0.0.0' : UNKNOWN,
     });
     wireTextCommit(input, current, commit);
     return input;
@@ -111,6 +122,7 @@ function buildEditor(meta, current, commit) {
   if (meta.type === 'json') {
     const area = el('textarea', {
       class: 'field field-mono w-full', rows: '3', spellcheck: 'false',
+      placeholder: known ? '' : UNKNOWN,
     }, [current ?? '']);
     wireTextCommit(area, current, commit);
     return area;
@@ -123,6 +135,7 @@ function buildEditor(meta, current, commit) {
   if (maxLen > 512 || (current && current.includes('\n'))) {
     const area = el('textarea', {
       class: 'field field-mono w-full', rows: '3', spellcheck: 'false',
+      placeholder: known ? '' : UNKNOWN,
     }, [current ?? '']);
     wireTextCommit(area, current, commit);
     return area;
@@ -132,6 +145,7 @@ function buildEditor(meta, current, commit) {
     class: 'field w-full sm:w-72 field-mono',
     type: meta.name.includes('password') || meta.name.includes('_pin') ? 'password' : 'text',
     value: current ?? '',
+    placeholder: known ? '' : UNKNOWN,
   });
   if (maxLen > 0) input.maxLength = maxLen;
   wireTextCommit(input, current, commit);
@@ -172,6 +186,12 @@ const TYPE_BADGE = {
   json: 'bg-rose-100 text-rose-800',
 };
 
+const ACCESS_BADGE = {
+  RW: ['read/write', 'bg-emerald-100 text-emerald-800'],
+  R: ['read-only', 'bg-ink-100 text-ink-500'],
+  W: ['write-only', 'bg-ink-100 text-ink-500'],
+};
+
 function buildRow(meta) {
   const nameNode = el('code', {
     class: 'break-all text-[12px] leading-tight text-ink-800',
@@ -186,12 +206,7 @@ function buildRow(meta) {
       + ' sm:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] sm:items-start sm:gap-3 sm:py-1.5',
     dataset: { name: meta.name },
   }, [
-    el('div', { class: 'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:pt-1.5' }, [
-      nameNode,
-      el('span', { class: `pill shrink-0 ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
-      !meta.writable && el('span', { class: 'pill shrink-0 bg-ink-100 text-ink-500' }, ['read-only']),
-      !meta.readable && el('span', { class: 'pill shrink-0 bg-ink-100 text-ink-500' }, ['write-only']),
-    ]),
+    el('div', { class: 'min-w-0 sm:pt-1.5' }, [nameNode]),
     el('div', { class: 'min-w-0' }, [valueCell, noteNode]),
   ]);
 
@@ -201,12 +216,40 @@ function buildRow(meta) {
   return row;
 }
 
+/**
+ * The tags that follow the value: what it is, whether you can change it,
+ * and whether it still matches the factory default.
+ *
+ * "not default" doubles as the way to put it back, so it is a button --
+ * outlined rather than filled, to set it apart from the two that are
+ * purely informational.
+ */
+function buildTags(entry) {
+  const { meta } = entry;
+  const [accessText, accessClass] = ACCESS_BADGE[meta.access] || ACCESS_BADGE.R;
+
+  entry.resetBtn = meta.writable && meta.default !== null
+    ? el('button', {
+      class: 'pill shrink-0 border border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100',
+      title: `Restore the factory default: ${meta.default}`,
+      onclick: () => applyChange(entry, meta.default),
+    }, ['not default'])
+    : el('span', { class: 'pill shrink-0 border border-amber-400 bg-amber-50 text-amber-800' }, ['not default']);
+
+  return [
+    el('span', { class: `pill shrink-0 ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
+    el('span', { class: `pill shrink-0 ${accessClass}` }, [accessText]),
+    entry.resetBtn,
+  ];
+}
+
 function renderValueCell(entry) {
   const { meta } = entry;
   const current = values[meta.name];
 
   if (!meta.writable) {
     const isSlow = (printer.schema.slow || []).includes(meta.name);
+    entry.editor = null;
     replaceChildren(entry.valueCell, [
       el('span', {
         class: 'whitespace-pre-wrap break-all py-1.5 font-mono text-[12px] text-ink-600',
@@ -215,20 +258,12 @@ function renderValueCell(entry) {
         class: 'btn-secondary btn-sm',
         onclick: (event) => loadSlowSetting(meta.name, event.currentTarget),
       }, ['Read now']),
+      buildTags(entry),
     ]);
-    entry.editor = null;
-    entry.resetBtn = null;
   } else {
     const editor = buildEditor(meta, current, (value) => applyChange(entry, value));
     entry.editor = editor;
-    // Only offered once the value actually differs, so the column does not
-    // carry 370 identical buttons.
-    entry.resetBtn = meta.default === null ? null : el('button', {
-      class: 'btn-secondary btn-sm',
-      title: `Restore the factory default: ${meta.default}`,
-      onclick: () => applyChange(entry, meta.default),
-    }, ['Default']);
-    replaceChildren(entry.valueCell, [editor, entry.resetBtn]);
+    replaceChildren(entry.valueCell, [editor, buildTags(entry)]);
   }
 
   markModified(entry);
@@ -325,7 +360,6 @@ async function loadSlowSetting(name, button) {
  * ------------------------------------------------------------------ */
 
 function matches(meta) {
-  if (writableOnly && !meta.writable) return false;
   if (modifiedOnly && rows.get(meta.name)?.row.dataset.modified !== 'true') return false;
   if (!filterText) return true;
   const needle = filterText.toLowerCase();
@@ -388,24 +422,47 @@ function buildGroups() {
  * Refresh
  * ------------------------------------------------------------------ */
 
+/** How many settings a full sweep can read, for the progress count. */
+function readableCount() {
+  const slow = new Set(printer.schema.slow || []);
+  return allSettings().filter((m) => m.readable && !slow.has(m.name)).length;
+}
+
 async function refresh() {
   const branches = printer.schema.helperBranches || printer.schema.branches;
+  const total = readableCount();
   refreshBtn.disabled = true;
-  const progress = toast('Reading live values…', 'busy', { timeout: 0 });
 
-  const { values: live, failed } = await readAllBranches(branches, (done, total, branch) => {
-    progress.update(`Reading live values… ${done}/${total} (${branch})`, 'busy', { timeout: 0 });
-  });
-
-  Object.assign(values, live);
+  // Start from nothing rather than leaving the previous sweep's values on
+  // screen: until a setting is re-read, what it now holds is unknown.
+  for (const name of Object.keys(values)) delete values[name];
   for (const entry of rows.values()) renderValueCell(entry);
   applyFilter();
 
+  const progress = toast(`Reading live values… 0/${total}`, 'busy', { timeout: 0 });
+
+  const { failed, read } = await readAllBranches(branches, ({ values: branchValues, read: soFar }) => {
+    if (branchValues) {
+      Object.assign(values, branchValues);
+      // Repaint only the rows this branch just filled in.
+      for (const name of Object.keys(branchValues)) {
+        const entry = rows.get(name);
+        if (entry) renderValueCell(entry);
+      }
+    }
+    progress.update(`Reading live values… ${soFar}/${total}`, 'busy', { timeout: 0 });
+  });
+
+  applyFilter();
   refreshBtn.disabled = false;
+
   if (failed.length) {
-    progress.update(`Read ${Object.keys(live).length} values; ${failed.length} branch(es) failed: ${failed.join(', ')}`, 'error', { timeout: 8000 });
+    progress.update(
+      `Read ${read} of ${total} values; ${failed.length} branch(es) failed: ${failed.join(', ')}`,
+      'error', { timeout: 8000 }
+    );
   } else {
-    progress.update(`Read ${Object.keys(live).length} live values`, 'success');
+    progress.update(`Read ${read} live values`, 'success');
   }
 }
 
@@ -450,7 +507,6 @@ export function mountSettings(panel) {
   panel.append(el('div', { class: 'card overflow-hidden' }, [
     el('div', { class: 'toolbar' }, [
       filterInput,
-      toggle('Writable only', (v) => { writableOnly = v; }),
       toggle('Changed from default', (v) => { modifiedOnly = v; }),
       el('div', { class: 'ml-auto flex items-center gap-3' }, [countNode, refreshBtn]),
     ]),

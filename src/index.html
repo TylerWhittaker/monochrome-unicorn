@@ -24,6 +24,7 @@
     <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
       <h1 id="hdr-name" class="text-[15px] font-semibold tracking-tight">Zebra Printer</h1>
       <span id="hdr-model" class="text-[12px] text-ink-400"></span>
+      <span id="hdr-ip" class="font-mono text-[12px] text-ink-400"></span>
       <span id="hdr-status" class="pill bg-ink-800 text-ink-300">connecting</span>
       <span class="ml-auto hidden text-[11px] text-ink-500 sm:inline" id="hdr-meta"></span>
     </div>
@@ -46,7 +47,7 @@
   Served from the printer &middot; built {{BUILD_STAMP}}
 </footer>
 
-<div id="toasts" class="pointer-events-none fixed bottom-3 right-3 z-50 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col gap-2"></div>
+<div id="toasts" class="pointer-events-none fixed left-1/2 top-3 z-50 flex w-[min(26rem,calc(100vw-1.5rem))] -translate-x-1/2 flex-col items-center gap-2"></div>
 
 <div id="modal-root"></div>
 

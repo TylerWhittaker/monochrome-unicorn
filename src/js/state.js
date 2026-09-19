@@ -20,6 +20,7 @@ export const printer = {
   serial: '',
   status: '',
   firmware: '',
+  ip: '',
 };
 
 /** Read the inlined <script> blocks. Safe to call once, at startup. */
@@ -41,6 +42,7 @@ export function initState(document) {
   printer.name = boot['device.friendly_name'] || printer.model || 'Zebra Printer';
   printer.serial = boot['device.unique_id'] || '';
   printer.firmware = boot['appl.name'] || '';
+  printer.ip = boot['ip.addr'] || '';
   printer.status = parseHostStatus(boot['device.host_status']);
 
   const dpi = parseInt(boot['head.resolution.in_dpi'], 10);

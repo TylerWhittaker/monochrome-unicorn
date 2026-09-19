@@ -29,6 +29,7 @@ const STATUS_STYLES = {
 function renderHeader() {
   qs('#hdr-name').textContent = printer.name;
   qs('#hdr-model').textContent = printer.model;
+  qs('#hdr-ip').textContent = printer.ip;
 
   const status = qs('#hdr-status');
   status.textContent = printer.status;
