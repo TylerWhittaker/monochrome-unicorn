@@ -196,13 +196,16 @@ export function mountLcd(panel) {
       ]),
       el('div', { class: 'ml-auto' }, [pauseBtn]),
     ]),
-    // The bezel and its caption share a width, so the caption tracks the
-    // screen rather than the card the toolbar happens to have widened.
     el('div', { class: 'w-fit p-3' }, [
-      el('div', { class: 'rounded-lg bg-ink-800 p-2 shadow-inner' }, [screenNode]),
-      el('div', { class: 'mt-1.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1' }, [
-        ageNode, metaNode,
-      ]),
+      // A bezel, so the grid reads as a device rather than a code block.
+      el('div', { class: 'w-fit rounded-lg bg-ink-800 p-2 shadow-inner' }, [screenNode]),
+      // w-0 min-w-full keeps the caption out of the intrinsic width of
+      // the column -- otherwise this line, which is wider than the
+      // screen, would set the width and stretch the bezel to match --
+      // and then lets it fill and wrap inside whatever the screen needs.
+      el('div', {
+        class: 'mt-1.5 flex w-0 min-w-full flex-wrap items-baseline justify-between gap-x-4 gap-y-1',
+      }, [ageNode, metaNode]),
     ]),
   ]));
 
