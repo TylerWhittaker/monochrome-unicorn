@@ -1,0 +1,15 @@
+{
+  "name": "zebra-printer-web-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Single-page app served from a Zebra printer's onboard web server (E:INDEX.SHTML)",
+  "scripts": {
+    "css": "tailwindcss -i src/css/app.css -o dist/app.css --minify",
+    "build": "node tools/build.mjs",
+    "deploy": "./deploy.sh"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

@@ -1,0 +1,56 @@
+<!DOCTYPE HTML>
+<HTML lang="en">
+<HEAD>
+<META HTTP-EQUIV="content-type" CONTENT="text/html; CHARSET=ISO-8859-1">
+<META NAME="viewport" CONTENT="width=device-width, initial-scale=1">
+<TITLE>Zebra Printer Console</TITLE>
+<STYLE>{{STYLES}}</STYLE>
+</HEAD>
+<BODY class="min-h-screen">
+
+<!--
+  Values the printer's SSI preprocessor substitutes before serving. Parsed
+  by the client as @name=value@ pairs; the framing survives values that
+  contain spaces, quotes or newlines.
+-->
+<script type="text/plain" id="boot-vars">
+{{BOOT_VARS}}
+</script>
+
+<script type="application/json" id="sgd-schema">{{SGD_SCHEMA}}</script>
+
+<header class="bg-ink-900 text-white">
+  <div class="mx-auto max-w-6xl px-4 pt-3">
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <h1 id="hdr-name" class="text-[15px] font-semibold tracking-tight">Zebra Printer</h1>
+      <span id="hdr-model" class="text-[12px] text-ink-400"></span>
+      <span id="hdr-status" class="pill bg-ink-800 text-ink-300">connecting</span>
+      <span class="ml-auto hidden text-[11px] text-ink-500 sm:inline" id="hdr-meta"></span>
+    </div>
+
+    <nav class="-mx-1 mt-2 flex overflow-x-auto" role="tablist" aria-label="Mode">
+      <button class="tab-btn" role="tab" data-tab="settings" aria-selected="true">Printer Settings</button>
+      <button class="tab-btn" role="tab" data-tab="editor" aria-selected="false">Label Editor</button>
+      <button class="tab-btn" role="tab" data-tab="format" aria-selected="false">Format Printer</button>
+    </nav>
+  </div>
+</header>
+
+<main class="mx-auto max-w-6xl px-4 py-4">
+  <section id="panel-settings" role="tabpanel" data-panel="settings"></section>
+  <section id="panel-editor" role="tabpanel" data-panel="editor" hidden></section>
+  <section id="panel-format" role="tabpanel" data-panel="format" hidden></section>
+</main>
+
+<footer class="mx-auto max-w-6xl px-4 pb-6 text-[11px] text-ink-400">
+  Served from the printer &middot; built {{BUILD_STAMP}}
+</footer>
+
+<div id="toasts" class="pointer-events-none fixed bottom-3 right-3 z-50 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col gap-2"></div>
+
+<div id="modal-root"></div>
+
+<script>{{HTMX}}</script>
+<script>{{APP_JS}}</script>
+</BODY>
+</HTML>

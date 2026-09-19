@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-ink-50 text-ink-900 font-sans text-[13px] leading-normal antialiased;
+  }
+  /* Inputs sized for touch without looking oversized on a desktop. */
+  input, select, textarea, button {
+    @apply font-sans text-[13px];
+  }
+}
+
+@layer components {
+  .tab-btn {
+    @apply relative shrink-0 px-4 py-3 text-[13px] font-medium text-ink-400
+           border-b-2 border-transparent transition-colors whitespace-nowrap
+           hover:text-ink-100 focus-visible:outline-none focus-visible:text-ink-100;
+  }
+  .tab-btn[aria-selected="true"] {
+    @apply text-white border-white;
+  }
+
+  .field {
+    @apply w-full rounded border border-ink-300 bg-white px-2 py-1.5 text-ink-900
+           shadow-sm transition-colors
+           focus:border-ink-500 focus:outline-none focus:ring-1 focus:ring-ink-500
+           disabled:bg-ink-100 disabled:text-ink-400;
+  }
+  .field-mono {
+    @apply font-mono text-[12px];
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded border px-3 py-1.5
+           font-medium transition-colors select-none
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-500/40
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn border-ink-900 bg-ink-900 text-white hover:bg-ink-800;
+  }
+  .btn-secondary {
+    @apply btn border-ink-300 bg-white text-ink-800 hover:bg-ink-100;
+  }
+  .btn-danger {
+    @apply btn border-red-300 bg-white text-red-700 hover:bg-red-50;
+  }
+  .btn-sm {
+    @apply px-2 py-1 text-[12px];
+  }
+
+  .card {
+    @apply rounded-lg border border-ink-200 bg-white shadow-sm;
+  }
+
+  .pill {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium;
+  }
+
+  .toolbar {
+    @apply flex flex-wrap items-center gap-2 border-b border-ink-200 bg-ink-50/70 px-3 py-2;
+  }
+
+  .label-text {
+    @apply block text-[11px] font-medium uppercase tracking-wide text-ink-500;
+  }
+
+  /* Checkerboard behind the label preview so white media reads as media. */
+  .preview-surface {
+    background-color: #fff;
+    background-image:
+      linear-gradient(45deg, #eef0f3 25%, transparent 25%, transparent 75%, #eef0f3 75%),
+      linear-gradient(45deg, #eef0f3 25%, transparent 25%, transparent 75%, #eef0f3 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+  }
+}

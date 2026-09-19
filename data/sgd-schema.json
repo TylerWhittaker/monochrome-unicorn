@@ -1,0 +1,4135 @@
+{
+ "captured": "2026-09-19T00:04:06Z",
+ "types": [
+  "string",
+  "enum",
+  "integer",
+  "bool",
+  "double",
+  "ipv4-address",
+  "json"
+ ],
+ "access": [
+  "R",
+  "W",
+  "RW"
+ ],
+ "ranges": [
+  "on,off",
+  "0-17",
+  "0-16",
+  "0-30",
+  "no radio,unknown,1.0,1.1,1.2,2.0,2.1,3.0,4.0,4.1,4.2,5.0,5.1,5.2",
+  "no,yes",
+  "1,2,3,4",
+  "nc,1,2,3,4",
+  "off,iOS_only",
+  "15,60",
+  "Inserted,Not Inserted",
+  "0-4",
+  "0-255",
+  "17",
+  "12",
+  "2400,4800,9600,14400,19200,28800,38400,57600,115200",
+  "7,8",
+  "null,odd,even,n,o,e",
+  "1,2",
+  "xon/xoff,rts/cts,dsr/dtr",
+  "dte",
+  "open,ok",
+  "0-600",
+  "0-64",
+  "0-32",
+  "0-48",
+  "yes,no",
+  "enabled,disabled",
+  "0-25",
+  "0-65535",
+  "0-39",
+  "1-24",
+  "0-21",
+  "0-20",
+  "0-40",
+  "0-4294967295",
+  "0-41",
+  "0-51",
+  "0-100",
+  "0-128",
+  "ftp,sftp",
+  "0-900",
+  "both,wired,wireless",
+  "56-2048",
+  "1-65535",
+  "internal wired,wireless,unknown",
+  "0-1024",
+  "0-3600",
+  "0-256",
+  "ok,out",
+  "bar,gap",
+  "-400.0-338.0",
+  "label,journal",
+  "back",
+  "tear off,peel off,rewind,cutter,delayed cut,linerless peel,linerless rewind,linerless tear,applicator,linerless cut,linrless dly cut",
+  "2.0-4.0",
+  "DT,TT",
+  "N,A,O,B,10,20,30,40,50,60,70,80",
+  "clear,not clear",
+  "Present,Not Present",
+  "-32768-32767",
+  "ad hoc,infrastructure",
+  "1.0-1000000.0",
+  "long,short",
+  "1-75",
+  "5-255",
+  "10-30000",
+  "10-500",
+  "60-125",
+  "2-75",
+  "off,print,serial,file",
+  "1,2,3,4,5,6,7,8,9,10,11,12,13,14,34,36,38,40,42,44,46,48,52,56,60,64,100,104,108,112,116,120,124,128,132,136,140,144,149,153,157,161,165",
+  "none,WPA,WPA2",
+  "NONE,AES,TKIP,WEP40,WEP104,reserved,unknown",
+  "NONE,AES,TKIP,WEP40,WEP104,reserved",
+  "pap,chap,mschap,mschapv2",
+  "1,2,3,4,5,6,7,8,9,10,11,36,40,44,48,149,153,157,161,165",
+  "0.0.0.0-255.255.255.254",
+  "0,1,2",
+  "0-22",
+  "0-120",
+  "2-120",
+  "all,bootp,dhcp,dhcp and bootp,gleaning only,rarp,permanent",
+  "off,on,saved_ip",
+  "1-3600",
+  "5-300",
+  "none,eap-tls,eap-ttls,eap-fast,peap,leap,wpa psk,wpa eap-tls,wpa eap-ttls,wpa eap-fast,wpa peap,wpa leap",
+  "all,usa/canada,japan,rest of world,not available",
+  "not selected,albania,argentina,australia/nz,bolivia,bosnia,brazil,chile,china,colombia,costa rica,ecuador,el salvador,europe,georgia,guatemala,honduras,hong kong,india,indonesia,kazakhstan,korea,malaysia,mexico,nicaragua,peru,philippines,puerto rico,russia,saudi arabia,singapore,south africa,sri lanka,taiwan,thailand,turkey,uae,ukraine,uruguay,venezuela,vietnam",
+  "1,2,3,4,5,6,7,8,9,10,11,36,40,44,48,52,56,60,64,100,104,108,112,116,120,124,128,132,136,140,144,149,153,157,161,165,all",
+  "2.4,5,all",
+  "1-64000",
+  "0-8",
+  "disabled,enabled,required",
+  "2.4,5,none",
+  "3-15",
+  "normal",
+  "0-8191",
+  "english,spanish,french,german,italian,norwegian,portuguese,swedish,danish,dutch,finnish,japanese,korean,simp chinese,trad chinese,russian,polish,czech,romanian",
+  "0-9999",
+  "4-4",
+  "numeric",
+  "selected,all,none",
+  "0-510",
+  "zpl",
+  "printer_file,usb_file",
+  "0-18446744073709551615",
+  "0-10",
+  "0-29",
+  "3-5",
+  "1-4294967295",
+  "wlan,ip,display,power,bluetooth,all,device.alerts",
+  "print,store,reply",
+  "-90.0-90.0",
+  "-180.0-180.0",
+  "-10000.0-406700000.0",
+  "0.0-406700000.0",
+  "ready,busy",
+  "fw version,ip address,mm/dd/yyyy 24 hr,mm/dd/yyyy 12 hr,dd/mm/yyyy 24 hr,dd/mm/yyyy 12 hr",
+  "reflective,transmissive",
+  "zpl,hybrid_xml_zpl,epl_zpl,epl",
+  "0-33",
+  "0-100.0",
+  "1",
+  "0-14",
+  "zpl,epl",
+  "0-50",
+  "settings,network,formats,images,fonts,barcodes,all,sensor profile",
+  "disabled,enabled",
+  "printer",
+  "0-1",
+  "off,on",
+  "0-1000",
+  "10000-400000",
+  "0-400000",
+  "not available,not present,present",
+  "print,run,usb_host,off",
+  "0.0-30.0",
+  "darkness,first dot location,print line,image compression,element out",
+  "off",
+  "6",
+  "none,avalanche",
+  "0-31",
+  "off,running,stopped",
+  "0-2048",
+  "-300-300",
+  "1-32000",
+  "-9999-9999",
+  "2",
+  "zpl II,zpl",
+  "41",
+  "21",
+  "nor,inv",
+  "-120-120",
+  "blink,solid",
+  "none,peap,eap-tls,eap-ttls",
+  "1-4",
+  "A1",
+  "read,write,quick",
+  "run,restore",
+  "epc,memory bank sizes,protocol bits,tid information,password status",
+  "usa/canada",
+  "0-32767",
+  "none",
+  "0-32000",
+  "1-10",
+  "none,pause,error",
+  ",bootp,dhcp,dhcp and bootp,gleaning only,rarp,permanent",
+  "0-18",
+  "0-1000000",
+  "0-80",
+  "2-1280",
+  "auto_detect,continuous,gap/notch,mark",
+  "thermal trans,direct thermal",
+  "calibrate,feed,length,no motion,short cal,quick cal",
+  "1.0-39.0",
+  "inProgress,complete",
+  "reload printer,reload network",
+  "0-10000",
+  "ALL MESSAGES, PAPER OUT, RIBBON OUT, HEAD TOO HOT, HEAD COLD, HEAD OPEN, SUPPLY TOO HOT, RIBBON IN, REWIND, CUTTER JAMMED, PRINTER PAUSED, PQ JOB COMPLETED, LABEL READY, HEAD ELEMENT BAD, BASIC RUNTIME, BASIC FORCED, POWER ON, CLEAN PRINTHEAD, MEDIA LOW, RIBBON LOW, REPLACE HEAD, BATTERY LOW, RFID ERROR, MOTOR OVERTEMP, PRINTHEAD SHUTDOWN, COLD START, SGD SET, SHUTTING DOWN, RESTARTING, NO READER PRESENT, THERMISTOR FAULT, INVALID HEAD, COUNTRY CODE ERROR, MCR RESULT READY, PMCU DOWNLOAD, RIBBON AUTH ERROR, ODOMETER TRIGGERED, COUNTRY CODE, BATTERY MISSING, MEDIA CARTRIDGE, MEDIA CARTRIDGE LOAD FAILURE, MEDIA CARTRIDGE EJECT FAILURE, MEDIA CARTRIDGE FORCED EJECT, CLEANING MODE, CSR AVAILABLE",
+  "SERIAL, PARALLEL, E-MAIL, TCP, UDP, SNMP, USB, HTTP-POST, BLUETOOTH, SDK",
+  "0-5120000",
+  "1-600",
+  "1-100",
+  "off,failure,interval,both",
+  "1-1800",
+  "true,false",
+  "NOT ACTIVE,NO NETWORK,CONNECTING,CONNECTED,CLOSING,NO HOST RESOLUTION,NO IP CONNECTION,NEEDS AUTHENTICATION,HANDSHAKE ERROR",
+  "10-10",
+  "none,accept,reject,complete",
+  "0-6",
+  "serial,usb,bt,parallel,off",
+  "1-3000"
+ ],
+ "branches": [
+  "alerts",
+  "apl",
+  "appl",
+  "bluetooth",
+  "capture",
+  "card",
+  "comm",
+  "cutter",
+  "device",
+  "display",
+  "ezpl",
+  "file",
+  "formats",
+  "head",
+  "input",
+  "interface",
+  "internal_wired",
+  "ip",
+  "log",
+  "media",
+  "memory",
+  "netmanage",
+  "odometer",
+  "print",
+  "rfid",
+  "ribbon",
+  "rtc",
+  "sensor",
+  "usb",
+  "weblink",
+  "wlan",
+  "zbi",
+  "zpl"
+ ],
+ "slow": [
+  "file.dir",
+  "file.drive_listing"
+ ],
+ "settings": {
+  "bluetooth.discoverable": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "bluetooth.friendly_name": [
+   0,
+   1,
+   2,
+   "40J132100037"
+  ],
+  "bluetooth.version": [
+   0,
+   2,
+   0,
+   null
+  ],
+  "bluetooth.date": [
+   0,
+   2,
+   0,
+   null
+  ],
+  "bluetooth.local_name": [
+   0,
+   1,
+   0,
+   null
+  ],
+  "bluetooth.address": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "bluetooth.bluetooth_pin": [
+   0,
+   2,
+   1,
+   null
+  ],
+  "bluetooth.short_address": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "bluetooth.radio_version": [
+   1,
+   4,
+   0,
+   null
+  ],
+  "bluetooth.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "bluetooth.connected": [
+   3,
+   5,
+   0,
+   null
+  ],
+  "bluetooth.minimum_security_mode": [
+   1,
+   6,
+   2,
+   "3"
+  ],
+  "bluetooth.connected_security_mode": [
+   1,
+   7,
+   0,
+   null
+  ],
+  "bluetooth.bonding": [
+   1,
+   0,
+   2,
+   "on"
+  ],
+  "bluetooth.clear_bonding_cache": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "bluetooth.enable_reconnect": [
+   1,
+   8,
+   2,
+   "iOS_only"
+  ],
+  "bluetooth.json_config_channel_enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "bluetooth.page_scan_window": [
+   1,
+   9,
+   2,
+   "60"
+  ],
+  "card.inserted": [
+   1,
+   10,
+   0,
+   null
+  ],
+  "card.cisproc": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "card.mfgid": [
+   0,
+   11,
+   0,
+   null
+  ],
+  "card.cardid": [
+   0,
+   11,
+   0,
+   null
+  ],
+  "card.fncode": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "card.idtext1": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "card.idtext2": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "card.idtext3": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "card.idtext4": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "card.fcrbase": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "card.fcrlist": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "card.defcfg": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "card.cor": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "card.mac_addr": [
+   0,
+   13,
+   0,
+   null
+  ],
+  "card.mac_raw": [
+   0,
+   14,
+   0,
+   null
+  ],
+  "card.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "comm.baud": [
+   1,
+   15,
+   2,
+   "9600"
+  ],
+  "comm.data_bits": [
+   1,
+   16,
+   2,
+   "8"
+  ],
+  "comm.parity": [
+   1,
+   17,
+   2,
+   "null"
+  ],
+  "comm.stop_bits": [
+   1,
+   18,
+   2,
+   "1"
+  ],
+  "comm.dsr": [
+   3,
+   0,
+   0,
+   null
+  ],
+  "comm.handshake": [
+   1,
+   19,
+   2,
+   "xon/xoff"
+  ],
+  "comm.type": [
+   1,
+   20,
+   0,
+   null
+  ],
+  "head.latch": [
+   3,
+   21,
+   0,
+   null
+  ],
+  "head.resolution.in_dpi": [
+   2,
+   22,
+   0,
+   null
+  ],
+  "ip.dhcp.vendor_class_id": [
+   0,
+   23,
+   2,
+   "Zebra Technologies ZTC ZD500R-300dpi ZPL"
+  ],
+  "ip.dhcp.user_class_id": [
+   0,
+   24,
+   2,
+   ""
+  ],
+  "ip.dhcp.auto_provision_enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.dhcp.ntp.enable": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "ip.dhcp.ntp.received_servers": [
+   0,
+   25,
+   0,
+   null
+  ],
+  "ip.ftp.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.ftp.execute_file": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.ftp.request_password": [
+   3,
+   26,
+   2,
+   "no"
+  ],
+  "ip.lpd.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.tcp.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.tcp.nagle_algorithm": [
+   1,
+   27,
+   2,
+   "enabled"
+  ],
+  "ip.udp.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.http.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.http.admin_name": [
+   0,
+   28,
+   2,
+   "admin"
+  ],
+  "ip.http.admin_password": [
+   0,
+   28,
+   1,
+   null
+  ],
+  "ip.http.port": [
+   2,
+   29,
+   2,
+   "80"
+  ],
+  "ip.http.faq_url": [
+   0,
+   23,
+   2,
+   "https://www.zebra.com/support.html"
+  ],
+  "ip.http.custom_link_name": [
+   0,
+   28,
+   2,
+   ""
+  ],
+  "ip.http.custom_link_url": [
+   0,
+   23,
+   2,
+   ""
+  ],
+  "ip.smtp.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.smtp.server_addr": [
+   0,
+   30,
+   2,
+   "0.0.0.0"
+  ],
+  "ip.smtp.domain": [
+   0,
+   31,
+   2,
+   "ZBRPrintServer.com"
+  ],
+  "ip.pop3.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.pop3.print_headers": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "ip.pop3.verbose_headers": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "ip.pop3.print_body": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "ip.pop3.save_attachments": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "ip.pop3.poll": [
+   2,
+   29,
+   2,
+   "240"
+  ],
+  "ip.pop3.username": [
+   0,
+   23,
+   2,
+   ""
+  ],
+  "ip.pop3.password": [
+   0,
+   32,
+   1,
+   null
+  ],
+  "ip.pop3.server_addr": [
+   0,
+   30,
+   2,
+   "0.0.0.0"
+  ],
+  "ip.pop3.print_attachments": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "ip.snmp.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.snmp.get_community_name": [
+   0,
+   33,
+   1,
+   null
+  ],
+  "ip.snmp.set_community_name": [
+   0,
+   33,
+   1,
+   null
+  ],
+  "ip.snmp.create_mib": [
+   0,
+   12,
+   1,
+   null
+  ],
+  "ip.snmp.trap_community_name": [
+   0,
+   33,
+   2,
+   "public"
+  ],
+  "ip.port": [
+   2,
+   29,
+   2,
+   "6101"
+  ],
+  "ip.remote": [
+   0,
+   34,
+   2,
+   ""
+  ],
+  "ip.ping_remote": [
+   2,
+   35,
+   1,
+   null
+  ],
+  "ip.mirror.auto": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "ip.mirror.username": [
+   0,
+   33,
+   2,
+   "user"
+  ],
+  "ip.mirror.password": [
+   0,
+   33,
+   1,
+   null
+  ],
+  "ip.mirror.server": [
+   0,
+   36,
+   2,
+   "127.0.0.1"
+  ],
+  "ip.mirror.path": [
+   0,
+   37,
+   2,
+   "Zebra"
+  ],
+  "ip.mirror.freq": [
+   2,
+   29,
+   2,
+   "0"
+  ],
+  "ip.mirror.fetch": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "ip.mirror.version": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "ip.mirror.freq_hours": [
+   2,
+   38,
+   2,
+   "0"
+  ],
+  "ip.mirror.error_retry": [
+   2,
+   29,
+   2,
+   "0"
+  ],
+  "ip.mirror.feedback.auto": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "ip.mirror.feedback.path": [
+   0,
+   37,
+   2,
+   "Zebra/feedback"
+  ],
+  "ip.mirror.feedback.freq": [
+   2,
+   29,
+   2,
+   "0"
+  ],
+  "ip.mirror.feedback.odometer": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "ip.mirror.success": [
+   3,
+   26,
+   0,
+   null
+  ],
+  "ip.mirror.success_time": [
+   0,
+   23,
+   0,
+   null
+  ],
+  "ip.mirror.last_time": [
+   0,
+   23,
+   0,
+   null
+  ],
+  "ip.mirror.last_error": [
+   0,
+   39,
+   0,
+   null
+  ],
+  "ip.mirror.mode": [
+   1,
+   40,
+   2,
+   "ftp"
+  ],
+  "ip.mirror.reset_delay": [
+   2,
+   41,
+   2,
+   "5"
+  ],
+  "ip.mirror.interface": [
+   1,
+   42,
+   2,
+   "both"
+  ],
+  "ip.mirror.appl_path": [
+   0,
+   37,
+   2,
+   ""
+  ],
+  "ip.ping_len": [
+   2,
+   43,
+   2,
+   "56"
+  ],
+  "ip.discovery.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.discovery.port": [
+   2,
+   44,
+   2,
+   "4201"
+  ],
+  "ip.roam_packet": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.primary_network": [
+   1,
+   18,
+   2,
+   "1"
+  ],
+  "ip.active_network": [
+   1,
+   45,
+   0,
+   null
+  ],
+  "ip.ntp.enable": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "ip.ntp.servers": [
+   0,
+   46,
+   2,
+   ""
+  ],
+  "ip.ntp.log": [
+   0,
+   35,
+   0,
+   null
+  ],
+  "ip.port_alternate": [
+   2,
+   29,
+   2,
+   "9100"
+  ],
+  "ip.port_json_config": [
+   2,
+   29,
+   2,
+   "9200"
+  ],
+  "ip.port_single_conn": [
+   2,
+   29,
+   2,
+   "9300"
+  ],
+  "ip.port_single_conn_idle_timeout": [
+   2,
+   47,
+   2,
+   "180"
+  ],
+  "ip.tls.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.tls.port": [
+   2,
+   29,
+   2,
+   "9143"
+  ],
+  "ip.tls.port_json_config": [
+   2,
+   29,
+   2,
+   "9243"
+  ],
+  "ip.https.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "ip.https.port": [
+   2,
+   29,
+   2,
+   "443"
+  ],
+  "ip.firewall.whitelist_in": [
+   0,
+   48,
+   2,
+   ""
+  ],
+  "ip.ping_gateway_interval": [
+   2,
+   3,
+   2,
+   "0"
+  ],
+  "media.status": [
+   1,
+   49,
+   0,
+   null
+  ],
+  "media.sense_mode": [
+   1,
+   50,
+   2,
+   "gap"
+  ],
+  "media.tof": [
+   4,
+   51,
+   2,
+   "0"
+  ],
+  "media.type": [
+   1,
+   52,
+   2,
+   "label"
+  ],
+  "media.bar_location": [
+   1,
+   53,
+   2,
+   "back"
+  ],
+  "media.printmode": [
+   1,
+   54,
+   2,
+   "tear off"
+  ],
+  "media.speed": [
+   4,
+   55,
+   2,
+   "4.0"
+  ],
+  "media.thermal_mode": [
+   1,
+   56,
+   2,
+   "TT"
+  ],
+  "media.cut_now": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "media.dynamic_length_calibration": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "media.part_number": [
+   0,
+   23,
+   2,
+   ""
+  ],
+  "media.serial_number": [
+   0,
+   23,
+   2,
+   ""
+  ],
+  "media.backfeed": [
+   1,
+   57,
+   2,
+   "N"
+  ],
+  "sensor.paper_supply": [
+   1,
+   49,
+   0,
+   null
+  ],
+  "sensor.peeler": [
+   1,
+   58,
+   0,
+   null
+  ],
+  "sensor.recall_factory_cal": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "sensor.peeler_present": [
+   1,
+   59,
+   0,
+   null
+  ],
+  "sensor.peel.cur": [
+   2,
+   12,
+   0,
+   null
+  ],
+  "sensor.gap.thold": [
+   2,
+   12,
+   0,
+   null
+  ],
+  "sensor.gap.cur": [
+   2,
+   12,
+   0,
+   null
+  ],
+  "sensor.gap.ppr_out_thold": [
+   2,
+   12,
+   0,
+   null
+  ],
+  "sensor.back_bar.thold": [
+   2,
+   12,
+   0,
+   null
+  ],
+  "sensor.back_bar.cur": [
+   2,
+   12,
+   0,
+   null
+  ],
+  "sensor.back_bar.ppr_out_thold": [
+   2,
+   12,
+   0,
+   null
+  ],
+  "sensor.head.temp": [
+   2,
+   12,
+   0,
+   null
+  ],
+  "sensor.head.temp_celsius": [
+   2,
+   60,
+   0,
+   null
+  ],
+  "sensor.head.temp_avg": [
+   2,
+   60,
+   0,
+   null
+  ],
+  "wlan.operating_mode": [
+   1,
+   61,
+   2,
+   "infrastructure"
+  ],
+  "wlan.essid": [
+   0,
+   24,
+   2,
+   ""
+  ],
+  "wlan.current_essid": [
+   0,
+   24,
+   0,
+   null
+  ],
+  "wlan.station_name": [
+   0,
+   24,
+   2,
+   "ZEBRA"
+  ],
+  "wlan.current_tx_rate": [
+   4,
+   62,
+   0,
+   null
+  ],
+  "wlan.associated": [
+   3,
+   5,
+   0,
+   null
+  ],
+  "wlan.power_save": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.preamble": [
+   1,
+   63,
+   2,
+   "long"
+  ],
+  "wlan.bssid": [
+   0,
+   1,
+   0,
+   null
+  ],
+  "wlan.firmware_version": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "wlan.signal_strength": [
+   2,
+   38,
+   0,
+   null
+  ],
+  "wlan.poor_signal_threshold": [
+   2,
+   38,
+   2,
+   "0"
+  ],
+  "wlan.international_mode": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.roam.signal": [
+   2,
+   64,
+   2,
+   "40"
+  ],
+  "wlan.roam.interval": [
+   2,
+   65,
+   2,
+   "5"
+  ],
+  "wlan.roam.interchannel_delay": [
+   2,
+   66,
+   2,
+   "400"
+  ],
+  "wlan.roam.max_chan_scan_time": [
+   2,
+   67,
+   2,
+   "100"
+  ],
+  "wlan.roam.rssi": [
+   2,
+   68,
+   2,
+   "80"
+  ],
+  "wlan.roam.max_fail": [
+   2,
+   69,
+   2,
+   "10"
+  ],
+  "wlan.roam.monitor": [
+   1,
+   70,
+   2,
+   "off"
+  ],
+  "wlan.channel": [
+   1,
+   71,
+   0,
+   null
+  ],
+  "wlan.wpa.psk": [
+   0,
+   23,
+   1,
+   null
+  ],
+  "wlan.wpa.wpa_version": [
+   1,
+   72,
+   0,
+   null
+  ],
+  "wlan.wpa.groupkey_ciphersuite": [
+   1,
+   73,
+   0,
+   null
+  ],
+  "wlan.wpa.pairwise_ciphersuite": [
+   1,
+   74,
+   0,
+   null
+  ],
+  "wlan.wpa.timecheck": [
+   1,
+   26,
+   2,
+   "yes"
+  ],
+  "wlan.8021x.ttls_tunnel": [
+   1,
+   75,
+   2,
+   "pap"
+  ],
+  "wlan.8021x.peap.validate_server_certificate": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "wlan.8021x.peap.anonymous_identity": [
+   0,
+   24,
+   2,
+   ""
+  ],
+  "wlan.adhocchannel": [
+   1,
+   76,
+   2,
+   "1"
+  ],
+  "wlan.adhocautomode": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "wlan.encryption_optional": [
+   3,
+   26,
+   2,
+   "no"
+  ],
+  "wlan.secure_ssid": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.ip.addr": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "wlan.ip.netmask": [
+   5,
+   77,
+   2,
+   "255.255.255.0"
+  ],
+  "wlan.ip.gateway": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "wlan.ip.arp_interval": [
+   2,
+   3,
+   2,
+   "0"
+  ],
+  "wlan.ip.dhcp.lease.length": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "wlan.ip.dhcp.lease.time_left": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "wlan.ip.dhcp.lease.server": [
+   5,
+   77,
+   0,
+   null
+  ],
+  "wlan.ip.dhcp.lease.last_attempt": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "wlan.ip.dhcp.cache_ip": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.ip.dhcp.cid_type": [
+   1,
+   78,
+   2,
+   "1"
+  ],
+  "wlan.ip.dhcp.cid_prefix": [
+   0,
+   79,
+   2,
+   ""
+  ],
+  "wlan.ip.dhcp.cid_enable": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.ip.dhcp.cid_suffix": [
+   0,
+   80,
+   2,
+   ""
+  ],
+  "wlan.ip.dhcp.cid_all": [
+   0,
+   81,
+   2,
+   ""
+  ],
+  "wlan.ip.dhcp.option12": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "wlan.ip.dhcp.option12_format": [
+   0,
+   38,
+   2,
+   ""
+  ],
+  "wlan.ip.dhcp.option12_value": [
+   0,
+   38,
+   0,
+   null
+  ],
+  "wlan.ip.dhcp.arp_verify": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "wlan.ip.dhcp.required": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "wlan.ip.protocol": [
+   1,
+   82,
+   2,
+   "all"
+  ],
+  "wlan.ip.default_addr_enable": [
+   1,
+   83,
+   2,
+   "on"
+  ],
+  "wlan.ip.timeout.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "wlan.ip.timeout.value": [
+   2,
+   84,
+   2,
+   "300"
+  ],
+  "wlan.ip.dns.domain": [
+   0,
+   48,
+   2,
+   ""
+  ],
+  "wlan.ip.dns.servers": [
+   0,
+   48,
+   2,
+   ""
+  ],
+  "wlan.ip.wins.addr": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "wlan.ip.wins.permanent_source": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.keep_alive.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "wlan.keep_alive.timeout": [
+   2,
+   85,
+   2,
+   "15"
+  ],
+  "wlan.security": [
+   1,
+   86,
+   2,
+   "none"
+  ],
+  "wlan.private_key_password": [
+   0,
+   24,
+   1,
+   null
+  ],
+  "wlan.username": [
+   0,
+   24,
+   2,
+   ""
+  ],
+  "wlan.password": [
+   0,
+   24,
+   1,
+   null
+  ],
+  "wlan.mac_addr": [
+   0,
+   13,
+   0,
+   null
+  ],
+  "wlan.mac_raw": [
+   0,
+   14,
+   0,
+   null
+  ],
+  "wlan.11n.greenfield": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "wlan.11n.short_gi_40mhz": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.11n.short_gi_20mhz": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.11n.rifs": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.11n.20mhz_only": [
+   1,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.11n.amsdu": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.region_code": [
+   1,
+   87,
+   0,
+   null
+  ],
+  "wlan.country_code": [
+   1,
+   88,
+   2,
+   "not selected"
+  ],
+  "wlan.user_channel_list": [
+   1,
+   89,
+   2,
+   "all"
+  ],
+  "wlan.allowed_band": [
+   1,
+   90,
+   2,
+   "all"
+  ],
+  "wlan.waveagent.enable": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.waveagent.udp_port": [
+   2,
+   91,
+   2,
+   "18100"
+  ],
+  "wlan.permitted_channels": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "wlan.active_channels": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "wlan.11d.enable": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "wlan.11d.current_country": [
+   0,
+   24,
+   0,
+   null
+  ],
+  "wlan.11d.discovered_channels": [
+   0,
+   48,
+   0,
+   null
+  ],
+  "wlan.authenticated": [
+   3,
+   5,
+   0,
+   null
+  ],
+  "wlan.available": [
+   3,
+   26,
+   0,
+   null
+  ],
+  "wlan.authentication_error": [
+   0,
+   48,
+   0,
+   null
+  ],
+  "wlan.regulatory_data_version": [
+   0,
+   92,
+   0,
+   null
+  ],
+  "wlan.pmf": [
+   1,
+   93,
+   2,
+   "enabled"
+  ],
+  "wlan.band_preference": [
+   1,
+   94,
+   2,
+   "none"
+  ],
+  "display.contrast": [
+   2,
+   95,
+   2,
+   "10"
+  ],
+  "display.backlight": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "display.orientation": [
+   1,
+   96,
+   2,
+   "normal"
+  ],
+  "display.backlight_on_time": [
+   2,
+   97,
+   2,
+   "600"
+  ],
+  "display.suppress_all_alerts": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "display.status_bar_suppress": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "display.language": [
+   1,
+   98,
+   2,
+   "english"
+  ],
+  "display.load_card": [
+   0,
+   39,
+   2,
+   ""
+  ],
+  "display.root_wml": [
+   0,
+   39,
+   2,
+   "INDEX.WML"
+  ],
+  "display.previous_displayed_card": [
+   0,
+   39,
+   2,
+   ""
+  ],
+  "display.password.current": [
+   2,
+   99,
+   1,
+   null
+  ],
+  "display.password.input": [
+   0,
+   39,
+   1,
+   null
+  ],
+  "display.password.length": [
+   2,
+   100,
+   2,
+   "4"
+  ],
+  "display.password.type": [
+   1,
+   101,
+   2,
+   "numeric"
+  ],
+  "display.password.level": [
+   1,
+   102,
+   2,
+   "none"
+  ],
+  "display.batch_counter": [
+   1,
+   27,
+   2,
+   "disabled"
+  ],
+  "memory.flash_size": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "memory.ram_size": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "memory.flash_free": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "memory.ram_free": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "file.type": [
+   0,
+   35,
+   2,
+   ""
+  ],
+  "file.delete": [
+   0,
+   12,
+   1,
+   null
+  ],
+  "file.print": [
+   0,
+   12,
+   1,
+   null
+  ],
+  "file.run": [
+   0,
+   12,
+   1,
+   null
+  ],
+  "file.rename": [
+   0,
+   103,
+   1,
+   null
+  ],
+  "file.append": [
+   0,
+   46,
+   1,
+   null
+  ],
+  "file.dir_format": [
+   1,
+   104,
+   2,
+   "zpl"
+  ],
+  "file.drive_info": [
+   6,
+   29,
+   2,
+   ""
+  ],
+  "file.drive_listing": [
+   6,
+   29,
+   2,
+   ""
+  ],
+  "file.capture_response.begin": [
+   0,
+   33,
+   1,
+   null
+  ],
+  "file.capture_response.end": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "file.capture_response.destination": [
+   1,
+   105,
+   2,
+   "printer_file"
+  ],
+  "odometer.user_label_count": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.user_label_count1": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.user_label_count2": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.total_label_count": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "odometer.total_print_length": [
+   2,
+   106,
+   0,
+   null
+  ],
+  "odometer.net_media_length": [
+   2,
+   106,
+   0,
+   null
+  ],
+  "odometer.net_ribbon_length": [
+   2,
+   106,
+   0,
+   null
+  ],
+  "odometer.latch_open_count": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.label_dot_length": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "odometer.media_marker_count": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.media_marker_count1": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.media_marker_count2": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.headclean": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.headnew": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.total_cuts": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "odometer.user_total_cuts": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.rfid.valid_resettable": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "odometer.rfid.void_resettable": [
+   2,
+   35,
+   2,
+   "0"
+  ],
+  "appl.date": [
+   0,
+   107,
+   0,
+   null
+  ],
+  "appl.name": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "appl.version": [
+   0,
+   108,
+   0,
+   null
+  ],
+  "appl.bootblock": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "appl.link_os_version": [
+   0,
+   109,
+   0,
+   null
+  ],
+  "appl.dl_id": [
+   2,
+   110,
+   0,
+   null
+  ],
+  "device.reset": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "device.restore_defaults": [
+   1,
+   111,
+   1,
+   null
+  ],
+  "device.prompted_network_reset": [
+   3,
+   26,
+   1,
+   null
+  ],
+  "device.sensor_profile": [
+   1,
+   112,
+   2,
+   "print"
+  ],
+  "device.friendly_name": [
+   0,
+   1,
+   2,
+   "40J132100037"
+  ],
+  "device.company_name": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "device.product_name": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "device.product_name_submodel": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "device.company_contact": [
+   0,
+   39,
+   2,
+   ""
+  ],
+  "device.location": [
+   0,
+   39,
+   2,
+   ""
+  ],
+  "device.position.latitude": [
+   4,
+   113,
+   2,
+   "0.000000"
+  ],
+  "device.position.longitude": [
+   4,
+   114,
+   2,
+   "0.000000"
+  ],
+  "device.position.altitude": [
+   4,
+   115,
+   2,
+   "0.000000"
+  ],
+  "device.position.accuracy": [
+   4,
+   116,
+   2,
+   "0.000000"
+  ],
+  "device.status": [
+   1,
+   117,
+   0,
+   null
+  ],
+  "device.idle_display_format": [
+   1,
+   118,
+   2,
+   "fw version"
+  ],
+  "device.idle_display_value": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "device.sensor_select": [
+   1,
+   119,
+   2,
+   "transmissive"
+  ],
+  "device.jobs_print": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "device.languages": [
+   1,
+   120,
+   2,
+   "epl_zpl"
+  ],
+  "device.cph_enable": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "device.cph_interval": [
+   2,
+   29,
+   2,
+   "0"
+  ],
+  "device.macro_get": [
+   0,
+   35,
+   0,
+   null
+  ],
+  "device.user_p1": [
+   0,
+   33,
+   2,
+   ""
+  ],
+  "device.user_p2": [
+   0,
+   33,
+   2,
+   ""
+  ],
+  "device.uptime": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "device.printhead.serialnum": [
+   0,
+   121,
+   0,
+   null
+  ],
+  "device.printhead.resolution": [
+   4,
+   122,
+   0,
+   null
+  ],
+  "device.printhead.test.summary": [
+   0,
+   38,
+   0,
+   null
+  ],
+  "device.frontpanel.line1": [
+   0,
+   12,
+   2,
+   ""
+  ],
+  "device.frontpanel.line2": [
+   0,
+   12,
+   2,
+   ""
+  ],
+  "device.frontpanel.line3": [
+   0,
+   12,
+   2,
+   ""
+  ],
+  "device.frontpanel.line4": [
+   0,
+   12,
+   2,
+   ""
+  ],
+  "device.frontpanel.key_press": [
+   0,
+   123,
+   1,
+   null
+  ],
+  "device.unique_id": [
+   0,
+   124,
+   0,
+   null
+  ],
+  "device.xml.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "device.ff_disable": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "device.pnp_option": [
+   1,
+   125,
+   2,
+   "zpl"
+  ],
+  "device.pnp_string": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "device.download_connection_timeout": [
+   2,
+   29,
+   2,
+   "0"
+  ],
+  "device.print_reprogram_2key": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "device.epl_legacy_mode": [
+   0,
+   23,
+   2,
+   "off"
+  ],
+  "device.command_override.add": [
+   0,
+   39,
+   1,
+   null
+  ],
+  "device.command_override.clear": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "device.command_override.list": [
+   0,
+   35,
+   0,
+   null
+  ],
+  "device.command_override.active": [
+   3,
+   26,
+   2,
+   "yes"
+  ],
+  "device.oem.home_url": [
+   0,
+   12,
+   2,
+   "https://www.zebra.com"
+  ],
+  "device.oem.support_url": [
+   0,
+   12,
+   2,
+   "https://www.zebra.com/support.html"
+  ],
+  "device.oem.manufacturer_name": [
+   0,
+   12,
+   2,
+   "Zebra Technologies"
+  ],
+  "device.oem.model_name": [
+   0,
+   12,
+   2,
+   ""
+  ],
+  "device.host_identification": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "device.host_status": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "device.pause": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "device.unpause": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "device.serial_numbers.mlb": [
+   0,
+   126,
+   0,
+   null
+  ],
+  "device.serial_numbers.mlb_date": [
+   0,
+   126,
+   0,
+   null
+  ],
+  "device.serial_numbers.option_board": [
+   0,
+   126,
+   0,
+   null
+  ],
+  "device.serial_numbers.option_board_date": [
+   0,
+   126,
+   0,
+   null
+  ],
+  "device.serial_numbers.control_panel": [
+   0,
+   126,
+   0,
+   null
+  ],
+  "device.serial_numbers.control_panel_date": [
+   0,
+   126,
+   0,
+   null
+  ],
+  "device.serial_numbers.cutter": [
+   0,
+   126,
+   0,
+   null
+  ],
+  "device.serial_numbers.cutter_date": [
+   0,
+   126,
+   0,
+   null
+  ],
+  "device.cutter_installed": [
+   1,
+   26,
+   0,
+   null
+  ],
+  "device.bluetooth_installed": [
+   1,
+   26,
+   0,
+   null
+  ],
+  "device.print_out_report": [
+   1,
+   127,
+   1,
+   null
+  ],
+  "device.diagnostic_print": [
+   1,
+   128,
+   2,
+   "disabled"
+  ],
+  "device.job_log.total_jobs": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "device.internal_wired_setting_location": [
+   1,
+   129,
+   0,
+   null
+  ],
+  "device.print_geometry_revision": [
+   0,
+   130,
+   0,
+   null
+  ],
+  "device.user_vars.create": [
+   0,
+   12,
+   1,
+   null
+  ],
+  "device.user_vars.set_range": [
+   0,
+   12,
+   1,
+   null
+  ],
+  "device.syslog.enable": [
+   1,
+   131,
+   2,
+   "off"
+  ],
+  "device.syslog.configuration": [
+   0,
+   132,
+   2,
+   ""
+  ],
+  "device.syslog.save_local_file": [
+   1,
+   5,
+   2,
+   "no"
+  ],
+  "device.syslog.log_max_file_size": [
+   2,
+   133,
+   2,
+   "10000"
+  ],
+  "device.syslog.entries": [
+   0,
+   134,
+   0,
+   null
+  ],
+  "device.syslog.clear_log": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "device.feature.mfi": [
+   1,
+   135,
+   0,
+   null
+  ],
+  "device.feature.bluetooth_le": [
+   1,
+   135,
+   0,
+   null
+  ],
+  "device.feature.ribbon_cartridge": [
+   1,
+   135,
+   0,
+   null
+  ],
+  "device.feature.lock": [
+   1,
+   135,
+   0,
+   null
+  ],
+  "device.feature.802_11ac": [
+   1,
+   135,
+   0,
+   null
+  ],
+  "device.feature.applicator": [
+   1,
+   135,
+   0,
+   null
+  ],
+  "device.feature.lighted_arrows": [
+   1,
+   135,
+   0,
+   null
+  ],
+  "device.feature.head_element_test": [
+   1,
+   135,
+   0,
+   null
+  ],
+  "device.set_clock_to_build_date": [
+   1,
+   27,
+   2,
+   "enabled"
+  ],
+  "device.protected_mode": [
+   1,
+   0,
+   0,
+   null
+  ],
+  "device.protected_mode_allowed": [
+   1,
+   5,
+   0,
+   null
+  ],
+  "device.allow_firmware_downloads": [
+   1,
+   26,
+   2,
+   "yes"
+  ],
+  "input.capture": [
+   1,
+   136,
+   2,
+   "off"
+  ],
+  "print.tone": [
+   4,
+   137,
+   2,
+   "10.0"
+  ],
+  "print.tone_format": [
+   1,
+   104,
+   2,
+   "zpl"
+  ],
+  "print.tone_zpl": [
+   4,
+   137,
+   2,
+   "10.0"
+  ],
+  "print.troubleshooting_label_choices": [
+   1,
+   138,
+   2,
+   "darkness"
+  ],
+  "print.troubleshooting_label_print": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "print.legacy_compatibility": [
+   1,
+   139,
+   2,
+   "off"
+  ],
+  "rtc.time": [
+   0,
+   107,
+   2,
+   ""
+  ],
+  "rtc.date": [
+   0,
+   107,
+   2,
+   ""
+  ],
+  "rtc.timezone": [
+   0,
+   39,
+   2,
+   "UTC00"
+  ],
+  "rtc.exists": [
+   1,
+   26,
+   0,
+   null
+  ],
+  "rtc.unix_timestamp": [
+   2,
+   35,
+   2,
+   ""
+  ],
+  "usb.device.vendor_id": [
+   0,
+   140,
+   0,
+   null
+  ],
+  "usb.device.product_id": [
+   0,
+   140,
+   0,
+   null
+  ],
+  "usb.device.device_version": [
+   0,
+   2,
+   0,
+   null
+  ],
+  "usb.device.product_string": [
+   0,
+   39,
+   0,
+   null
+  ],
+  "usb.device.manufacturer_string": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "usb.device.serial_string": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "usb.device.device_id_string": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "usb.device.device_unique_id": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "usb.connected": [
+   1,
+   5,
+   0,
+   null
+  ],
+  "usb.halt": [
+   3,
+   26,
+   2,
+   "no"
+  ],
+  "log.reboot.code": [
+   0,
+   123,
+   0,
+   null
+  ],
+  "log.reboot.reason": [
+   0,
+   126,
+   0,
+   null
+  ],
+  "log.reboot.codes": [
+   0,
+   121,
+   0,
+   null
+  ],
+  "netmanage.type": [
+   1,
+   141,
+   2,
+   "none"
+  ],
+  "netmanage.status_code": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "netmanage.state_code": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "netmanage.error_code": [
+   0,
+   3,
+   0,
+   null
+  ],
+  "netmanage.avalanche.model_name": [
+   0,
+   142,
+   2,
+   ""
+  ],
+  "netmanage.avalanche.interval": [
+   2,
+   35,
+   2,
+   "60000"
+  ],
+  "netmanage.avalanche.startup_update": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "netmanage.avalanche.interval_update": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "netmanage.avalanche.agent_addr": [
+   0,
+   12,
+   2,
+   "0.0.0.0"
+  ],
+  "netmanage.avalanche.available_agent": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "netmanage.avalanche.available_port": [
+   2,
+   44,
+   2,
+   "1"
+  ],
+  "netmanage.avalanche.encryption_type": [
+   2,
+   12,
+   2,
+   "0"
+  ],
+  "netmanage.avalanche.udp_timeout": [
+   2,
+   35,
+   2,
+   "3000"
+  ],
+  "netmanage.avalanche.tcp_connection_timeout": [
+   2,
+   35,
+   2,
+   "3000"
+  ],
+  "netmanage.avalanche.terminal_id": [
+   2,
+   29,
+   2,
+   "0"
+  ],
+  "netmanage.avalanche.realtime_update_int": [
+   2,
+   35,
+   2,
+   "300"
+  ],
+  "netmanage.avalanche.text_msg.print": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "netmanage.avalanche.text_msg.display": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "netmanage.avalanche.text_msg.beep": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "netmanage.avalanche.set_property": [
+   0,
+   38,
+   1,
+   null
+  ],
+  "zbi.revision": [
+   0,
+   109,
+   0,
+   null
+  ],
+  "zbi.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "zbi.state": [
+   1,
+   143,
+   0,
+   null
+  ],
+  "zbi.last_error": [
+   0,
+   38,
+   0,
+   null
+  ],
+  "zbi.program_list": [
+   0,
+   12,
+   2,
+   "(*Uninitialized*)"
+  ],
+  "zbi.start_info.file_name": [
+   0,
+   39,
+   2,
+   "*:\\.BAZ"
+  ],
+  "zbi.start_info.memory_alloc": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "zbi.start_info.execute": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "zbi.control.terminate": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "zbi.control.run": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "zbi.control.break": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "zbi.control.restart": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "zbi.control.step": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "zbi.control.variable_name": [
+   0,
+   144,
+   2,
+   ""
+  ],
+  "zbi.control.variable_value": [
+   0,
+   144,
+   2,
+   ""
+  ],
+  "zbi.control.add_breakpoint": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "zbi.control.delete_breakpoint": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "zbi.control.clear_breakpoints": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "zbi.control.line_number": [
+   0,
+   144,
+   2,
+   "0"
+  ],
+  "zbi.reseller_key": [
+   0,
+   24,
+   1,
+   null
+  ],
+  "zbi.key": [
+   0,
+   107,
+   0,
+   null
+  ],
+  "zbi.running_program_name": [
+   0,
+   39,
+   0,
+   null
+  ],
+  "zbi.key_version": [
+   0,
+   109,
+   0,
+   null
+  ],
+  "zpl.calibrate": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "zpl.relative_darkness": [
+   2,
+   145,
+   2,
+   "0"
+  ],
+  "zpl.save": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "zpl.label_length": [
+   2,
+   146,
+   2,
+   "1225"
+  ],
+  "zpl.left_position": [
+   2,
+   147,
+   2,
+   "0"
+  ],
+  "zpl.format_prefix": [
+   0,
+   148,
+   2,
+   "5E"
+  ],
+  "zpl.command_prefix": [
+   0,
+   148,
+   2,
+   "7E"
+  ],
+  "zpl.delimiter": [
+   0,
+   148,
+   2,
+   "2C"
+  ],
+  "zpl.zpl_mode": [
+   1,
+   149,
+   2,
+   "zpl II"
+  ],
+  "zpl.system_status": [
+   0,
+   150,
+   0,
+   null
+  ],
+  "zpl.system_error": [
+   0,
+   151,
+   0,
+   null
+  ],
+  "zpl.no_errors_boot_done": [
+   1,
+   5,
+   0,
+   null
+  ],
+  "zpl.print_orientation": [
+   1,
+   152,
+   2,
+   "nor"
+  ],
+  "zpl.label_top": [
+   2,
+   153,
+   2,
+   "0"
+  ],
+  "internal_wired.ip.addr": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "internal_wired.ip.netmask": [
+   5,
+   77,
+   2,
+   "255.255.255.0"
+  ],
+  "internal_wired.ip.gateway": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "internal_wired.ip.arp_interval": [
+   2,
+   3,
+   2,
+   "0"
+  ],
+  "internal_wired.ip.dhcp.lease.length": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "internal_wired.ip.dhcp.lease.time_left": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "internal_wired.ip.dhcp.lease.server": [
+   5,
+   77,
+   0,
+   null
+  ],
+  "internal_wired.ip.dhcp.lease.last_attempt": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "internal_wired.ip.dhcp.cache_ip": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "internal_wired.ip.dhcp.cid_type": [
+   1,
+   78,
+   2,
+   "1"
+  ],
+  "internal_wired.ip.dhcp.cid_prefix": [
+   0,
+   79,
+   2,
+   ""
+  ],
+  "internal_wired.ip.dhcp.cid_enable": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "internal_wired.ip.dhcp.cid_suffix": [
+   0,
+   80,
+   2,
+   ""
+  ],
+  "internal_wired.ip.dhcp.cid_all": [
+   0,
+   81,
+   2,
+   ""
+  ],
+  "internal_wired.ip.dhcp.option12": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "internal_wired.ip.dhcp.option12_format": [
+   0,
+   38,
+   2,
+   ""
+  ],
+  "internal_wired.ip.dhcp.option12_value": [
+   0,
+   38,
+   0,
+   null
+  ],
+  "internal_wired.ip.dhcp.arp_verify": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "internal_wired.ip.protocol": [
+   1,
+   82,
+   2,
+   "all"
+  ],
+  "internal_wired.ip.default_addr_enable": [
+   1,
+   83,
+   2,
+   "on"
+  ],
+  "internal_wired.ip.timeout.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "internal_wired.ip.timeout.value": [
+   2,
+   84,
+   2,
+   "300"
+  ],
+  "internal_wired.ip.dns.domain": [
+   0,
+   48,
+   2,
+   ""
+  ],
+  "internal_wired.ip.dns.servers": [
+   0,
+   48,
+   2,
+   ""
+  ],
+  "internal_wired.ip.wins.addr": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "internal_wired.ip.wins.permanent_source": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "internal_wired.mac_addr": [
+   0,
+   13,
+   0,
+   null
+  ],
+  "internal_wired.mac_raw": [
+   0,
+   14,
+   0,
+   null
+  ],
+  "internal_wired.auto_switchover": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "internal_wired.installed": [
+   3,
+   26,
+   0,
+   null
+  ],
+  "internal_wired.link": [
+   3,
+   5,
+   0,
+   null
+  ],
+  "internal_wired.activity_led": [
+   1,
+   154,
+   2,
+   "blink"
+  ],
+  "internal_wired.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "internal_wired.8021x.security": [
+   1,
+   155,
+   2,
+   "none"
+  ],
+  "internal_wired.8021x.username": [
+   0,
+   24,
+   2,
+   ""
+  ],
+  "internal_wired.8021x.password": [
+   0,
+   24,
+   1,
+   null
+  ],
+  "internal_wired.8021x.privkey_password": [
+   0,
+   24,
+   1,
+   null
+  ],
+  "internal_wired.8021x.ttls_tunnel": [
+   1,
+   75,
+   2,
+   "pap"
+  ],
+  "internal_wired.8021x.peap.validate_server_certificate": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "internal_wired.8021x.peap.anonymous_identity": [
+   0,
+   24,
+   2,
+   ""
+  ],
+  "rfid.position.program": [
+   0,
+   156,
+   2,
+   "F0"
+  ],
+  "rfid.error.response": [
+   0,
+   33,
+   0,
+   null
+  ],
+  "rfid.reader_1.model": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "rfid.reader_1.hardware_version": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "rfid.reader_1.firmware_version": [
+   0,
+   12,
+   0,
+   null
+  ],
+  "rfid.reader_1.antenna_port": [
+   1,
+   157,
+   2,
+   "A1"
+  ],
+  "rfid.reader_1.power.read": [
+   2,
+   3,
+   2,
+   "16"
+  ],
+  "rfid.reader_1.power.write": [
+   2,
+   3,
+   2,
+   "16"
+  ],
+  "rfid.tag.test.content": [
+   1,
+   158,
+   2,
+   "quick"
+  ],
+  "rfid.tag.test.result_line1": [
+   0,
+   3,
+   2,
+   "none"
+  ],
+  "rfid.tag.test.result_line2": [
+   0,
+   3,
+   2,
+   ""
+  ],
+  "rfid.tag.test.execute": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "rfid.tag.calibrate": [
+   1,
+   159,
+   1,
+   null
+  ],
+  "rfid.tag.read.content": [
+   1,
+   160,
+   2,
+   "epc"
+  ],
+  "rfid.tag.read.result_line1": [
+   0,
+   3,
+   2,
+   "none"
+  ],
+  "rfid.tag.read.result_line2": [
+   0,
+   3,
+   2,
+   ""
+  ],
+  "rfid.tag.read.result_line1_alternate": [
+   0,
+   3,
+   2,
+   "none"
+  ],
+  "rfid.tag.read.result_line2_alternate": [
+   0,
+   3,
+   2,
+   ""
+  ],
+  "rfid.tag.read.execute": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "rfid.enable": [
+   1,
+   131,
+   2,
+   "off"
+  ],
+  "rfid.region_code": [
+   1,
+   87,
+   0,
+   null
+  ],
+  "rfid.country_code": [
+   1,
+   161,
+   2,
+   "not selected"
+  ],
+  "rfid.hop_table_version": [
+   0,
+   92,
+   0,
+   null
+  ],
+  "rfid.recipe_version": [
+   2,
+   162,
+   0,
+   null
+  ],
+  "rfid.antenna_sweep": [
+   3,
+   139,
+   2,
+   "off"
+  ],
+  "rfid.adaptive_antenna": [
+   1,
+   163,
+   2,
+   "none"
+  ],
+  "rfid.log.enabled": [
+   1,
+   26,
+   2,
+   "no"
+  ],
+  "rfid.log.clear": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "rfid.void_print_length": [
+   2,
+   164,
+   2,
+   "300"
+  ],
+  "rfid.label_tries": [
+   2,
+   165,
+   2,
+   "3"
+  ],
+  "rfid.error_handling": [
+   1,
+   166,
+   2,
+   "none"
+  ],
+  "rfid.void_print_speed": [
+   4,
+   55,
+   2,
+   "4.0"
+  ],
+  "interface.network.settings_require_reset": [
+   3,
+   5,
+   0,
+   null
+  ],
+  "interface.network.active.printserver": [
+   1,
+   45,
+   0,
+   null
+  ],
+  "interface.network.active.ip_addr": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "interface.network.active.netmask": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "interface.network.active.gateway": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "interface.network.active.protocol": [
+   1,
+   82,
+   2,
+   "all"
+  ],
+  "interface.network.active.default_addr_enable": [
+   1,
+   83,
+   2,
+   "on"
+  ],
+  "interface.network.active.wins_addr": [
+   5,
+   77,
+   2,
+   "0.0.0.0"
+  ],
+  "interface.network.active.arp_interval": [
+   2,
+   3,
+   2,
+   "0"
+  ],
+  "interface.network.active.mac_addr": [
+   0,
+   13,
+   0,
+   null
+  ],
+  "interface.network.active.mac_raw": [
+   0,
+   14,
+   0,
+   null
+  ],
+  "interface.network.active.server_protocol": [
+   1,
+   167,
+   0,
+   null
+  ],
+  "interface.network.active.server_address": [
+   5,
+   77,
+   0,
+   null
+  ],
+  "interface.network.active.dhcp_received_host_name": [
+   0,
+   48,
+   0,
+   null
+  ],
+  "interface.network.active.cable_type": [
+   0,
+   168,
+   0,
+   null
+  ],
+  "interface.network.active.speed": [
+   2,
+   169,
+   0,
+   null
+  ],
+  "interface.network.active.rx_packets": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "interface.network.active.rx_errors": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "interface.network.active.tx_packets": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "interface.network.active.tx_errors": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "interface.network.active.protocol_error": [
+   0,
+   170,
+   0,
+   null
+  ],
+  "cutter.clean_cutter": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "apl.enable": [
+   1,
+   163,
+   2,
+   "none"
+  ],
+  "apl.framework_version": [
+   0,
+   107,
+   0,
+   null
+  ],
+  "apl.version": [
+   0,
+   109,
+   0,
+   null
+  ],
+  "apl.settings": [
+   0,
+   48,
+   2,
+   ""
+  ],
+  "apl.o.graphics_byte_width": [
+   2,
+   12,
+   2,
+   ""
+  ],
+  "formats.cancel_all": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "ezpl.print_width": [
+   2,
+   171,
+   2,
+   "1280"
+  ],
+  "ezpl.media_type": [
+   1,
+   172,
+   2,
+   "auto_detect"
+  ],
+  "ezpl.print_method": [
+   1,
+   173,
+   2,
+   "thermal trans"
+  ],
+  "ezpl.tear_off": [
+   2,
+   153,
+   2,
+   "0"
+  ],
+  "ezpl.print_mode": [
+   1,
+   54,
+   2,
+   "tear off"
+  ],
+  "ezpl.reprint_mode": [
+   3,
+   0,
+   2,
+   "off"
+  ],
+  "ezpl.head_close_action": [
+   1,
+   174,
+   2,
+   "feed"
+  ],
+  "ezpl.power_up_action": [
+   1,
+   174,
+   2,
+   "no motion"
+  ],
+  "ezpl.label_length_max": [
+   4,
+   175,
+   2,
+   "15"
+  ],
+  "ezpl.manual_calibration": [
+   1,
+   176,
+   0,
+   null
+  ],
+  "ezpl.label_sensor": [
+   2,
+   12,
+   2,
+   "0"
+  ],
+  "ezpl.take_label": [
+   2,
+   12,
+   2,
+   "0"
+  ],
+  "ezpl.restore_defaults": [
+   1,
+   177,
+   1,
+   null
+  ],
+  "alerts.configured": [
+   0,
+   178,
+   2,
+   "COLD START,SNMP,Y,N,255.255.255.255,162,N"
+  ],
+  "alerts.add": [
+   0,
+   12,
+   1,
+   null
+  ],
+  "alerts.conditions": [
+   1,
+   179,
+   0,
+   null
+  ],
+  "alerts.destinations": [
+   1,
+   180,
+   0,
+   null
+  ],
+  "alerts.tracked_settings.zbi_notified": [
+   0,
+   178,
+   2,
+   ""
+  ],
+  "alerts.tracked_settings.log_tracked": [
+   0,
+   178,
+   2,
+   ""
+  ],
+  "alerts.tracked_settings.max_log_entries": [
+   2,
+   178,
+   2,
+   "100"
+  ],
+  "alerts.tracked_settings.clear_log": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "alerts.http.proxy": [
+   0,
+   144,
+   2,
+   ""
+  ],
+  "alerts.http.logging.entries": [
+   0,
+   181,
+   0,
+   null
+  ],
+  "alerts.http.logging.max_entries": [
+   2,
+   178,
+   2,
+   "500"
+  ],
+  "alerts.http.logging.clear": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "alerts.http.authentication.add": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "alerts.http.authentication.remove": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "alerts.http.authentication.entries": [
+   0,
+   144,
+   0,
+   null
+  ],
+  "weblink.enable": [
+   3,
+   0,
+   0,
+   null
+  ],
+  "weblink.printer_reset_required": [
+   3,
+   26,
+   0,
+   null
+  ],
+  "weblink.restore_defaults": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "weblink.logging.entries": [
+   0,
+   181,
+   0,
+   null
+  ],
+  "weblink.logging.max_entries": [
+   2,
+   178,
+   2,
+   "500"
+  ],
+  "weblink.logging.clear": [
+   0,
+   3,
+   1,
+   null
+  ],
+  "weblink.ip.conn1.location": [
+   0,
+   144,
+   2,
+   ""
+  ],
+  "weblink.ip.conn1.retry_interval": [
+   2,
+   182,
+   2,
+   "10"
+  ],
+  "weblink.ip.conn1.proxy": [
+   0,
+   144,
+   2,
+   ""
+  ],
+  "weblink.ip.conn1.maximum_simultaneous_connections": [
+   2,
+   183,
+   2,
+   "10"
+  ],
+  "weblink.ip.conn1.authentication.add": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "weblink.ip.conn1.authentication.remove": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "weblink.ip.conn1.authentication.entries": [
+   0,
+   144,
+   0,
+   null
+  ],
+  "weblink.ip.conn1.test.location": [
+   0,
+   144,
+   2,
+   "http://www.zebra.com/apps/linktest"
+  ],
+  "weblink.ip.conn1.test.test_on": [
+   1,
+   184,
+   2,
+   "failure"
+  ],
+  "weblink.ip.conn1.test.retry_interval": [
+   2,
+   185,
+   2,
+   "900"
+  ],
+  "weblink.ip.conn1.num_connections": [
+   2,
+   38,
+   0,
+   null
+  ],
+  "weblink.ip.conn1.retry_interval_random_max": [
+   2,
+   22,
+   2,
+   "120"
+  ],
+  "weblink.ip.conn2.location": [
+   0,
+   144,
+   2,
+   ""
+  ],
+  "weblink.ip.conn2.retry_interval": [
+   2,
+   182,
+   2,
+   "10"
+  ],
+  "weblink.ip.conn2.proxy": [
+   0,
+   144,
+   2,
+   ""
+  ],
+  "weblink.ip.conn2.maximum_simultaneous_connections": [
+   2,
+   183,
+   2,
+   "10"
+  ],
+  "weblink.ip.conn2.authentication.add": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "weblink.ip.conn2.authentication.remove": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "weblink.ip.conn2.authentication.entries": [
+   0,
+   144,
+   0,
+   null
+  ],
+  "weblink.ip.conn2.test.location": [
+   0,
+   144,
+   2,
+   "http://www.zebra.com/apps/linktest"
+  ],
+  "weblink.ip.conn2.test.test_on": [
+   1,
+   184,
+   2,
+   "failure"
+  ],
+  "weblink.ip.conn2.test.retry_interval": [
+   2,
+   185,
+   2,
+   "900"
+  ],
+  "weblink.ip.conn2.num_connections": [
+   2,
+   38,
+   0,
+   null
+  ],
+  "weblink.ip.conn2.retry_interval_random_max": [
+   2,
+   22,
+   2,
+   "120"
+  ],
+  "weblink.cloud_connect.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "weblink.cloud_connect.connect": [
+   3,
+   186,
+   1,
+   null
+  ],
+  "weblink.cloud_connect.status": [
+   1,
+   187,
+   0,
+   null
+  ],
+  "weblink.cloud_connect.connection_key": [
+   0,
+   188,
+   0,
+   null
+  ],
+  "weblink.cloud_connect.configuration_key": [
+   0,
+   188,
+   2,
+   "0000000000"
+  ],
+  "weblink.cloud_connect.configuration_confirmation": [
+   1,
+   189,
+   2,
+   "none"
+  ],
+  "weblink.zebra_connector.version": [
+   0,
+   190,
+   0,
+   null
+  ],
+  "weblink.zebra_connector.enable": [
+   3,
+   0,
+   2,
+   "on"
+  ],
+  "weblink.zebra_connector.proxy": [
+   0,
+   144,
+   2,
+   ""
+  ],
+  "weblink.zebra_connector.authentication.add": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "weblink.zebra_connector.authentication.remove": [
+   0,
+   144,
+   1,
+   null
+  ],
+  "weblink.zebra_connector.authentication.entries": [
+   0,
+   144,
+   0,
+   null
+  ],
+  "capture.channel1.port": [
+   1,
+   191,
+   2,
+   "off"
+  ],
+  "capture.channel1.delimiter": [
+   0,
+   23,
+   2,
+   "\n"
+  ],
+  "capture.channel1.max_length": [
+   2,
+   192,
+   2,
+   "1000"
+  ],
+  "capture.channel1.count": [
+   2,
+   35,
+   0,
+   null
+  ],
+  "ribbon.part_number": [
+   0,
+   23,
+   2,
+   ""
+  ],
+  "ribbon.serial_number": [
+   0,
+   23,
+   2,
+   ""
+  ]
+ }
+}

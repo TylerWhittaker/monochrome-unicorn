@@ -1,0 +1,291 @@
+#!/usr/bin/env node
+/*
+ * build.mjs -- assemble dist/INDEX.SHTML and the V_*.SHTML helper files.
+ *
+ * The printer will not serve a page that references local assets we cannot
+ * upload alongside it, and its web server pushes about 56 KB/s, so the
+ * build has two jobs: fold every asset into one file, and keep that file
+ * small. Ace is the one exception -- it is pulled from cdnjs on demand,
+ * with a plain-textarea fallback when the client has no internet.
+ *
+ *   node tools/build.mjs [--schema data/sgd-schema.json] [--out dist]
+ */
+
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { resolve, join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/* Settings shown in the page header, read live by the SSI preprocessor. */
+const BOOT_VARS = [
+  'device.product_name',
+  'device.friendly_name',
+  'device.unique_id',
+  'device.host_status',
+  'appl.name',
+  'head.resolution.in_dpi',
+  'media.darkness',
+  'print.tone',
+  'ip.addr',
+];
+
+/* ------------------------------------------------------------------ *
+ * A very small ES-module bundler
+ *
+ * Every module under src/js is ours, so rather than pull in a bundler we
+ * resolve the import graph, strip the import/export keywords and splice
+ * the sources into one IIFE. The checks below make the shortcuts safe:
+ * anything this cannot handle is a hard error rather than silent bad output.
+ * ------------------------------------------------------------------ */
+
+const IMPORT_RE = /^\s*import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]\s*;?\s*$/gm;
+const BARE_IMPORT_RE = /^\s*import\s+(?!\{)[^\n]*$/gm;
+const EXPORT_DECL_RE = /^(\s*)export\s+(?=(?:async\s+)?(?:function|const|let|var|class)\b)/gm;
+const EXPORT_OTHER_RE = /^\s*export\s*(?:\{|default|\*)/gm;
+
+function parseModule(path) {
+  const source = readFileSync(path, 'utf8');
+
+  const bare = source.match(BARE_IMPORT_RE);
+  if (bare) {
+    throw new Error(`${path}: only "import { names } from './mod.js'" is supported, saw:\n  ${bare[0].trim()}`);
+  }
+  const other = source.match(EXPORT_OTHER_RE);
+  if (other) {
+    throw new Error(`${path}: only "export function/const/class" is supported, saw:\n  ${other[0].trim()}`);
+  }
+
+  const deps = [];
+  const names = [];
+  for (const match of source.matchAll(IMPORT_RE)) {
+    deps.push(match[2]);
+    for (const n of match[1].split(',')) {
+      const name = n.trim();
+      if (name) names.push(name);
+    }
+  }
+
+  const exported = [];
+  for (const match of source.matchAll(/^\s*export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z0-9_$]+)/gm)) {
+    exported.push(match[1]);
+  }
+
+  const body = source
+    .replace(IMPORT_RE, '')
+    .replace(EXPORT_DECL_RE, '$1');
+
+  return { path, deps, imported: names, exported, body };
+}
+
+/** Depth-first walk of the import graph, entry point last. */
+function bundle(entryPath) {
+  const modules = new Map();
+  const order = [];
+  const visiting = new Set();
+
+  const visit = (path) => {
+    if (modules.has(path)) return;
+    if (visiting.has(path)) throw new Error(`Import cycle at ${path}`);
+    visiting.add(path);
+
+    const mod = parseModule(path);
+    for (const dep of mod.deps) {
+      if (!dep.startsWith('.')) throw new Error(`${path}: cannot inline non-relative import "${dep}"`);
+      visit(resolve(dirname(path), dep));
+    }
+    visiting.delete(path);
+    modules.set(path, mod);
+    order.push(mod);
+  };
+  visit(entryPath);
+
+  // One shared scope means exported names must be globally unique.
+  const owners = new Map();
+  for (const mod of order) {
+    for (const name of mod.exported) {
+      if (owners.has(name)) {
+        throw new Error(`Duplicate exported name "${name}" in ${mod.path} and ${owners.get(name)}`);
+      }
+      owners.set(name, mod.path);
+    }
+  }
+  for (const mod of order) {
+    for (const name of mod.imported) {
+      if (!owners.has(name)) {
+        throw new Error(`${mod.path}: imports "${name}", which no module exports`);
+      }
+    }
+  }
+
+  const parts = order.map((mod) => {
+    const rel = mod.path.slice(ROOT.length + 1);
+    return `/* ---- ${rel} ---- */\n${mod.body.trim()}\n`;
+  });
+  return `(function(){\n"use strict";\n${parts.join('\n')}\n})();`;
+}
+
+/* ------------------------------------------------------------------ *
+ * Assets
+ * ------------------------------------------------------------------ */
+
+function buildCss(outDir) {
+  const cssOut = join(outDir, 'app.css');
+  execFileSync('npx', [
+    'tailwindcss',
+    '-i', join(ROOT, 'src/css/app.css'),
+    '-o', cssOut,
+    '--minify',
+  ], { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] });
+  return readFileSync(cssOut, 'utf8').trim();
+}
+
+/**
+ * Minify our own JS just enough to matter: strip block/line comments and
+ * collapse indentation. Deliberately conservative -- no renaming, no
+ * statement rewriting -- so a build never changes behaviour.
+ */
+function squeeze(js) {
+  return js
+    // Block comments, but not inside a string or regex literal. Our sources
+    // keep comments on their own lines, so anchoring to line starts is safe.
+    .replace(/^[ \t]*\/\*[\s\S]*?\*\/[ \t]*$/gm, '')
+    .replace(/^[ \t]*\/\/[^\n]*$/gm, '')
+    .replace(/^[ \t]+/gm, '')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+
+/** The @name=value@ block the preprocessor fills in before serving. */
+function bootVarsBlock() {
+  return BOOT_VARS
+    .map((name) => `@${name}=<!--#exec cmd="/Zebra/cgi/getvar.cgi ${name}" -->@`)
+    .join('\n');
+}
+
+/**
+ * One helper file per settings branch. Each line frames the value with @...@
+ * so the client can parse it unambiguously -- a bare getvar on a whole
+ * branch returns a human-readable listing whose format varies by setting.
+ */
+function helperFiles(schema) {
+  const slow = new Set(schema.slow || []);
+  const readable = Object.entries(schema.settings)
+    .filter(([name, meta]) => schema.access[meta[2]].includes('R') && !slow.has(name))
+    .map(([name]) => name);
+
+  const byBranch = new Map();
+  for (const name of readable) {
+    const branch = name.split('.')[0];
+    if (!byBranch.has(branch)) byBranch.set(branch, []);
+    byBranch.get(branch).push(name);
+  }
+
+  const files = [];
+  for (const [branch, names] of [...byBranch].sort()) {
+    files.push({
+      dest: `E:V_${branch.toUpperCase()}.SHTML`,
+      contents: names
+        .map((n) => `@${n}=<!--#exec cmd="/Zebra/cgi/getvar.cgi ${n}" -->@`)
+        .join('\n') + '\n',
+    });
+  }
+  return files;
+}
+
+/* ------------------------------------------------------------------ *
+ * Main
+ * ------------------------------------------------------------------ */
+
+export function build({ schemaPath, outDir }) {
+  mkdirSync(outDir, { recursive: true });
+
+  const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
+  const helpers = helperFiles(schema);
+
+  // Branches the client may actually fetch. Not every branch has a readable
+  // setting (some are write-only commands), so this is narrower than
+  // schema.branches and asking for the difference would just 404.
+  schema.helperBranches = helpers.map((f) => f.dest.slice(4, -6).toLowerCase());
+
+  const template = readFileSync(join(ROOT, 'src/index.html'), 'utf8');
+  const css = buildCss(outDir);
+  const htmx = readFileSync(join(ROOT, 'vendor/htmx.min.js'), 'utf8').trim();
+  const app = squeeze(bundle(join(ROOT, 'src/js/app.js')));
+
+  const replacements = {
+    '{{STYLES}}': css,
+    '{{HTMX}}': htmx,
+    '{{APP_JS}}': app,
+    '{{SGD_SCHEMA}}': JSON.stringify(schema),
+    '{{BOOT_VARS}}': bootVarsBlock(),
+    '{{BUILD_STAMP}}': new Date().toISOString().slice(0, 19).replace('T', ' ') + 'Z',
+  };
+
+  let html = template;
+  for (const [token, value] of Object.entries(replacements)) {
+    if (!html.includes(token)) throw new Error(`src/index.html is missing the ${token} placeholder`);
+    html = html.split(token).join(value);
+  }
+
+  const leftover = html.match(/\{\{[A-Z_]+\}\}/);
+  if (leftover) throw new Error(`Unreplaced placeholder ${leftover[0]} in output`);
+
+  const indexPath = join(outDir, 'INDEX.SHTML');
+  writeFileSync(indexPath, html);
+
+  // Helper files live in dist/helpers so deploy.sh can sweep the whole set.
+  const helperDir = join(outDir, 'helpers');
+  if (existsSync(helperDir)) rmSync(helperDir, { recursive: true });
+  mkdirSync(helperDir, { recursive: true });
+
+  for (const file of helpers) {
+    writeFileSync(join(helperDir, file.dest.slice(2)), file.contents);
+  }
+
+  return {
+    indexPath,
+    indexBytes: Buffer.byteLength(html),
+    helperDir,
+    helpers: helpers.map((f) => f.dest),
+    parts: {
+      css: css.length,
+      htmx: htmx.length,
+      app: app.length,
+      schema: replacements['{{SGD_SCHEMA}}'].length,
+    },
+  };
+}
+
+function main() {
+  const args = process.argv.slice(2);
+  const flag = (name, fallback) => {
+    const i = args.indexOf(name);
+    return i === -1 ? fallback : args[i + 1];
+  };
+
+  const result = build({
+    schemaPath: resolve(flag('--schema', 'data/sgd-schema.json')),
+    outDir: resolve(flag('--out', 'dist')),
+  });
+
+  const kb = (n) => (n / 1024).toFixed(1).padStart(6) + ' KB';
+  console.log('Built dist/INDEX.SHTML');
+  console.log(`  tailwind css ${kb(result.parts.css)}`);
+  console.log(`  htmx         ${kb(result.parts.htmx)}`);
+  console.log(`  app js       ${kb(result.parts.app)}`);
+  console.log(`  sgd schema   ${kb(result.parts.schema)}`);
+  console.log(`  ------------------------`);
+  console.log(`  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / 56320).toFixed(1)}s to serve at 56 KB/s)`);
+  console.log(`  ${result.helpers.length} helper files in dist/helpers/`);
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  try {
+    main();
+  } catch (err) {
+    console.error('build failed:', err.message);
+    process.exit(1);
+  }
+}
