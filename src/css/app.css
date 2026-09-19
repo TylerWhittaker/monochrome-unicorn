@@ -13,6 +13,14 @@
   input, select, textarea, button {
     @apply font-sans text-[13px];
   }
+  /*
+   * A display utility beats the hidden attribute's user-agent rule, so a
+   * `grid` or `flex` element stays visible when JS sets node.hidden. The
+   * filter in Settings relies on that attribute, so make it win.
+   */
+  [hidden] {
+    display: none !important;
+  }
 }
 
 @layer components {

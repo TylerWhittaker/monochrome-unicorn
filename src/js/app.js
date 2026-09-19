@@ -5,7 +5,7 @@
  * so a cold page only pays for what the user actually looks at.
  */
 
-import { qs, qsa, toast } from './ui.js';
+import { el, qs, qsa, toast } from './ui.js';
 import { printer, initState } from './state.js';
 import { mountSettings } from './settings.js';
 import { mountEditor, onEditorShown } from './editor.js';
@@ -61,7 +61,12 @@ function showTab(id) {
       mode.mount(panel);
     } catch (err) {
       console.error(`Failed to mount ${id}`, err);
-      panel.innerHTML = '<p class="text-red-700">This mode failed to start. See the browser console.</p>';
+      panel.replaceChildren(el('div', { class: 'card p-4 text-red-700' }, [
+        el('p', { class: 'font-semibold' }, ['This mode failed to start.']),
+        el('pre', { class: 'mt-2 overflow-auto whitespace-pre-wrap text-[11px]' }, [
+          `${err.name}: ${err.message}\n${err.stack || ''}`,
+        ]),
+      ]));
     }
   } else if (mode.onShow) {
     mode.onShow(panel);

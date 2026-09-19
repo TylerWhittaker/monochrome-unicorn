@@ -20,6 +20,9 @@ const values = Object.create(null);
 /** Rows currently built, keyed by SGD name, so a refresh can update in place. */
 const rows = new Map();
 
+/** Branch sections, in catalogue order: {branch, header, countNode, entries}. */
+const groups = [];
+
 let filterText = '';
 let writableOnly = false;
 let modifiedOnly = false;
@@ -113,13 +116,24 @@ function buildEditor(meta, current, commit) {
     return area;
   }
 
-  // Strings: the range is a "min-max" length, not a value range.
+  // Strings: the range is a "min-max" length, not a value range. A handful
+  // of settings advertise 0-4294967295, which is really "no limit"; those
+  // hold log dumps and the like, so they get a box you can actually read.
+  const maxLen = numeric ? numeric.max : 0;
+  if (maxLen > 512 || (current && current.includes('\n'))) {
+    const area = el('textarea', {
+      class: 'field field-mono w-full', rows: '3', spellcheck: 'false',
+    }, [current ?? '']);
+    wireTextCommit(area, current, commit);
+    return area;
+  }
+
   const input = el('input', {
     class: 'field w-full sm:w-72 field-mono',
     type: meta.name.includes('password') || meta.name.includes('_pin') ? 'password' : 'text',
     value: current ?? '',
   });
-  if (numeric && numeric.max > 0) input.maxLength = numeric.max;
+  if (maxLen > 0) input.maxLength = maxLen;
   wireTextCommit(input, current, commit);
   return input;
 }
@@ -159,10 +173,8 @@ const TYPE_BADGE = {
 };
 
 function buildRow(meta) {
-  const current = values[meta.name];
-
   const nameNode = el('code', {
-    class: 'break-all text-[12px] text-ink-800',
+    class: 'break-all text-[12px] leading-tight text-ink-800',
   }, [meta.name]);
 
   const noteNode = el('span', { class: 'text-[11px] text-ink-400' });
@@ -170,19 +182,20 @@ function buildRow(meta) {
   const valueCell = el('div', { class: 'flex flex-wrap items-center gap-2' });
 
   const row = el('div', {
-    class: 'grid grid-cols-1 gap-1 border-b border-ink-100 px-3 py-2 sm:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] sm:gap-3 sm:py-1.5',
+    class: 'grid grid-cols-1 gap-1 px-3 py-2 odd:bg-ink-50/40 hover:bg-ink-100/60'
+      + ' sm:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] sm:items-start sm:gap-3 sm:py-1.5',
     dataset: { name: meta.name },
   }, [
-    el('div', { class: 'flex min-w-0 items-center gap-2' }, [
+    el('div', { class: 'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:pt-1.5' }, [
       nameNode,
-      el('span', { class: `pill ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
-      !meta.writable && el('span', { class: 'pill bg-ink-100 text-ink-500' }, ['read-only']),
-      !meta.readable && el('span', { class: 'pill bg-ink-100 text-ink-500' }, ['write-only']),
+      el('span', { class: `pill shrink-0 ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
+      !meta.writable && el('span', { class: 'pill shrink-0 bg-ink-100 text-ink-500' }, ['read-only']),
+      !meta.readable && el('span', { class: 'pill shrink-0 bg-ink-100 text-ink-500' }, ['write-only']),
     ]),
     el('div', { class: 'min-w-0' }, [valueCell, noteNode]),
   ]);
 
-  const entry = { meta, row, valueCell, noteNode, nameNode, editor: null };
+  const entry = { meta, row, valueCell, noteNode, nameNode, editor: null, resetBtn: null };
   renderValueCell(entry);
   rows.set(meta.name, entry);
   return row;
@@ -196,7 +209,7 @@ function renderValueCell(entry) {
     const isSlow = (printer.schema.slow || []).includes(meta.name);
     replaceChildren(entry.valueCell, [
       el('span', {
-        class: 'whitespace-pre-wrap break-all font-mono text-[12px] text-ink-600',
+        class: 'whitespace-pre-wrap break-all py-1.5 font-mono text-[12px] text-ink-600',
       }, [displayValue(current, isSlow)]),
       isSlow && el('button', {
         class: 'btn-secondary btn-sm',
@@ -204,17 +217,18 @@ function renderValueCell(entry) {
       }, ['Read now']),
     ]);
     entry.editor = null;
+    entry.resetBtn = null;
   } else {
     const editor = buildEditor(meta, current, (value) => applyChange(entry, value));
     entry.editor = editor;
-    replaceChildren(entry.valueCell, [
-      editor,
-      meta.default !== null && el('button', {
-        class: 'btn-secondary btn-sm',
-        title: `Factory default: ${meta.default}`,
-        onclick: () => applyChange(entry, meta.default),
-      }, ['Default']),
-    ]);
+    // Only offered once the value actually differs, so the column does not
+    // carry 370 identical buttons.
+    entry.resetBtn = meta.default === null ? null : el('button', {
+      class: 'btn-secondary btn-sm',
+      title: `Restore the factory default: ${meta.default}`,
+      onclick: () => applyChange(entry, meta.default),
+    }, ['Default']);
+    replaceChildren(entry.valueCell, [editor, entry.resetBtn]);
   }
 
   markModified(entry);
@@ -236,6 +250,7 @@ function markModified(entry) {
   entry.nameNode.classList.toggle('font-semibold', differs);
   entry.nameNode.classList.toggle('text-ink-900', differs);
   entry.row.dataset.modified = String(differs);
+  if (entry.resetBtn) entry.resetBtn.hidden = !differs;
 }
 
 function note(entry, text, kind = 'info') {
@@ -321,15 +336,52 @@ function matches(meta) {
 
 function applyFilter() {
   let shown = 0;
-  for (const [name, entry] of rows) {
-    const visible = matches(entry.meta);
-    entry.row.hidden = !visible;
-    if (visible) shown++;
+  for (const group of groups) {
+    let groupShown = 0;
+    for (const entry of group.entries) {
+      const visible = matches(entry.meta);
+      entry.row.hidden = !visible;
+      if (visible) groupShown++;
+    }
+    group.header.hidden = groupShown === 0;
+    group.countNode.textContent = String(groupShown);
+    shown += groupShown;
   }
   countNode.textContent = shown === rows.size
     ? `${rows.size} settings`
     : `${shown} of ${rows.size} settings`;
   qs('#settings-empty').hidden = shown !== 0;
+}
+
+/**
+ * Group rows by top-level branch. With 647 settings a flat list is hard to
+ * scan, and the branch is also the unit the helper files are fetched in.
+ */
+function buildGroups() {
+  const byBranch = new Map();
+  for (const meta of allSettings()) {
+    const branch = meta.name.split('.')[0];
+    if (!byBranch.has(branch)) byBranch.set(branch, []);
+    byBranch.get(branch).push(meta);
+  }
+
+  const nodes = [];
+  for (const [branch, metas] of byBranch) {
+    const groupCount = el('span', { class: 'text-ink-400' });
+    const header = el('div', {
+      class: 'sticky top-0 z-10 flex items-baseline gap-2 border-y border-ink-200 bg-ink-100/95 px-3 py-1.5'
+        + ' text-[11px] font-semibold uppercase tracking-wide text-ink-600 backdrop-blur',
+    }, [branch, groupCount]);
+
+    const entries = [];
+    nodes.push(header);
+    for (const meta of metas) {
+      nodes.push(buildRow(meta));
+      entries.push(rows.get(meta.name));
+    }
+    groups.push({ branch, header, countNode: groupCount, entries });
+  }
+  return nodes;
 }
 
 /* ------------------------------------------------------------------ *
@@ -392,8 +444,8 @@ export function mountSettings(panel) {
 
   countNode = el('span', { class: 'text-[11px] text-ink-500' });
 
-  listNode = el('div', { class: 'divide-y divide-ink-100' });
-  for (const meta of allSettings()) listNode.append(buildRow(meta));
+  listNode = el('div');
+  listNode.append(...buildGroups());
 
   panel.append(el('div', { class: 'card overflow-hidden' }, [
     el('div', { class: 'toolbar' }, [
