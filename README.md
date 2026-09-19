@@ -30,7 +30,7 @@ uploads it plus its helper files, and checks what the printer now serves.
 ```
 --no-schema   reuse data/sgd-schema.json instead of re-reading the printer
 --no-upload   build only
---clean       remove previously installed V_*.SHTML helpers first
+--clean       remove previously installed helper files first
 ```
 
 Needs `node`, `nc` (OpenBSD netcat, for `-C`) and `curl`.
@@ -104,7 +104,8 @@ tools/
   fetch-schema.mjs    read the SGD catalogue over port 9100
   build.mjs           bundle and inline everything
   upload.mjs          CISDFCRC16 file upload
-test/zpl.test.mjs     round-trip tests for the ZPL model
+test/                 round-trip tests for the ZPL model and the
+                      helper-file parser
 docs/printer-notes.md what the printer does, measured
 ```
 

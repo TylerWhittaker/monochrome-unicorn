@@ -66,13 +66,13 @@ write looks like it failed.
 
 ### Read timings
 
-Per-variable `#exec` costs roughly 3 ms. Two settings are pathological
-and dominate everything else:
+Per-variable `#exec` costs roughly 3 ms. One setting dominates
+everything else:
 
 | request | time | bytes |
 |---|---|---|
-| all 575 readable settings, framed | 14.2 s | 47 KB |
-| the same, minus the two below | ~2 s | 21 KB |
+| all 574 readable settings, framed | 14.2 s | 47 KB |
+| the same, minus `file.drive_listing` | ~5 s | 21 KB |
 | `file.drive_listing` alone | 9.3 s | 26 KB |
 | `file.dir` alone (not in allconfig) | 3.0 s | 6 KB |
 | whole `device` branch | 10.7 s | 64 KB |
