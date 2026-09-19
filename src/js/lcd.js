@@ -29,7 +29,7 @@ const ROWS = 6;
 const ICONS = { 0xc2: '⌂' };
 
 const state = {
-  intervalMs: 2500,
+  intervalMs: 2000,
   running: true,
   lastOk: 0,
   lastError: null,
@@ -68,7 +68,7 @@ function drawRow(row) {
       cells.push(el('span', { title: `icon 0x${code.toString(16)}` }, [ICONS[code]]));
     } else {
       cells.push(el('span', {
-        class: 'text-white/50',
+        class: 'opacity-50',
         title: `unmapped icon byte 0x${code.toString(16)}`,
       }, ['▫']));
     }
@@ -81,15 +81,8 @@ function render(values) {
   const backlight = values ? values['display.backlight'] : null;
 
   replaceChildren(screenNode, gridRows(text).map(drawRow));
-  // A dark panel with the backlight off is what you would actually see.
-  screenNode.classList.toggle('opacity-40', backlight === 'off');
-
-  if (values) {
-    metaNode.textContent = [
-      backlight ? `backlight ${backlight}` : null,
-      values['display.contrast'] ? `contrast ${values['display.contrast']}` : null,
-    ].filter(Boolean).join('  ·  ');
-  }
+  // Lit glass while the backlight is on, dull grey-green when it is not.
+  screenNode.classList.toggle('lcd-lit', backlight !== 'off');
 }
 
 /** Small grey line under the panel, so a stalled poll is obvious. */
@@ -165,10 +158,10 @@ function updateActivity() {
 export function mountLcd(panel) {
   const intervalInput = el('input', {
     class: 'field field-mono w-20', type: 'number',
-    min: '0.5', max: '60', step: '0.5', value: '2.5',
+    min: '0.5', max: '60', step: '0.5', value: '2',
   });
   intervalInput.addEventListener('change', () => {
-    const seconds = Math.min(60, Math.max(0.5, Number(intervalInput.value) || 2.5));
+    const seconds = Math.min(60, Math.max(0.5, Number(intervalInput.value) || 2));
     intervalInput.value = String(seconds);
     state.intervalMs = seconds * 1000;
     schedule();
@@ -183,54 +176,32 @@ export function mountLcd(panel) {
     tick();
   });
 
+  // w-fit, or the block would stretch to the card and leave the grid
+  // sitting in a wide empty panel.
   screenNode = el('div', {
-    class: 'rounded bg-ink-950 px-3 py-2 font-mono text-white transition-opacity',
-    style: 'font-size:clamp(11px,2.6vw,20px);line-height:1.5;letter-spacing:0.08em;',
+    class: 'lcd-screen lcd-lit',
+    style: 'font-size:clamp(12px,2.4vw,19px);line-height:1.2;letter-spacing:0.08em;',
   });
 
   ageNode = el('p', { class: 'text-[11px] text-ink-400' });
-  metaNode = el('span', { class: 'text-[11px] text-ink-500' });
+  metaNode = el('span', { class: 'text-[11px] text-ink-400' }, [
+    'generated via display.text \u2014 not an exact screenshot',
+  ]);
 
-  panel.append(el('div', { class: 'grid gap-3 lg:grid-cols-[minmax(0,32rem)_minmax(0,1fr)]' }, [
-    el('div', { class: 'card min-w-0 overflow-hidden' }, [
-      el('div', { class: 'toolbar' }, [
-        el('span', { class: 'text-[12px] font-medium text-ink-700' }, ['Front panel']),
-        el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [
-          'Every', intervalInput, 's',
-        ]),
-        el('button', {
-          class: 'btn-secondary btn-sm',
-          onclick: () => poll(),
-        }, ['Refresh now']),
-        el('div', { class: 'ml-auto' }, [pauseBtn]),
+  panel.append(el('div', { class: 'card w-fit max-w-full overflow-hidden' }, [
+    el('div', { class: 'toolbar' }, [
+      el('span', { class: 'text-[12px] font-medium text-ink-700' }, ['Front panel']),
+      el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [
+        'Every', intervalInput, 's',
       ]),
-      el('div', { class: 'p-3' }, [
-        // A bezel, so the grid reads as a device rather than a code block.
-        el('div', { class: 'rounded-lg bg-ink-800 p-2 shadow-inner' }, [screenNode]),
-        el('div', { class: 'mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3' }, [
-          ageNode, metaNode,
-        ]),
-      ]),
+      el('div', { class: 'ml-auto' }, [pauseBtn]),
     ]),
-
-    el('div', { class: 'card min-w-0 self-start p-3 text-[12px] leading-relaxed text-ink-600' }, [
-      el('h3', { class: 'mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-500' }, [
-        'Why this is text, not a screenshot',
-      ]),
-      el('p', {}, [
-        'The printer does hold a real picture of its screen, in the undocumented ',
-        el('code', { class: 'font-mono text-[11px]' }, ['display.image']),
-        ' setting — a 240×110 1-bit BMP. It cannot be fetched from a page the '
-        + 'printer serves: getvar.cgi cuts every value at its first NUL byte, and a BMP '
-        + 'has one four bytes in, so the four bytes "BMý\\r" are all that arrive.',
-      ]),
-      el('p', { class: 'mt-2' }, [
-        'What you see above is ',
-        el('code', { class: 'font-mono text-[11px]' }, ['display.text']),
-        ', the same screen as a 20×6 character grid, which survives the trip intact. '
-        + 'For the actual bitmap, run ',
-        el('code', { class: 'font-mono text-[11px]' }, ['node tools/lcd-shot.mjs <ip>']),
-        ' from a machine that can reach port 9100.',
+    // The bezel and its caption share a width, so the caption tracks the
+    // screen rather than the card the toolbar happens to have widened.
+    el('div', { class: 'w-fit p-3' }, [
+      el('div', { class: 'rounded-lg bg-ink-800 p-2 shadow-inner' }, [screenNode]),
+      el('div', { class: 'mt-1.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1' }, [
+        ageNode, metaNode,
       ]),
     ]),
   ]));

@@ -17,7 +17,9 @@ Three modes:
 - **Format Printer** — pick a stored format, fill in one box per `^FN`
   field, preview and print.
 - **LCD Viewer** — mirror the printer's front panel on an adjustable
-  timer, with a note of how long ago it last refreshed.
+  timer (2 s by default), with a note of how long ago it last refreshed.
+  Drawn as a classic green LCD, which brightens when the printer's
+  backlight is on.
 
 ## Deploying
 

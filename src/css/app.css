@@ -86,6 +86,21 @@
     @apply block text-[11px] font-medium uppercase tracking-wide text-ink-500;
   }
 
+  /*
+   * The front panel, dressed as a classic monochrome LCD. The printer's
+   * own screen is white on black; this is the familiar green glass
+   * instead, lit and unlit.
+   */
+  .lcd-screen {
+    @apply w-fit rounded px-3 py-2 font-mono transition-colors duration-300;
+    background-color: #c6cdba;
+    color: #464f3c;
+  }
+  .lcd-screen.lcd-lit {
+    background-color: #b3e263;
+    color: #1a2411;
+  }
+
   /* Checkerboard behind the label preview so white media reads as media. */
   .preview-surface {
     background-color: #fff;
