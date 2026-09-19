@@ -198,6 +198,51 @@ one-bit conversion itself and send a `.GRF`.
 `~DY` reports nothing either way, so confirm by looking for the object
 in `/dir` afterwards.
 
+## Label languages other than ZPL
+
+This printer reports `device.languages = hybrid_xml_zpl`, with choices
+`zpl, hybrid_xml_zpl, epl_zpl, epl`. No CPCL (it is a desktop printer;
+CPCL is the mobile line) and `apl.enable` offers only `none`, so no
+downloadable emulation is installed. The console does not assume ZPL
+anywhere, but what it *can* do still varies by language, entirely
+because of what the web server will hand over:
+
+|                              | ZPL | EPL | CPCL (.FMT/.LBL) |
+|---|---|---|---|
+| listed by `/dir`             | yes | yes | yes, but as type `---` |
+| real extension visible       | `/dir` | `/dir` | only `file.drive_listing` |
+| contents readable over HTTP  | **yes** | no | no |
+| preview renders it           | **yes** | no | no |
+| accepted by `POST /zpl`      | yes | yes | yes (ignored here) |
+
+Three findings worth keeping:
+
+- **`/zpl` only opens `.ZPL` objects.** Asked for any other type it
+  answers "The printer is busy processing another request. Please try
+  again later." regardless of how idle it is. That is a type refusal
+  wearing a misleading message; a `.ZPL` read in the same second works.
+- **`/dir` loses the extension of a type it does not know.** A file
+  uploaded as `E:SHELF.FMT` is listed as `E:SHELF.---`. The real name
+  survives in `file.drive_listing`, which is the only way to find CPCL
+  formats from the browser -- and that read takes about nine seconds.
+- **`file.type` reads any file, but only over port 9100.** Setting it
+  through `setvars.cgi` returns an empty body: the contents go to the
+  port the command arrived on, and for HTTP that is nowhere. Reading it
+  back through the SSI preprocessor gives `"?"`.
+
+### Filling in a stored format, per language
+
+| | recall | fields |
+|---|---|---|
+| ZPL | `^XA ^XFE:NAME.ZPL^FS` then `^FNn^FD…^FS` per field, `^XZ` | named `^FN`, order free |
+| EPL | `FR"NAME"` then `?`, one line per variable, then `Pn` | `V00`-`V99`, declared in order, prompts included |
+| CPCL | `! UF NAME.FMT` then one line per placeholder | `\\` placeholders, positional, unnamed |
+
+EPL's `V` command carries the prompt it would have shown on a keyboard
+unit (`V00,15,N,"Enter Product Name:"`), which makes a far better field
+label than a number. CPCL placeholders have no names at all, so the
+console labels each with the command line it sits in.
+
 ## Rendering
 
 `^PW` and `^LL` both take effect in the preview; width is rounded up to a

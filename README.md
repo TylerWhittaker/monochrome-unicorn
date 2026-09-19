@@ -16,8 +16,11 @@ Three modes:
   printer's own render, not a simulation. Every length is shown in
   inches, millimetres or dots, switched by one radio group and
   remembered between visits.
-- **Format Printer** — pick a stored format, fill in one box per `^FN`
-  field, preview and print.
+- **Format Printer** — pick a stored format in any of the printer's
+  label languages (ZPL, EPL, CPCL), fill in one box per field, preview
+  and print. What is possible varies by language, because the printer's
+  web server will only hand back the contents of a `.ZPL`; the mode says
+  so rather than pretending otherwise.
 - **LCD Viewer** — mirror the printer's front panel on an adjustable
   timer (2 s by default), with a note of how long ago it last refreshed.
   Drawn as a classic green LCD, which brightens when the printer's
@@ -112,6 +115,7 @@ src/js/
   format.js           mode 3
   lcd.js              mode 4
   zpl.js              label model, ZPL generation and parsing
+  formats.js          ZPL / EPL / CPCL: fields and recall syntax
   wysiwyg.js          the drag-and-drop canvas
   inspector.js        label and element property panels
   imageprep.js        image -> one-bit .GRF conversion
@@ -127,6 +131,7 @@ tools/
 test/                 round-trip tests for the ZPL model and the
                       helper-file parser
 docs/printer-notes.md what the printer does, measured
+reference/            the ZPL, CPCL and EPL2 programming manuals
 ```
 
 ## Working on it
