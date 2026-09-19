@@ -248,10 +248,14 @@ function buildTags(entry) {
 
   // ml-auto pushes the group to the right edge of the row, away from the
   // value, so the tags line up into their own column down the table.
+  //
+  // "not default" leads: it is the only one that comes and goes, and it
+  // is hidden rather than absent when it does not apply, so the two
+  // constant tags keep their place at the right edge either way.
   return el('div', { class: 'ml-auto flex shrink-0 items-center gap-2' }, [
+    entry.resetBtn,
     el('span', { class: `pill ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
     el('span', { class: `pill ${accessClass}` }, [accessText]),
-    entry.resetBtn,
   ]);
 }
 
