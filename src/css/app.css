@@ -42,6 +42,14 @@
   .field-mono {
     @apply font-mono text-[12px];
   }
+  /*
+   * A read-only value. Same box as .field so values line up down the
+   * column, but filled and softer-edged so it never invites a click.
+   */
+  .field-static {
+    @apply w-full max-h-40 overflow-auto whitespace-pre-wrap break-all rounded
+           border border-ink-200 bg-ink-100 px-2 py-1.5 text-ink-600 sm:w-72;
+  }
 
   .btn {
     @apply inline-flex items-center justify-center gap-1.5 rounded border px-3 py-1.5

@@ -8,8 +8,8 @@
 #                   printer's SGD catalogue (faster; use when you know the
 #                   target printer matches the captured one)
 #     --no-upload   build only, leave the printer alone
-#     --clean       remove the V_*.SHTML helper files this tool installed
-#                   before uploading the new set
+#     --clean       remove the helper files this tool installed (V_* and
+#                   S_*) before uploading the new set
 #
 # The printer is reached two ways: port 9100 for raw file writes (nc -C,
 # CISDFCRC16 header) and port 80 to verify what it now serves.
@@ -61,7 +61,7 @@ if [ "$CLEAN" = 1 ]; then
   echo "Removing previously installed helper files..."
   # ^ID takes one object per format block; send them in a single connection.
   curl -s --max-time 20 "http://$IP/dir?dev=E" \
-    | grep -oE 'E:V_[A-Z0-9_]+\.' \
+    | grep -oE 'E:(V|S)_[A-Z0-9_]+\.' \
     | sort -u \
     | sed 's/\.$//' \
     | while read -r obj; do printf '^XA^ID%s.SHTML^FS^XZ\r\n' "$obj"; done \

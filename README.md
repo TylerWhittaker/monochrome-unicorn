@@ -58,11 +58,19 @@ the editor falls back to a textarea with its own ZPL highlighting, so the
 console still works on an isolated network.
 
 **Settings can only be read through the SSI preprocessor.** Reading all
-575 readable settings in one page takes 14 s, almost all of it in
-`file.dir` and `file.drive_listing`. So the build also emits one small
-`V_<BRANCH>.SHTML` per settings branch, each listing its settings as
-`@name=<!--#exec getvar.cgi name-->@`. The client reads a branch in about
-0.1 s, and re-reads one after a write.
+574 readable settings in one page takes 14 s, most of it in a single
+setting (`file.drive_listing`, which walks ROM). So the build emits one
+small `V_<BRANCH>.SHTML` per settings branch, each listing its settings
+as `@name=<!--#exec getvar.cgi name-->@`. The client reads a branch in
+about 0.1 s, re-reads one after a write, and fills the table in as each
+branch lands. The slow settings are left out of the sweep and get a file
+of their own, fetched only when you press Read now.
+
+The preprocessor HTML-escapes what it substitutes, so values come back
+with `&amp;`, `&quot;` and friends; `parseVarFile` decodes them. Skipping
+that would not just look wrong — a write whose value contained any of
+those characters would never match on read-back and would be reported as
+failed.
 
 **`setvars.cgi` reports nothing.** It answers 200 with an empty body for
 a successful write, an out-of-range value and a misspelt setting name
@@ -104,6 +112,7 @@ docs/printer-notes.md what the printer does, measured
 
 ```sh
 node test/zpl.test.mjs      # ZPL generation/parsing round-trips
+node test/printer.test.mjs  # helper-file parsing and entity decoding
 node tools/build.mjs        # build without touching a printer
 ```
 

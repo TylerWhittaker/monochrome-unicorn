@@ -182,15 +182,33 @@ function bootVarsBlock() {
     .join('\n');
 }
 
+/** One "@name=value@" line, for the preprocessor to fill in. */
+function varLine(name) {
+  return `@${name}=<!--#exec cmd="/Zebra/cgi/getvar.cgi ${name}" -->@`;
+}
+
 /**
- * One helper file per settings branch. Each line frames the value with @...@
- * so the client can parse it unambiguously -- a bare getvar on a whole
- * branch returns a human-readable listing whose format varies by setting.
+ * One helper file per settings branch, plus one file per slow setting.
+ *
+ * Each line frames the value with @...@ so the client can parse it
+ * unambiguously -- a bare getvar on a whole branch returns a
+ * human-readable listing whose format varies by setting.
+ *
+ * The slow settings are kept out of their branch file (they are 85% of
+ * the time a full sweep takes) but still need a way to be read, so each
+ * gets a file of its own that the client fetches on demand. Object names
+ * cap out around 16 characters, hence the index rather than the setting
+ * name.
  */
 function helperFiles(schema) {
-  const slow = new Set(schema.slow || []);
+  const slow = (schema.slow || []).filter((name) => {
+    const meta = schema.settings[name];
+    return meta && schema.access[meta[2]].includes('R');
+  });
+  const slowSet = new Set(slow);
+
   const readable = Object.entries(schema.settings)
-    .filter(([name, meta]) => schema.access[meta[2]].includes('R') && !slow.has(name))
+    .filter(([name, meta]) => schema.access[meta[2]].includes('R') && !slowSet.has(name))
     .map(([name]) => name);
 
   const byBranch = new Map();
@@ -204,12 +222,17 @@ function helperFiles(schema) {
   for (const [branch, names] of [...byBranch].sort()) {
     files.push({
       dest: `E:V_${branch.toUpperCase()}.SHTML`,
-      contents: names
-        .map((n) => `@${n}=<!--#exec cmd="/Zebra/cgi/getvar.cgi ${n}" -->@`)
-        .join('\n') + '\n',
+      contents: names.map(varLine).join('\n') + '\n',
     });
   }
-  return files;
+
+  const slowFiles = {};
+  slow.forEach((name, i) => {
+    slowFiles[name] = `S_${i}`;
+    files.push({ dest: `E:S_${i}.SHTML`, contents: varLine(name) + '\n' });
+  });
+
+  return { files, slowFiles };
 }
 
 /* ------------------------------------------------------------------ *
@@ -220,12 +243,15 @@ export function build({ schemaPath, outDir }) {
   mkdirSync(outDir, { recursive: true });
 
   const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
-  const helpers = helperFiles(schema);
+  const { files: helpers, slowFiles } = helperFiles(schema);
 
   // Branches the client may actually fetch. Not every branch has a readable
   // setting (some are write-only commands), so this is narrower than
   // schema.branches and asking for the difference would just 404.
-  schema.helperBranches = helpers.map((f) => f.dest.slice(4, -6).toLowerCase());
+  schema.helperBranches = helpers
+    .filter((f) => f.dest.startsWith('E:V_'))
+    .map((f) => f.dest.slice(4, -6).toLowerCase());
+  schema.slowFiles = slowFiles;
 
   const template = readFileSync(join(ROOT, 'src/index.html'), 'utf8');
   const css = buildCss(outDir);

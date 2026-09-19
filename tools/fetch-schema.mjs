@@ -19,12 +19,15 @@ export const TYPES = ['string', 'enum', 'integer', 'bool', 'double', 'ipv4-addre
 export const ACCESS = ['R', 'W', 'RW'];
 
 /**
- * Settings that are ruinously slow to read through the SSI preprocessor.
- * file.dir walks every drive (3 s) and file.drive_listing walks ROM (9 s);
- * together they are 85% of the time it takes to read all 575 readable
- * settings. They are excluded from the helper files and shown on demand.
+ * Settings that are ruinously slow to read through the SSI preprocessor:
+ * file.drive_listing walks ROM and takes ~9 s, most of the time a full
+ * sweep costs. These are left out of the per-branch helper files and get
+ * a single-setting file each, so the console reads them only on request.
+ *
+ * (file.dir is slower still at ~3 s, but the printer does not list it in
+ * allconfig, so it never reaches the console and is not named here.)
  */
-export const SLOW_SETTINGS = new Set(['file.dir', 'file.drive_listing']);
+export const SLOW_SETTINGS = new Set(['file.drive_listing']);
 
 /** Send a JSON config query over the raw print port and collect the reply. */
 export function queryPrinter(ip, payload, { timeout = 60000, quiet = 3 } = {}) {

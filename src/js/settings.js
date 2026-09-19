@@ -12,7 +12,7 @@
 
 import { el, qs, replaceChildren, toast, debounce } from './ui.js';
 import { printer, allSettings } from './state.js';
-import { readBranch, readAllBranches, writeSetting, valuesMatch } from './printer.js';
+import { readBranch, readAllBranches, readSlowSetting, writeSetting, valuesMatch } from './printer.js';
 
 /** Shown wherever the live value has not been read yet. */
 const UNKNOWN = '\u2014';
@@ -176,21 +176,31 @@ function wireTextCommit(input, original, commit) {
  * Rows
  * ------------------------------------------------------------------ */
 
+/*
+ * Every tag gets its own hue, so two tags side by side never read as the
+ * same thing. Types never sit next to each other (a setting has one), so
+ * the constraint that matters is type vs access vs "not default".
+ */
 const TYPE_BADGE = {
-  bool: 'bg-sky-100 text-sky-800',
+  string: 'bg-blue-100 text-blue-800',
+  bool: 'bg-cyan-100 text-cyan-800',
   enum: 'bg-violet-100 text-violet-800',
   integer: 'bg-amber-100 text-amber-800',
-  double: 'bg-amber-100 text-amber-800',
-  string: 'bg-ink-100 text-ink-700',
+  double: 'bg-orange-100 text-orange-800',
   'ipv4-address': 'bg-teal-100 text-teal-800',
-  json: 'bg-rose-100 text-rose-800',
+  json: 'bg-fuchsia-100 text-fuchsia-800',
 };
 
 const ACCESS_BADGE = {
   RW: ['read/write', 'bg-emerald-100 text-emerald-800'],
+  // Read-only is the one tag that should recede: it marks a row you
+  // cannot act on.
   R: ['read-only', 'bg-ink-100 text-ink-500'],
-  W: ['write-only', 'bg-ink-100 text-ink-500'],
+  W: ['write-only', 'bg-rose-100 text-rose-800'],
 };
+
+/** Outlined, because unlike the others this tag is a button. */
+const NOT_DEFAULT_BADGE = 'border border-red-400 bg-red-50 text-red-700';
 
 function buildRow(meta) {
   const nameNode = el('code', {
@@ -230,40 +240,47 @@ function buildTags(entry) {
 
   entry.resetBtn = meta.writable && meta.default !== null
     ? el('button', {
-      class: 'pill shrink-0 border border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100',
+      class: `pill shrink-0 ${NOT_DEFAULT_BADGE} hover:bg-red-100`,
       title: `Restore the factory default: ${meta.default}`,
       onclick: () => applyChange(entry, meta.default),
     }, ['not default'])
-    : el('span', { class: 'pill shrink-0 border border-amber-400 bg-amber-50 text-amber-800' }, ['not default']);
+    : el('span', { class: `pill shrink-0 ${NOT_DEFAULT_BADGE}` }, ['not default']);
 
-  return [
-    el('span', { class: `pill shrink-0 ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
-    el('span', { class: `pill shrink-0 ${accessClass}` }, [accessText]),
+  // ml-auto pushes the group to the right edge of the row, away from the
+  // value, so the tags line up into their own column down the table.
+  return el('div', { class: 'ml-auto flex shrink-0 items-center gap-2' }, [
+    el('span', { class: `pill ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
+    el('span', { class: `pill ${accessClass}` }, [accessText]),
     entry.resetBtn,
-  ];
+  ]);
 }
 
 function renderValueCell(entry) {
   const { meta } = entry;
   const current = values[meta.name];
 
+  // Slow settings are skipped by the sweep, so they stay unknown until
+  // asked for -- whether or not they are also writable.
+  const isSlow = current === undefined && slowFileFor(meta.name) !== null;
+  const readNow = isSlow && el('button', {
+    class: 'btn-secondary btn-sm',
+    title: 'Reading this one takes a few seconds, so it is left out of the sweep',
+    onclick: (event) => loadSlowSetting(meta.name, event.currentTarget),
+  }, ['Read now']);
+
   if (!meta.writable) {
-    const isSlow = (printer.schema.slow || []).includes(meta.name);
     entry.editor = null;
     replaceChildren(entry.valueCell, [
-      el('span', {
-        class: 'whitespace-pre-wrap break-all py-1.5 font-mono text-[12px] text-ink-600',
-      }, [displayValue(current, isSlow)]),
-      isSlow && el('button', {
-        class: 'btn-secondary btn-sm',
-        onclick: (event) => loadSlowSetting(meta.name, event.currentTarget),
-      }, ['Read now']),
+      // Boxed like an input so it reads as a value, but filled and
+      // borderless-looking enough to say you cannot type in it.
+      el('div', { class: 'field-static field-mono' }, [displayValue(current, isSlow)]),
+      readNow,
       buildTags(entry),
     ]);
   } else {
     const editor = buildEditor(meta, current, (value) => applyChange(entry, value));
     entry.editor = editor;
-    replaceChildren(entry.valueCell, [editor, buildTags(entry)]);
+    replaceChildren(entry.valueCell, [editor, readNow, buildTags(entry)]);
   }
 
   markModified(entry);
@@ -333,23 +350,29 @@ async function applyChange(entry, value) {
   markModified(entry);
 }
 
-/** file.dir and file.drive_listing are excluded from the helper files. */
+/**
+ * A setting kept out of the branch sweep because reading it takes
+ * seconds. It has a helper file of its own; fetch that on request.
+ */
+function slowFileFor(name) {
+  return (printer.schema.slowFiles || {})[name] || null;
+}
+
 async function loadSlowSetting(name, button) {
+  const stem = slowFileFor(name);
+  if (!stem) {
+    toast(`${name} has no helper file on this printer.`, 'error');
+    return;
+  }
+
   button.disabled = true;
-  button.textContent = 'reading…';
+  button.textContent = 'reading\u2026';
   try {
-    const branchValues = await readBranch(name.split('.')[0]);
-    Object.assign(values, branchValues);
-    // The helper omits it, so ask the printer directly through the /dir page
-    // only if the branch read did not produce it.
-    if (values[name] === undefined) {
-      toast(`${name} is not exposed by the helper files.`, 'error');
-    }
+    Object.assign(values, await readSlowSetting(stem));
     const entry = rows.get(name);
     if (entry) renderValueCell(entry);
   } catch (err) {
     toast(`Could not read ${name}: ${err.message}`, 'error');
-  } finally {
     button.disabled = false;
     button.textContent = 'Read now';
   }

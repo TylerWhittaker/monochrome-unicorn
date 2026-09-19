@@ -59,18 +59,38 @@ async function getText(url, { timeout = 30000 } = {}) {
  * SGD settings
  * ------------------------------------------------------------------ */
 
+const ENTITIES = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ' };
+
+/**
+ * Undo the escaping the SSI preprocessor applies to substituted values.
+ * It rewrites & " ' < > as entities, so a setting holding `A&B "q"` comes
+ * back as `A&amp;B &quot;q&quot;` -- which would be displayed wrong and,
+ * worse, would never match on the read-back after a write.
+ */
+export function decodeEntities(text) {
+  if (!text.includes('&')) return text;
+  return text.replace(/&(?:([a-z]+)|#(\d+)|#x([0-9a-f]+));/gi, (whole, name, dec, hex) => {
+    if (name) {
+      const mapped = ENTITIES[name.toLowerCase()];
+      return mapped === undefined ? whole : mapped;
+    }
+    const code = dec ? parseInt(dec, 10) : parseInt(hex, 16);
+    return Number.isFinite(code) ? String.fromCodePoint(code) : whole;
+  });
+}
+
 /**
  * Parse a helper .SHTML file. The preprocessor has already replaced each
  * #exec with the variable's value, leaving lines of "@name=value@".
- * Values may contain newlines (device.syslog, file.dir), so match lazily
- * across lines rather than line by line.
+ * Values may contain newlines (device.syslog, file.drive_listing), so
+ * match lazily across lines rather than line by line.
  */
 export function parseVarFile(text) {
   const out = {};
   const re = /@([a-z0-9_.]+)=([\s\S]*?)@(?=\r?\n|$)/gi;
   let m;
   while ((m = re.exec(text)) !== null) {
-    out[m[1]] = m[2].trim();
+    out[m[1]] = decodeEntities(m[2].trim());
   }
   return out;
 }
@@ -83,6 +103,15 @@ export function branchFile(branch) {
 /** Read every live value in one SGD branch (~0.1 s for most branches). */
 export async function readBranch(branch) {
   return parseVarFile(await getText(branchFile(branch)));
+}
+
+/**
+ * Read one setting that is too slow to include in a branch sweep, from
+ * the single-setting helper the build wrote for it. Minutes of patience
+ * are not required, but seconds are.
+ */
+export async function readSlowSetting(fileStem, { timeout = 60000 } = {}) {
+  return parseVarFile(await getText(`/${fileStem}.SHTML`, { timeout }));
 }
 
 /**

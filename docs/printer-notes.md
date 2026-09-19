@@ -52,6 +52,18 @@ varies per setting, so this app frames each value itself instead:
 
 An unknown setting yields `?`. `allconfig` is not available this way.
 
+**Substituted values are HTML-escaped.** Setting `device.location` to
+`A&B "q" <t> 'ap'` and reading it back through the preprocessor gives:
+
+```
+@device.location=A&amp;B &quot;q&quot; &lt;t&gt; &apos;ap&apos;@
+```
+
+So `&`, `"`, `'`, `<` and `>` all come back as entities and have to be
+decoded. This matters beyond display: without decoding, writing a value
+containing any of them and reading it back never compares equal, and the
+write looks like it failed.
+
 ### Read timings
 
 Per-variable `#exec` costs roughly 3 ms. Two settings are pathological
@@ -62,7 +74,7 @@ and dominate everything else:
 | all 575 readable settings, framed | 14.2 s | 47 KB |
 | the same, minus the two below | ~2 s | 21 KB |
 | `file.drive_listing` alone | 9.3 s | 26 KB |
-| `file.dir` alone | 3.0 s | 6 KB |
+| `file.dir` alone (not in allconfig) | 3.0 s | 6 KB |
 | whole `device` branch | 10.7 s | 64 KB |
 | `device` split into 54 sub-branch reads | 0.7 s | 3.5 KB |
 | a typical branch (`media`, `wlan`, `ip`) | 0.09–0.5 s | <8 KB |
