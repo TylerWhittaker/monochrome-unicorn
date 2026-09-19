@@ -97,7 +97,7 @@ export function newElement(type, doc, dpi = 203) {
     };
   }
   if (type === 'image') {
-    return { ...base, source: '' };
+    return { ...base, source: '', scaleX: 1, scaleY: 1 };
   }
   if (type === 'box') {
     return { ...base, w: Math.round(dpi), h: Math.round(dpi * 0.5), thickness: 3, rounding: 0, invert: false };
@@ -182,9 +182,19 @@ function fieldZpl(item) {
   return parts.join('');
 }
 
+/**
+ * ^XG recalls a stored .GRF and can scale it; ^IM places the other
+ * formats at their own size. Which one is right follows the extension.
+ */
 function imageZpl(item) {
   if (!item.source) return '';
-  return `^FO${item.x},${item.y}^IM${item.source}^FS`;
+  const pos = `^FO${item.x},${item.y}`;
+  if (/\.GRF$/i.test(item.source)) {
+    const sx = Math.min(10, Math.max(1, Math.round(item.scaleX || 1)));
+    const sy = Math.min(10, Math.max(1, Math.round(item.scaleY || sx)));
+    return `${pos}^XG${item.source},${sx},${sy}^FS`;
+  }
+  return `${pos}^IM${item.source}^FS`;
 }
 
 function boxZpl(item) {
@@ -416,8 +426,17 @@ export function parseZpl(text, dpi = 203) {
       }
 
       case 'IM': case 'XG': {
-        const source = token.args.split(',')[0].trim();
-        doc.elements.push({ id: elementId(), type: 'image', x: field.x, y: field.y, rotation: 'N', source });
+        const parts = token.args.split(',');
+        doc.elements.push({
+          id: elementId(),
+          type: 'image',
+          x: field.x,
+          y: field.y,
+          rotation: 'N',
+          source: parts[0].trim(),
+          scaleX: num(parts[1], 1) || 1,
+          scaleY: num(parts[2], 1) || 1,
+        });
         break;
       }
 

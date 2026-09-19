@@ -9,6 +9,7 @@
  */
 
 import { el } from './ui.js';
+import { loadStoredImage } from './printer.js';
 import { SYMBOLOGIES } from './zpl.js';
 
 /** Rough advance width of the scalable font, as a fraction of cap height. */
@@ -23,7 +24,11 @@ export function elementBounds(item) {
       : { w: item.length, h: item.thickness };
   }
   if (item.type === 'image') {
-    return { w: item.naturalWidth || 200, h: item.naturalHeight || 200 };
+    // ^XG magnifies a stored GRF; ^IM always places it 1:1.
+    const grf = /\.GRF$/i.test(item.source || '');
+    const sx = grf ? Math.max(1, Math.round(item.scaleX || 1)) : 1;
+    const sy = grf ? Math.max(1, Math.round(item.scaleY || sx)) : 1;
+    return { w: (item.naturalWidth || 200) * sx, h: (item.naturalHeight || 200) * sy };
   }
   if (item.type === 'field') {
     const charWidth = (item.width || item.height) * FONT_ASPECT;
@@ -111,6 +116,11 @@ function renderBarcode(item, scale) {
   return el('div', { class: 'h-full w-full', style: `width:${bounds.w * scale}px;` }, children);
 }
 
+/**
+ * Draw a stored graphic. The bytes come through loadStoredImage rather
+ * than a plain src, because /png returns stored PNGs with their first
+ * four bytes missing and no browser will render that.
+ */
 function renderImage(item, scale, onMeasured) {
   const match = /^([A-Z]):(.+)\.([A-Z]+)$/i.exec(item.source || '');
   if (!match) {
@@ -119,8 +129,8 @@ function renderImage(item, scale, onMeasured) {
     }, ['no image selected']);
   }
   const [, dev, oname, otype] = match;
+
   const img = el('img', {
-    src: `/png?dev=${dev}&oname=${encodeURIComponent(oname)}&otype=${otype}`,
     alt: item.source,
     class: 'block h-full w-full',
     style: 'image-rendering:pixelated;',
@@ -133,7 +143,17 @@ function renderImage(item, scale, onMeasured) {
       onMeasured();
     }
   });
-  return img;
+
+  const holder = el('div', { class: 'h-full w-full' }, [img]);
+  loadStoredImage({ dev, oname, otype })
+    .then((url) => { img.src = url; })
+    .catch(() => {
+      holder.replaceChildren(el('div', {
+        class: 'flex h-full w-full items-center justify-center border border-dashed border-red-400 text-[10px] text-red-600',
+        title: `Could not read ${item.source} from the printer`,
+      }, [item.source]));
+    });
+  return holder;
 }
 
 function renderBox(item, scale) {

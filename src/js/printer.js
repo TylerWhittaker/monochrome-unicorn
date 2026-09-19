@@ -210,6 +210,94 @@ export function valuesMatch(actual, written) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Stored graphics
+ * ------------------------------------------------------------------ */
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const imageCache = new Map();
+
+/**
+ * Repair what /png hands back.
+ *
+ * Asked for a stored .PNG the printer streams the file but drops its
+ * first four bytes, so what arrives starts at "\r\n\x1a\n" and no browser
+ * will touch it. (A .GRF comes back converted, and correct.) The four
+ * missing bytes are always the same, so put them back.
+ */
+export function repairPng(bytes) {
+  const hasSignature = PNG_SIGNATURE.every((b, i) => bytes[i] === b);
+  if (hasSignature) return bytes;
+
+  const startsMidSignature = PNG_SIGNATURE.slice(4).every((b, i) => bytes[i] === b);
+  if (!startsMidSignature) return bytes;
+
+  const fixed = new Uint8Array(bytes.length + 4);
+  fixed.set(PNG_SIGNATURE.slice(0, 4), 0);
+  fixed.set(bytes, 4);
+  return fixed;
+}
+
+/**
+ * Fetch a stored graphic as something an <img> will accept. Cached: the
+ * canvas re-renders often and these run to 160 KB over a 56 KB/s link.
+ */
+export function loadStoredImage({ dev, oname, otype }) {
+  const key = `${dev}:${oname}.${otype}`;
+  if (imageCache.has(key)) return imageCache.get(key);
+
+  const pending = (async () => {
+    const url = `/png?dev=${dev}&oname=${encodeURIComponent(oname)}&otype=${otype}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${key}`);
+    const bytes = repairPng(new Uint8Array(await res.arrayBuffer()));
+    return URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+  })();
+
+  imageCache.set(key, pending);
+  pending.catch(() => imageCache.delete(key));
+  return pending;
+}
+
+/** Forget a cached graphic, so the next render re-reads it. */
+export function forgetStoredImage(name) {
+  const pending = imageCache.get(name);
+  if (!pending) return;
+  imageCache.delete(name);
+  pending.then((url) => URL.revokeObjectURL(url)).catch(() => {});
+}
+
+/**
+ * Store a 1-bit graphic on the printer as <name>.GRF.
+ *
+ * ~DY is a download command, so it has to reach the ZPL parser -- and
+ * the only way a browser can do that is the /zpl form. Preview is the
+ * action to use: it runs the parser without feeding a label. The ASCII
+ * hex form (b=A) keeps the payload printable, which matters because it
+ * travels as a urlencoded form field. Sending a PNG the same way does
+ * not work: the printer stores nothing.
+ */
+export async function uploadGraphic({ oname, hex, totalBytes, bytesPerRow }) {
+  const name = oname.toUpperCase();
+  const res = await postForm('/zpl', {
+    data: `~DYE:${name},A,G,${totalBytes},${bytesPerRow},${hex}`,
+    dev: 'R',
+    oname: 'UNKNOWN',
+    otype: 'ZPL',
+    prev: 'Preview Label',
+  }, { timeout: 120000 });
+
+  const err = extractPrinterError(res.text);
+  if (err) throw new Error(err);
+
+  // ~DY reports nothing, so confirm by looking for the object.
+  const files = await listFiles({ dev: 'E', otype: 'GRF' });
+  const stored = files.find((f) => f.oname === name && f.otype === 'GRF');
+  if (!stored) throw new Error(`The printer did not store ${name}.GRF`);
+  forgetStoredImage(`E:${name}.GRF`);
+  return stored;
+}
+
+/* ------------------------------------------------------------------ *
  * Stored objects (files on E: and R:)
  * ------------------------------------------------------------------ */
 

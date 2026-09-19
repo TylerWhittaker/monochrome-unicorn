@@ -126,6 +126,24 @@ check('an unsupported command keeps the field origin it belonged to', () => {
   assert.ok(out.indexOf('^FO70,90') < out.indexOf('^SN'), 'origin must precede the command it positions');
 });
 
+check('a stored GRF uses ^XG and round-trips its scale', () => {
+  const doc = newLabel(DPI);
+  doc.elements = [{ ...newElement('image', doc, DPI), x: 12, y: 34, source: 'E:LOGO.GRF', scaleX: 2, scaleY: 3 }];
+  const zpl = toZpl(doc);
+  assert.ok(zpl.includes('^XGE:LOGO.GRF,2,3'), zpl);
+  const got = parseZpl(zpl, DPI).doc.elements[0];
+  assert.equal(got.source, 'E:LOGO.GRF');
+  assert.equal(got.scaleX, 2);
+  assert.equal(got.scaleY, 3);
+  assert.equal(got.x, 12);
+});
+
+check('other image formats still use ^IM', () => {
+  const doc = newLabel(DPI);
+  doc.elements = [{ ...newElement('image', doc, DPI), source: 'E:PHOTO.PNG' }];
+  assert.ok(toZpl(doc).includes('^IME:PHOTO.PNG'));
+});
+
 check('unknown commands are reported and preserved', () => {
   const { doc, unsupported } = parseZpl('^XA^PW600^FO10,10^A0N,30,30^FDhi^FS^BY2^SNSERIAL,1,Y^XZ', DPI);
   assert.ok(unsupported.includes('^SN'), `expected ^SN in ${JSON.stringify(unsupported)}`);

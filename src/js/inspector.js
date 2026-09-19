@@ -115,6 +115,14 @@ function grid(children) {
 /** Radio labels for the unit choice. */
 const UNIT_LABELS = [['in', 'inches'], ['mm', 'mm'], ['dots', 'dots']];
 
+/** The heading strip that names one of the two property boxes. */
+export function panelHeading(title, subtitle) {
+  return el('div', { class: 'border-b border-ink-200 bg-ink-50/70 px-3 py-2' }, [
+    el('h2', { class: 'text-[12px] font-semibold text-ink-700' }, [title]),
+    subtitle ? el('p', { class: 'text-[11px] text-ink-400' }, [subtitle]) : null,
+  ]);
+}
+
 function section(title, children) {
   return el('div', { class: 'space-y-3 border-b border-ink-200 px-3 py-3 last:border-b-0' }, [
     el('h3', { class: 'text-[11px] font-semibold uppercase tracking-wide text-ink-500' }, [title]),
@@ -175,7 +183,9 @@ export function renderLabelPanel(host, { doc, onChange }) {
  * ------------------------------------------------------------------ */
 
 /** Panel for the selected element, or a hint when nothing is selected. */
-export function renderElementPanel(host, { doc, item, images, onChange, onDelete, onDuplicate }) {
+export function renderElementPanel(host, {
+  doc, item, images, onChange, onDelete, onDuplicate, onUploadImage,
+}) {
   if (!item) {
     replaceChildren(host, [
       el('p', { class: 'px-3 py-4 text-ink-400' }, [
@@ -278,16 +288,38 @@ export function renderElementPanel(host, { doc, item, images, onChange, onDelete
     if (item.source && !images.some((f) => f.name === item.source)) {
       options.push([item.source, `${item.source} (not on this printer)`]);
     }
-    specific.push(section('Image', [
+    const isGrf = /\.GRF$/i.test(item.source || '');
+    const fields = [
       row('Stored object', selectField(item.source, options, commit((v) => {
         item.source = v;
         delete item.naturalWidth;
         delete item.naturalHeight;
       }))),
-      el('p', { class: 'text-[11px] text-ink-400' }, [
-        '^IM places a stored image at its own size. Upload images to the printer, then pick one here.',
-      ]),
+      el('button', {
+        class: 'btn-secondary btn-sm w-full',
+        onclick: () => onUploadImage(item),
+      }, ['Upload an image…']),
+    ];
+
+    if (isGrf) {
+      // ^XG scales a stored graphic, but only by whole multiples.
+      fields.push(grid([
+        row('Scale X', numberField(item.scaleX || 1, commit((v) => {
+          item.scaleX = Math.min(10, Math.max(1, Math.round(v)));
+        }), { min: 1, max: 10, suffix: '×' })),
+        row('Scale Y', numberField(item.scaleY || item.scaleX || 1, commit((v) => {
+          item.scaleY = Math.min(10, Math.max(1, Math.round(v)));
+        }), { min: 1, max: 10, suffix: '×' })),
+      ]));
+    }
+
+    fields.push(el('p', { class: 'text-[11px] text-ink-400' }, [
+      isGrf
+        ? 'Stored as a .GRF and placed with ^XG, which scales by whole multiples.'
+        : 'Placed with ^IM at its own size. Uploading gives you a .GRF, which can be scaled.',
     ]));
+
+    specific.push(section('Image', fields));
   }
 
   if (item.type === 'box') {

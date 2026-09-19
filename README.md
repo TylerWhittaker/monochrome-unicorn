@@ -114,6 +114,8 @@ src/js/
   zpl.js              label model, ZPL generation and parsing
   wysiwyg.js          the drag-and-drop canvas
   inspector.js        label and element property panels
+  imageprep.js        image -> one-bit .GRF conversion
+  imagedialog.js      pick, preview and upload an image
   codeeditor.js       Ace loader, ZPL syntax mode, offline fallback
   preview.js          the preview pane (htmx round-trip to /zpl)
   ui.js               DOM helpers, toasts, modals, password prompt
@@ -160,8 +162,9 @@ a 500).
 - The canvas approximates text width and barcode size. The preview is
   authoritative — check it before printing.
 - `^IM` places a stored image at its own size; there is no scaling.
-- Images must already be on the printer. This console does not upload
-  them (the browser cannot reach port 9100); use `tools/upload.mjs`.
+- Uploaded images are reduced to one bit per pixel, because that is all
+  a thermal printer stores. The dialog shows the result before sending,
+  with a dither option that helps photographs and hurts line art.
 - The LCD Viewer shows characters, not pixels, for the reason above. It
   polls only while its tab is on screen and the browser tab is visible,
   so it does not compete with the rest of the console for the printer's

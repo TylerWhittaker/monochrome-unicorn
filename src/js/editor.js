@@ -12,9 +12,10 @@
 import { el, qs, toast, modal, confirmDialog, requirePassword, debounce, formatBytes } from './ui.js';
 import { printer, loadUnitPreference } from './state.js';
 import { listFiles, readScript, saveScript, deleteFile } from './printer.js';
+import { uploadImageDialog } from './imagedialog.js';
 import { newLabel, newElement, toZpl, parseZpl, elementId } from './zpl.js';
 import { createCanvas } from './wysiwyg.js';
-import { renderLabelPanel, renderElementPanel } from './inspector.js';
+import { renderLabelPanel, renderElementPanel, panelHeading } from './inspector.js';
 import { createCodeEditor } from './codeeditor.js';
 import { createPreview } from './preview.js';
 
@@ -182,6 +183,7 @@ function renderEditorInspector() {
     item,
     images: editorState.images,
     onChange: onDocChanged,
+    onUploadImage: (target) => uploadImageForElement(target),
     onDelete: () => {
       editorState.doc.elements = editorState.doc.elements.filter((e) => e.id !== selectedId);
       canvas.setSelected(null);
@@ -339,6 +341,29 @@ function addElement(type) {
   editorState.doc.elements.push(item);
   if (canvas) canvas.setSelected(item.id);
   onDocChanged();
+
+  // Nothing stored to point at yet, so go straight to uploading one.
+  if (type === 'image' && !editorState.images.length) uploadImageForElement(item);
+}
+
+/**
+ * Upload a picture and point an image element at it. The printer can
+ * only store one-bit graphics, so the dialog does the conversion and
+ * shows the result before anything is sent.
+ */
+async function uploadImageForElement(item) {
+  const stored = await uploadImageDialog({ doc: editorState.doc });
+  if (!stored) return;
+
+  await refreshFileList();
+  if (item) {
+    item.source = stored;
+    item.scaleX = 1;
+    item.scaleY = 1;
+    delete item.naturalWidth;
+    delete item.naturalHeight;
+  }
+  onDocChanged();
 }
 
 async function printEditorLabel() {
@@ -421,8 +446,21 @@ export function mountEditor(panel) {
       addBar,
       editorHost,
     ]),
-    el('div', { class: 'min-w-0' }, [editorPreview.node]),
-    el('div', { class: 'card min-w-0 self-start overflow-hidden' }, [labelPanelHost, inspectorHost]),
+    // Object properties sit immediately right of the designer, since
+    // that is what you are looking at while you place things; the label
+    // as a whole is set up once, so it stays in the far rail under the
+    // preview. Two boxes, each saying what it governs.
+    el('div', { class: 'card min-w-0 self-start overflow-hidden' }, [
+      panelHeading('Object options', 'The selected element'),
+      inspectorHost,
+    ]),
+    el('div', { class: 'min-w-0 space-y-3' }, [
+      editorPreview.node,
+      el('div', { class: 'card overflow-hidden' }, [
+        panelHeading('Label options', 'Applies to the whole label'),
+        labelPanelHost,
+      ]),
+    ]),
   ]));
 
   renderEditorTitle();

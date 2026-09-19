@@ -168,6 +168,35 @@ Notes that cost time to discover:
   directory lists the type as `---`). Use ZPL instead:
   `^XA^IDE:NAME.SHTML^FS^XZ` over port 9100.
 - Errors are marked up as `<B>ERROR:</B> message.` inside the page.
+- **`/png` drops the first four bytes of a stored `.PNG`.** What arrives
+  starts at `0d 0a 1a 0a`, i.e. the back half of the PNG signature, so
+  no browser will render it. Putting `89 50 4e 47` back in front gives a
+  valid file. A stored `.GRF` is a different path -- the printer
+  converts it to PNG and that one is correct.
+
+## Uploading a graphic from a browser
+
+`~DY` stores a graphic, and the only way a browser can reach the ZPL
+parser is the `/zpl` form. Use the **preview** action: it runs the
+parser without feeding a label, so nothing is printed and no media is
+used.
+
+```
+POST /zpl
+data=~DYE:LOGO,A,G,<totalBytes>,<bytesPerRow>,<ASCII hex>
+dev=R&oname=UNKNOWN&otype=ZPL&prev=Preview+Label
+```
+
+The ASCII hex form (`b=A`) matters: the payload travels as a urlencoded
+form field, so it has to be printable. Verified storing and rendering a
+200x120 graphic this way.
+
+The same trick does **not** work for a PNG: `~DYE:NAME,A,P,<len>,,<hex>`
+returns no error and stores nothing. So the browser has to do the
+one-bit conversion itself and send a `.GRF`.
+
+`~DY` reports nothing either way, so confirm by looking for the object
+in `/dir` afterwards.
 
 ## Rendering
 
