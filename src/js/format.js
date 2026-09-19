@@ -225,7 +225,7 @@ async function printFormatLabel() {
  * ------------------------------------------------------------------ */
 
 export function mountFormat(panel) {
-  formatSelect = el('select', { class: 'field w-full sm:w-72' });
+  formatSelect = el('select', { class: 'field w-full min-w-0 sm:w-72' });
   formatSelect.addEventListener('change', () => selectFormat(formatSelect.value));
 
   const copiesInput = el('input', {
@@ -244,7 +244,7 @@ export function mountFormat(panel) {
   formatPreview = createPreview();
 
   panel.append(el('div', { class: 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]' }, [
-    el('div', { class: 'card overflow-hidden' }, [
+    el('div', { class: 'card min-w-0 overflow-hidden' }, [
       el('div', { class: 'toolbar' }, [
         formatSelect,
         el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, ['Copies', copiesInput]),
@@ -253,7 +253,7 @@ export function mountFormat(panel) {
       fieldsHost,
       sourceHost,
     ]),
-    formatPreview.node,
+    el('div', { class: 'min-w-0' }, [formatPreview.node]),
   ]));
 
   renderFields();

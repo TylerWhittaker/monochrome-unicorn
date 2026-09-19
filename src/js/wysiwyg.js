@@ -25,6 +25,11 @@ export function elementBounds(item) {
   if (item.type === 'image') {
     return { w: item.naturalWidth || 200, h: item.naturalHeight || 200 };
   }
+  if (item.type === 'field') {
+    const charWidth = (item.width || item.height) * FONT_ASPECT;
+    const caption = item.name || `FN${item.number}`;
+    return { w: Math.max(60, (caption.length + 2) * charWidth), h: item.height };
+  }
   if (item.type === 'text') {
     const charWidth = (item.width || item.height) * FONT_ASPECT;
     const lines = String(item.text).split('\n');
@@ -64,6 +69,16 @@ function renderText(item, scale) {
       + (item.reverse ? 'background:#000;color:#fff;' : ''),
   }, [item.text]);
   return node;
+}
+
+/** A ^FN placeholder has no content yet, so show what will land there. */
+function renderField(item, scale) {
+  return el('div', {
+    class: 'flex h-full w-full items-center overflow-hidden border border-dashed border-violet-500 bg-violet-50/70 px-1',
+    style: `font-size:${Math.max(7, item.height * scale * 0.7)}px;`,
+  }, [
+    el('span', { class: 'truncate font-mono text-violet-700' }, [item.name || `FN${item.number}`]),
+  ]);
 }
 
 function renderBarcode(item, scale) {
@@ -149,12 +164,14 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
   let selectedId = null;
   let scale = 1;
   let zoom = 'fit';
+  /** Element id -> its node on the surface, so edits can skip a rebuild. */
+  const nodes = new Map();
 
   const surface = el('div', {
     class: 'preview-surface relative shrink-0 border border-ink-300 shadow-sm',
   });
   const scroller = el('div', {
-    class: 'flex-1 overflow-auto bg-ink-100 p-4',
+    class: 'min-w-0 flex-1 overflow-auto bg-ink-100 p-4',
     onpointerdown: (event) => {
       if (event.target === scroller || event.target === surface) select(null);
     },
@@ -179,16 +196,67 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
     render();
   }
 
+  /**
+   * Change the selection without rebuilding the surface. A rebuild here
+   * would detach the very node a pointerdown is about to start dragging,
+   * which silently kills the drag before it begins.
+   */
+  function paintSelection(previousId) {
+    for (const id of [previousId, selectedId]) {
+      if (!id) continue;
+      const node = nodes.get(id);
+      if (node) decorate(node, getDoc().elements.find((e) => e.id === id));
+    }
+  }
+
   function select(id) {
     if (selectedId === id) return;
+    const previous = selectedId;
     selectedId = id;
-    render();
+    paintSelection(previous);
     onSelect(id);
   }
 
   function setSelected(id) {
+    const previous = selectedId;
     selectedId = id;
-    render();
+    if (nodes.has(id) || nodes.has(previous)) paintSelection(previous);
+    else render();
+  }
+
+  /** Apply selection styling and the resize handle to one element node. */
+  function decorate(node, item) {
+    if (!item) return;
+    const selected = item.id === selectedId;
+    node.className = 'absolute touch-none'
+      + (selected
+        ? ' outline outline-2 outline-offset-1 outline-sky-500'
+        : ' hover:outline hover:outline-1 hover:outline-sky-300');
+
+    const existing = node.querySelector('[data-handle]');
+    if (selected && item.type !== 'image') {
+      if (!existing) {
+        node.append(el('div', {
+          class: 'absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-se-resize rounded-sm border border-white bg-sky-500',
+          style: 'touch-action:none;',
+          dataset: { handle: '1' },
+          onpointerdown: (event) => beginDrag(event, item, 'resize'),
+        }));
+      }
+    } else if (existing) {
+      existing.remove();
+    }
+  }
+
+  /** Move/resize the live node without rebuilding the whole surface. */
+  function reposition(item) {
+    const node = nodes.get(item.id);
+    if (!node) return;
+    const bounds = elementBounds(item);
+    node.style.left = `${item.x * scale}px`;
+    node.style.top = `${item.y * scale}px`;
+    node.style.width = `${Math.max(2, bounds.w * scale)}px`;
+    node.style.height = `${Math.max(2, bounds.h * scale)}px`;
   }
 
   /* -- dragging ---------------------------------------------------- */
@@ -200,7 +268,7 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
     const startY = event.clientY;
     const origin = { ...item };
     const target = event.currentTarget;
-    target.setPointerCapture(event.pointerId);
+    try { target.setPointerCapture(event.pointerId); } catch (err) { /* mouse without capture support */ }
 
     const move = (moveEvent) => {
       const dx = Math.round((moveEvent.clientX - startX) / scale);
@@ -211,13 +279,15 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
       } else {
         applyResize(item, origin, dx, dy);
       }
-      render();
+      reposition(item);
     };
     const end = () => {
-      target.releasePointerCapture(event.pointerId);
+      try { target.releasePointerCapture(event.pointerId); } catch (err) { /* already released */ }
       target.removeEventListener('pointermove', move);
       target.removeEventListener('pointerup', end);
       target.removeEventListener('pointercancel', end);
+      // A resize can change how the element is drawn, not just its box.
+      render();
       onChange('drag');
     };
 
@@ -233,7 +303,7 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
       item.h = Math.max(item.thickness, origin.h + dy);
     } else if (item.type === 'line') {
       item.length = Math.max(4, origin.length + (item.vertical ? dy : dx));
-    } else if (item.type === 'text') {
+    } else if (item.type === 'text' || item.type === 'field') {
       item.height = Math.max(6, origin.height + dy);
       if (origin.width) item.width = Math.max(4, origin.width + dx);
     } else if (item.type === 'barcode') {
@@ -256,21 +326,20 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
     surface.style.width = `${doc.width * scale}px`;
     surface.style.height = `${doc.height * scale}px`;
     surface.replaceChildren();
+    nodes.clear();
 
     for (const item of doc.elements) {
       const bounds = elementBounds(item);
-      const selected = item.id === selectedId;
 
       let body;
-      if (item.type === 'text') body = renderText(item, scale);
+      if (item.type === 'field') body = renderField(item, scale);
+      else if (item.type === 'text') body = renderText(item, scale);
       else if (item.type === 'barcode') body = renderBarcode(item, scale);
       else if (item.type === 'image') body = renderImage(item, scale, () => render());
       else if (item.type === 'box') body = renderBox(item, scale);
       else body = renderLine(item);
 
       const node = el('div', {
-        class: 'absolute touch-none'
-          + (selected ? ' outline outline-2 outline-offset-1 outline-sky-500' : ' hover:outline hover:outline-1 hover:outline-sky-300'),
         style: `left:${item.x * scale}px;top:${item.y * scale}px;`
           + `width:${Math.max(2, bounds.w * scale)}px;height:${Math.max(2, bounds.h * scale)}px;`
           + `transform:rotate(${ROTATION_DEG[item.rotation] || 0}deg);transform-origin:left top;`
@@ -279,15 +348,9 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
         onpointerdown: (event) => { select(item.id); beginDrag(event, item, 'move'); },
       }, [body]);
 
-      if (selected && item.type !== 'image') {
-        node.append(el('div', {
-          class: 'absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-se-resize rounded-sm border border-white bg-sky-500',
-          style: 'touch-action:none;',
-          onpointerdown: (event) => beginDrag(event, item, 'resize'),
-        }));
-      }
-
+      nodes.set(item.id, node);
       surface.append(node);
+      decorate(node, item);
     }
   }
 

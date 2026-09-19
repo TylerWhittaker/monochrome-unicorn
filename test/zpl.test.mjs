@@ -100,6 +100,32 @@ check('image round-trips its source object', () => {
   assert.equal(back.elements[0].source, 'E:LOGO.PNG');
 });
 
+check('^FN placeholders keep position, font and default', () => {
+  const src = '^XA^PW900^LL600^FO40,100^A0N,45,45^FN1^FS^FO40,160^ADN,30,20^FN2"CITY"^FDPortland^FS^XZ';
+  const { doc, unsupported } = parseZpl(src, DPI);
+  assert.deepEqual(unsupported, [], 'a ^FN format should parse cleanly');
+  const fields = doc.elements.filter((e) => e.type === 'field');
+  assert.equal(fields.length, 2);
+  assert.deepEqual(
+    fields.map((f) => [f.number, f.x, f.y, f.font, f.height, f.name, f.initial]),
+    [[1, 40, 100, '0', 45, '', ''], [2, 40, 160, 'D', 30, 'CITY', 'Portland']]
+  );
+
+  // Re-emitting must keep every field where it was.
+  const again = parseZpl(toZpl(doc), DPI).doc.elements.filter((e) => e.type === 'field');
+  assert.deepEqual(
+    again.map((f) => [f.number, f.x, f.y, f.font, f.height, f.name, f.initial]),
+    [[1, 40, 100, '0', 45, '', ''], [2, 40, 160, 'D', 30, 'CITY', 'Portland']]
+  );
+});
+
+check('an unsupported command keeps the field origin it belonged to', () => {
+  const { doc } = parseZpl('^XA^FO70,90^SNSERIAL,1,Y^FS^XZ', DPI);
+  const out = toZpl(doc);
+  assert.ok(out.includes('^FO70,90'), `origin lost: ${out}`);
+  assert.ok(out.indexOf('^FO70,90') < out.indexOf('^SN'), 'origin must precede the command it positions');
+});
+
 check('unknown commands are reported and preserved', () => {
   const { doc, unsupported } = parseZpl('^XA^PW600^FO10,10^A0N,30,30^FDhi^FS^BY2^SNSERIAL,1,Y^XZ', DPI);
   assert.ok(unsupported.includes('^SN'), `expected ^SN in ${JSON.stringify(unsupported)}`);

@@ -75,6 +75,9 @@ function onDocChanged() {
 
 function loadDocument(zpl, file) {
   const { doc, unsupported } = parseZpl(zpl, printer.dpi);
+  // Units are a preference, not a property of the label, so they survive
+  // opening a different one.
+  if (editorState.doc) doc.unit = editorState.doc.unit;
   editorState.doc = doc;
   editorState.source = zpl;
   editorState.file = file || null;
@@ -89,6 +92,7 @@ function loadDocument(zpl, file) {
   }
 
   renderEditorTitle();
+  renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
   rebuildEditorView();
   refreshEditorPreview();
 }
@@ -355,7 +359,7 @@ export function mountEditor(panel) {
 
   titleNode = el('span', { class: 'text-[12px] font-medium text-ink-700' });
 
-  fileSelect = el('select', { class: 'field w-full sm:w-64' });
+  fileSelect = el('select', { class: 'field w-full min-w-0 sm:w-64' });
   fileSelect.addEventListener('change', () => openFile(fileSelect.value));
 
   const viewToggle = el('div', {
@@ -375,7 +379,7 @@ export function mountEditor(panel) {
 
   addBar = el('div', { class: 'toolbar' }, [
     el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, ['Add']),
-    ...['text', 'barcode', 'image', 'box', 'line'].map((type) => el('button', {
+    ...['text', 'barcode', 'image', 'box', 'line', 'field'].map((type) => el('button', {
       class: 'btn-secondary btn-sm capitalize',
       onclick: () => addElement(type),
     }, [type])),
@@ -391,29 +395,31 @@ export function mountEditor(panel) {
 
   editorPreview = createPreview();
 
-  panel.append(el('div', { class: 'grid gap-3 xl:grid-cols-[minmax(0,1fr)_22rem]' }, [
-    el('div', { class: 'space-y-3' }, [
-      el('div', { class: 'card overflow-hidden' }, [
-        el('div', { class: 'toolbar' }, [
-          fileSelect,
-          el('button', { class: 'btn-secondary btn-sm', onclick: () => newLabelDoc() }, ['New']),
-          el('button', { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: false }) }, ['Save']),
-          el('button', { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: true }) }, ['Save as…']),
-          el('button', { class: 'btn-danger btn-sm', onclick: () => deleteCurrent() }, ['Delete']),
-          el('div', { class: 'ml-auto flex items-center gap-2' }, [
-            titleNode,
-            viewToggle,
-            el('button', { class: 'btn-primary btn-sm', onclick: () => printEditorLabel() }, ['Print']),
-          ]),
+  // Editor, preview and properties sit side by side once there is room,
+  // and stack in that order when there is not. Every column is min-w-0:
+  // a grid item defaults to min-width:auto, so a wide child (the canvas,
+  // a long file name) would otherwise push the whole page sideways.
+  panel.append(el('div', {
+    class: 'grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_21rem_21rem]',
+  }, [
+    el('div', { class: 'card min-w-0 overflow-hidden lg:col-span-2 xl:col-span-1' }, [
+      el('div', { class: 'toolbar' }, [
+        fileSelect,
+        el('button', { class: 'btn-secondary btn-sm', onclick: () => newLabelDoc() }, ['New']),
+        el('button', { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: false }) }, ['Save']),
+        el('button', { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: true }) }, ['Save as…']),
+        el('button', { class: 'btn-danger btn-sm', onclick: () => deleteCurrent() }, ['Delete']),
+        el('div', { class: 'ml-auto flex items-center gap-2' }, [
+          titleNode,
+          viewToggle,
+          el('button', { class: 'btn-primary btn-sm', onclick: () => printEditorLabel() }, ['Print']),
         ]),
-        addBar,
-        editorHost,
       ]),
+      addBar,
+      editorHost,
     ]),
-    el('div', { class: 'space-y-3' }, [
-      editorPreview.node,
-      el('div', { class: 'card overflow-hidden' }, [labelPanelHost, inspectorHost]),
-    ]),
+    el('div', { class: 'min-w-0' }, [editorPreview.node]),
+    el('div', { class: 'card min-w-0 self-start overflow-hidden' }, [labelPanelHost, inspectorHost]),
   ]));
 
   renderEditorTitle();

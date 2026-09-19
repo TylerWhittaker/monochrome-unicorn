@@ -105,6 +105,9 @@ export function newElement(type, doc, dpi = 203) {
   if (type === 'line') {
     return { ...base, length: Math.round(dpi * 1.5), thickness: 3, vertical: false };
   }
+  if (type === 'field') {
+    return { ...base, font: '0', height: Math.round(dpi * 0.15), width: 0, number: 1, name: '', initial: '' };
+  }
   throw new Error(`Unknown element type: ${type}`);
 }
 
@@ -165,6 +168,20 @@ function barcodeZpl(item) {
   return `${pos}${by}^${cmd}${params}^FH^FD${escapeFieldData(item.data)}^FS`;
 }
 
+/**
+ * A ^FN placeholder: the variable part of a stored format. The position
+ * and font live here; the data is supplied later, either by the printer's
+ * host or by the Format Printer mode.
+ */
+function fieldZpl(item) {
+  const parts = [`^FO${item.x},${item.y}`];
+  parts.push(`^A${item.font}${item.rotation},${item.height},${item.width || item.height}`);
+  parts.push(`^FN${item.number}` + (item.name ? `"${item.name}"` : ''));
+  if (item.initial) parts.push(`^FH^FD${escapeFieldData(item.initial)}`);
+  parts.push('^FS');
+  return parts.join('');
+}
+
 function imageZpl(item) {
   if (!item.source) return '';
   return `^FO${item.x},${item.y}^IM${item.source}^FS`;
@@ -189,6 +206,7 @@ export function elementZpl(item) {
     case 'image': return imageZpl(item);
     case 'box': return boxZpl(item);
     case 'line': return lineZpl(item);
+    case 'field': return fieldZpl(item);
     default: return '';
   }
 }
@@ -291,8 +309,18 @@ export function parseZpl(text, dpi = 203) {
   let sawFieldOrigin = false;
 
   const source = String(text);
+
+  /**
+   * Keep a command we do not model, together with the field origin it
+   * belongs to. Without the ^FO the command would be re-emitted at
+   * whatever position happened to be current, quietly moving it.
+   */
   const flushUnsupported = (token) => {
     unsupported.push(token.prefix + token.cmd);
+    if (sawFieldOrigin && !field.passedThrough) {
+      doc.passthrough.push(`^FO${field.x},${field.y}`);
+      field.passedThrough = true;
+    }
     doc.passthrough.push(source.slice(token.start, token.end).trim());
   };
 
@@ -301,7 +329,10 @@ export function parseZpl(text, dpi = 203) {
 
     switch (token.cmd) {
       case 'XA': case 'XZ': case 'CI': case 'FS':
-        if (token.cmd === 'FS') resetField();
+        if (token.cmd === 'FS') {
+          if (field.passedThrough) doc.passthrough.push('^FS');
+          resetField();
+        }
         break;
 
       case 'PW': doc.width = num(args[0], doc.width); break;
@@ -321,6 +352,26 @@ export function parseZpl(text, dpi = 203) {
 
       case 'FH': field.hexEscape = true; break;
       case 'FR': field.reverse = true; break;
+
+      case 'FN': {
+        const match = /^\s*(\d+)\s*(?:"([^"]*)")?/.exec(token.args);
+        const pending = field.pending || {};
+        field.fieldElement = {
+          id: elementId(),
+          type: 'field',
+          x: field.x,
+          y: field.y,
+          rotation: pending.rotation || 'N',
+          font: pending.font || '0',
+          height: pending.height || 30,
+          width: pending.width || 0,
+          number: match ? parseInt(match[1], 10) : 0,
+          name: (match && match[2]) || '',
+          initial: '',
+        };
+        doc.elements.push(field.fieldElement);
+        break;
+      }
 
       // "^A0N,30,30": the font id and rotation are glued to the command,
       // so args[0] is "0N" and the sizes start at args[1].
@@ -372,7 +423,10 @@ export function parseZpl(text, dpi = 203) {
 
       case 'FD': {
         const raw = unescapeFieldData(token.args, field.hexEscape);
-        if (field.barcode) {
+        if (field.fieldElement) {
+          // "^FN1^FDtext^FS" gives the field its default value.
+          field.fieldElement.initial = raw;
+        } else if (field.barcode) {
           const item = { ...field.barcode, id: elementId(), x: field.x, y: field.y, data: raw };
           if (item.symbology === 'qr') {
             // "QA,payload" -- strip the error-correction/mode prefix.

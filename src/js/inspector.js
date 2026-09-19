@@ -183,6 +183,23 @@ export function renderElementPanel(host, { doc, item, images, onChange, onDelete
     ].filter(Boolean)));
   }
 
+  if (item.type === 'field') {
+    specific.push(section('Variable field', [
+      grid([
+        row('Field number', numberField(item.number, commit((v) => { item.number = Math.max(0, Math.round(v)); }), { min: 0, max: 9999 })),
+        row('Name', textField(item.name, commit((v) => { item.name = v.replace(/"/g, ''); }), { placeholder: 'optional' })),
+      ]),
+      grid([
+        row('Font', selectField(item.font, FONTS, commit((v) => { item.font = v; }))),
+        row('Height', dotsField(item.height, unit, commit((v) => { item.height = Math.max(4, v); }))),
+      ]),
+      row('Default value', textField(item.initial, commit((v) => { item.initial = v; }), { placeholder: 'used when no data is supplied' })),
+      el('p', { class: 'text-[11px] text-ink-400' }, [
+        'Saved as ^FN. Fill it in from the Format Printer tab, or from a host that recalls this format.',
+      ]),
+    ]));
+  }
+
   if (item.type === 'barcode') {
     const spec = SYMBOLOGIES[item.symbology] || SYMBOLOGIES.code128;
     const fields = [
