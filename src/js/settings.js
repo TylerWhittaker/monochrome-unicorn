@@ -12,7 +12,7 @@
 
 import { el, qs, replaceChildren, toast, debounce } from './ui.js';
 import { printer, allSettings } from './state.js';
-import { readBranch, readAllBranches, readSlowSetting, writeSetting, valuesMatch } from './printer.js';
+import { readAllBranches, readSlowSetting, writeSetting, valuesMatch } from './printer.js';
 
 /** Shown wherever the live value has not been read yet. */
 const UNKNOWN = '\u2014';

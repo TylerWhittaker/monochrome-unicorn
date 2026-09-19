@@ -18,6 +18,14 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+/*
+ * The LCD viewer polls this one small file rather than a whole branch.
+ * display.image (the real framebuffer) cannot come this way: getvar.cgi
+ * truncates any value at its first NUL byte, and a BMP has one at offset
+ * four. display.text is the same screen as a 20x6 character grid.
+ */
+const LCD_VARS = ['display.text', 'display.backlight', 'display.contrast'];
+
 /* Settings shown in the page header, read live by the SSI preprocessor. */
 const BOOT_VARS = [
   'device.product_name',
@@ -231,6 +239,8 @@ function helperFiles(schema) {
     slowFiles[name] = `S_${i}`;
     files.push({ dest: `E:S_${i}.SHTML`, contents: varLine(name) + '\n' });
   });
+
+  files.push({ dest: 'E:LCD.SHTML', contents: LCD_VARS.map(varLine).join('\n') + '\n' });
 
   return { files, slowFiles };
 }

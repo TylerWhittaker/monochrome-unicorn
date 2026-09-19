@@ -43,13 +43,17 @@ async function postForm(url, fields, { timeout = 30000 } = {}) {
   }
 }
 
-async function getText(url, { timeout = 30000 } = {}) {
+async function getText(url, { timeout = 30000, charset = null } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
     const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-    return await res.text();
+    // The printer sends no charset. That is fine for settings, which are
+    // ASCII, but the display grid carries single high bytes for its icons
+    // and those are not valid UTF-8 -- decoding as such would replace them.
+    if (!charset) return await res.text();
+    return new TextDecoder(charset).decode(await res.arrayBuffer());
   } finally {
     clearTimeout(timer);
   }
@@ -84,13 +88,16 @@ export function decodeEntities(text) {
  * #exec with the variable's value, leaving lines of "@name=value@".
  * Values may contain newlines (device.syslog, file.drive_listing), so
  * match lazily across lines rather than line by line.
+ *
+ * Only line breaks are stripped from the edges, never spaces: display.text
+ * is a fixed 20x6 character grid whose padding is the layout.
  */
 export function parseVarFile(text) {
   const out = {};
   const re = /@([a-z0-9_.]+)=([\s\S]*?)@(?=\r?\n|$)/gi;
   let m;
   while ((m = re.exec(text)) !== null) {
-    out[m[1]] = decodeEntities(m[2].trim());
+    out[m[1]] = decodeEntities(m[2].replace(/^[\r\n]+|[\r\n]+$/g, ''));
   }
   return out;
 }
@@ -112,6 +119,15 @@ export async function readBranch(branch) {
  */
 export async function readSlowSetting(fileStem, { timeout = 60000 } = {}) {
   return parseVarFile(await getText(`/${fileStem}.SHTML`, { timeout }));
+}
+
+/**
+ * Read the front-panel mirror: the LCD as a character grid, plus the
+ * backlight and contrast settings. Decoded as windows-1252 so the icon
+ * bytes survive as single characters.
+ */
+export async function readLcd({ timeout = 15000 } = {}) {
+  return parseVarFile(await getText('/LCD.SHTML', { timeout, charset: 'windows-1252' }));
 }
 
 /**

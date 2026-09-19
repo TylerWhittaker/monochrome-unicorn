@@ -10,11 +10,13 @@ import { printer, initState } from './state.js';
 import { mountSettings } from './settings.js';
 import { mountEditor, onEditorShown } from './editor.js';
 import { mountFormat, onFormatShown } from './format.js';
+import { mountLcd, onLcdShown, onLcdHidden } from './lcd.js';
 
 const MODES = {
   settings: { mount: mountSettings },
   editor: { mount: mountEditor, onShow: onEditorShown },
   format: { mount: mountFormat, onShow: onFormatShown },
+  lcd: { mount: mountLcd, onShow: onLcdShown, onHide: onLcdHidden },
 };
 
 const mounted = new Set();
@@ -52,6 +54,11 @@ function showTab(id) {
   }
   for (const panel of qsa('[data-panel]')) {
     panel.hidden = panel.dataset.panel !== id;
+  }
+
+  // Let a mode that polls know it is off screen, so it can stand down.
+  for (const [otherId, other] of Object.entries(MODES)) {
+    if (otherId !== id && mounted.has(otherId) && other.onHide) other.onHide();
   }
 
   const panel = qs(`[data-panel="${id}"]`);

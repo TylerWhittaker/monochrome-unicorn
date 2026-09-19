@@ -16,6 +16,8 @@ Three modes:
   printer's own render, not a simulation.
 - **Format Printer** — pick a stored format, fill in one box per `^FN`
   field, preview and print.
+- **LCD Viewer** — mirror the printer's front panel on an adjustable
+  timer, with a note of how long ago it last refreshed.
 
 ## Deploying
 
@@ -77,6 +79,16 @@ a successful write, an out-of-range value and a misspelt setting name
 alike. Every write is therefore followed by a read-back of that branch,
 and the row reports the value the printer actually kept.
 
+**The LCD framebuffer cannot cross the web server.** `display.image`
+returns a real 240x110 BMP of the front panel, but `getvar.cgi`
+truncates every value at its first NUL byte and a BMP has one four bytes
+in, so the page gets `BM\xfd\x0d` and nothing more. The raw port that
+returns it whole is not something a browser can speak to, and the
+detours (`file.capture_response`, ZBI) are respectively unimplemented
+here and unlicensed. So the LCD Viewer draws `display.text`, the same
+screen as a 20x6 character grid, which survives intact; `tools/lcd-shot.mjs`
+fetches the actual bitmap from a machine that can reach port 9100.
+
 **The printer is the renderer.** Only it knows how its fonts and
 symbologies rasterize, and its `/zpl` endpoint will draw a label to a
 bitmap for free. The visual canvas is deliberately an editing proxy —
@@ -94,6 +106,7 @@ src/js/
   settings.js         mode 1
   editor.js           mode 2
   format.js           mode 3
+  lcd.js              mode 4
   zpl.js              label model, ZPL generation and parsing
   wysiwyg.js          the drag-and-drop canvas
   inspector.js        label and element property panels
@@ -104,6 +117,7 @@ tools/
   fetch-schema.mjs    read the SGD catalogue over port 9100
   build.mjs           bundle and inline everything
   upload.mjs          CISDFCRC16 file upload
+  lcd-shot.mjs        save the LCD framebuffer as a PNG (needs port 9100)
 test/                 round-trip tests for the ZPL model and the
                       helper-file parser
 docs/printer-notes.md what the printer does, measured
@@ -144,6 +158,10 @@ a 500).
 - `^IM` places a stored image at its own size; there is no scaling.
 - Images must already be on the printer. This console does not upload
   them (the browser cannot reach port 9100); use `tools/upload.mjs`.
+- The LCD Viewer shows characters, not pixels, for the reason above. It
+  polls only while its tab is on screen and the browser tab is visible,
+  so it does not compete with the rest of the console for the printer's
+  single-request-at-a-time web server.
 - The setting catalogue is captured at build time. Deploying a build to
   a different printer model may show settings it does not have; re-run
   `./deploy.sh <ip>` against that printer to recapture.

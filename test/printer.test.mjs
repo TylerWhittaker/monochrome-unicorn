@@ -41,6 +41,14 @@ check('an unknown entity is left alone', () => {
   assert.equal(decodeEntities('100&percnt; &bogus; ok'), '100&percnt; &bogus; ok');
 });
 
+check('significant spaces are preserved, line breaks are not', () => {
+  // display.text is a fixed-width grid; its padding carries the layout.
+  const row = '   PRINTER READY    ';
+  const v = parseVarFile(`@display.text=${row}@\n`);
+  assert.equal(v['display.text'], row);
+  assert.equal(parseVarFile('@x=\nvalue\n@\n').x, 'value');
+});
+
 check('an empty value is kept', () => {
   assert.deepEqual(parseVarFile('@device.location=@\n'), { 'device.location': '' });
 });
@@ -56,6 +64,35 @@ check('write verification tolerates the printer’s normalisation', () => {
 check('printer error pages are recognised', () => {
   assert.equal(extractPrinterError('<P><B>ERROR:</B> Invalid password.</P>'), 'Invalid password.');
   assert.equal(extractPrinterError('<H3>The script save has been queued.</H3>'), null);
+});
+
+/* ---- the LCD grid ---- */
+
+const lcdSrc = readFileSync(new URL('../src/js/lcd.js', import.meta.url), 'utf8')
+  .replace(/^import [^\n]*$/gm, '');
+const lcd = await import('data:text/javascript;base64,' + Buffer.from(lcdSrc).toString('base64'));
+
+check('display.text splits into a 20x6 grid', () => {
+  // Exactly what the printer returned for an idle screen.
+  const screen =
+    '   PRINTER READY    ' +
+    '                    ' +
+    '    192.168.1.81    ' +
+    '                    ' +
+    '                    ' +
+    ' \u00c2            ABOUT ';
+  const rows = lcd.gridRows(screen);
+  assert.equal(rows.length, 6);
+  assert.ok(rows.every((r) => r.length === 20), 'every row is 20 columns');
+  assert.equal(rows[0], '   PRINTER READY    ');
+  assert.equal(rows[2], '    192.168.1.81    ');
+  assert.ok(rows[5].endsWith('ABOUT '));
+});
+
+check('a short or missing read still yields a full grid', () => {
+  assert.deepEqual(lcd.gridRows('HI').length, 6);
+  assert.equal(lcd.gridRows('HI')[0], 'HI' + ' '.repeat(18));
+  assert.ok(lcd.gridRows(null).every((r) => r === ' '.repeat(20)));
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

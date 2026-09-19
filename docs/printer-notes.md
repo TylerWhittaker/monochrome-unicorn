@@ -64,6 +64,53 @@ decoded. This matters beyond display: without decoding, writing a value
 containing any of them and reading it back never compares equal, and the
 write looks like it failed.
 
+### getvar.cgi stops at the first NUL byte
+
+This is the ceiling on what the web route can return. `display.image`
+(undocumented) holds the LCD framebuffer as a 240x110 1-bit BMP, whose
+fifth byte is `00`, so the CGI hands back four bytes and moves on:
+
+```
+A[<!--#exec cmd="/Zebra/cgi/getvar.cgi display.image" -->]   ->  A[BM\xfd\x0d]
+B[<!--#exec cmd="/Zebra/cgi/getvar.cgi comm.baud"     -->]   ->  B[115200]
+```
+
+The rest of the page still renders, so it is the value that is cut, not
+the connection. No binary-valued setting can come through this route.
+
+The same setting over the raw port works fine:
+
+| route | result |
+|---|---|
+| `! U1 getvar "display.image"` | the BMP wrapped in `"` delimiters; drop the first and last byte |
+| `{}{"display.image":null}` | the same bytes, escaped into JSON |
+| `getvar.cgi` (HTTP) | four bytes, truncated at the first NUL |
+
+`tools/lcd-shot.mjs` uses the first. The BMP's own `bfSize` field reads
+one byte short of what is actually sent (3581 vs 3582) -- a printer
+quirk that decoders ignore.
+
+`file.capture_response` looked like a way to land the value in a file
+the browser could then fetch, but it is a `do` command (not `setvar`, so
+setvars.cgi cannot invoke it) and on this printer it produced no file
+even when driven correctly over port 9100. ZBI would also have worked,
+but `zbi.key` reads `DISABLED`.
+
+What *does* survive is `display.text`: the same screen as a flat 120
+character string, which is a 20x6 grid.
+
+```
+   PRINTER READY    
+                    
+    192.168.1.81    
+                    
+                    
+ \xc2            ABOUT 
+```
+
+Byte `0xC2` in the status row is the home icon. Note the padding is
+significant -- it is the layout -- so a parser must not trim it.
+
 ### Read timings
 
 Per-variable `#exec` costs roughly 3 ms. One setting dominates
