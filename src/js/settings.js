@@ -320,13 +320,35 @@ const ENABLE_BADGE = {
   off: ['disabled', 'bg-zinc-200 text-zinc-700'],
 };
 
-/** The on/off tag for a `.enable` setting, or nothing for anything else. */
+/**
+ * The on/off tag for a `.enable` setting, or nothing for anything else.
+ *
+ * Built empty and filled in by paintEnableTag, so that a write can
+ * change what it says without re-rendering the row -- re-rendering
+ * would replace the very widget that was just used, and take the focus
+ * and the "saved" note with it.
+ */
 function enableTag(meta) {
   if (!meta.name.endsWith('.enable')) return null;
-  const state = String(values[meta.name] ?? '').trim().toLowerCase();
+  return el('span', { class: 'pill shrink-0' });
+}
+
+/**
+ * Put the current state on the tag.
+ *
+ * Hidden rather than absent when the value is neither on nor off: an
+ * enum reading "none", or a value the printer returns as "?", has no
+ * state to report, and the row should not jump about when one arrives.
+ */
+function paintEnableTag(entry) {
+  const node = entry.enableTag;
+  if (!node) return;
+  const state = String(values[entry.meta.name] ?? '').trim().toLowerCase();
   const badge = ENABLE_BADGE[state];
-  if (!badge) return null;
-  return el('span', { class: `pill shrink-0 ${badge[1]}` }, [badge[0]]);
+  node.hidden = !badge;
+  if (!badge) return;
+  node.textContent = badge[0];
+  node.className = `pill shrink-0 ${badge[1]}`;
 }
 
 function buildRow(meta) {
@@ -347,7 +369,7 @@ function buildRow(meta) {
     el('div', { class: 'min-w-0' }, [valueCell, noteNode]),
   ]);
 
-  const entry = { meta, row, valueCell, noteNode, nameNode, editor: null, resetBtn: null };
+  const entry = { meta, row, valueCell, noteNode, nameNode, editor: null, resetBtn: null, enableTag: null };
   renderValueCell(entry);
   rows.set(meta.name, entry);
   return row;
@@ -379,9 +401,11 @@ function buildTags(entry) {
   // "not default" leads: it is the only one that comes and goes, and it
   // is hidden rather than absent when it does not apply, so the two
   // constant tags keep their place at the right edge either way.
+  entry.enableTag = enableTag(meta);
+
   return el('div', { class: 'ml-auto flex shrink-0 items-center gap-2' }, [
     entry.resetBtn,
-    enableTag(meta),
+    entry.enableTag,
     el('span', { class: `pill ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
     el('span', { class: `pill ${accessClass}`, title: ACCESS_TITLE[meta.access] || null }, [accessText]),
   ]);
@@ -424,8 +448,20 @@ function displayValue(value, isSlow) {
   return value;
 }
 
-/** about:config bolds anything that differs from its factory default. */
+/**
+ * Repaint the tags that follow from the current value.
+ *
+ * Called after a write as well as after a render, which is what keeps
+ * the enabled/disabled tag honest: a row that has just been switched on
+ * says so without waiting for the next sweep.
+ */
 function markModified(entry) {
+  paintEnableTag(entry);
+  markDefaultState(entry);
+}
+
+/** about:config bolds anything that differs from its factory default. */
+function markDefaultState(entry) {
   const { meta } = entry;
   const current = values[meta.name];
   const differs = meta.default !== null
