@@ -3,3 +3,4 @@ dist/
 *.log
 reference/*.pdf
 data/sgd-schema.json
+allcv.txt
