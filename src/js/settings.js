@@ -48,6 +48,7 @@ const groups = [];
 
 let filterText = '';
 let modifiedOnly = false;
+let sortMode = 'default';
 let listNode = null;
 let countNode = null;
 let refreshBtn = null;
@@ -193,6 +194,61 @@ function wireTextCommit(input, original, commit) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Sorting
+ *
+ * The catalogue's own order groups related settings the way the
+ * firmware thinks of them, which is worth keeping as the default; the
+ * alternatives are for when you know the name and just want to find it.
+ * ------------------------------------------------------------------ */
+
+export const SORT_MODES = [
+  ['default', 'Catalogue order'],
+  ['alpha', 'Alphabetical'],
+  ['alpha-enable', 'Alphabetical, .enable first'],
+];
+
+/**
+ * The key a name sorts under.
+ *
+ * In "alpha-enable", a `.enable` sorts as the branch it switches on --
+ * `ip.ftp.enable` becomes `ip.ftp.` followed by a character below every
+ * other -- so it lands at the head of its own group rather than among
+ * its siblings. Everything else sorts as itself.
+ */
+export function sortKeyFor(name, mode) {
+  if (mode !== 'alpha-enable' || !name.endsWith('.enable')) return name;
+  return name.slice(0, -'enable'.length) + '\u0000';
+}
+
+/** Plain code-unit order: SGD names are lower-case ASCII with dots. */
+export function compareNames(a, b) {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/**
+ * Re-order the list in place.
+ *
+ * Appending a node that is already in the list moves it, so the whole
+ * order is expressed by appending everything once, in the order wanted.
+ */
+function applySort() {
+  const branches = sortMode === 'default'
+    ? groups
+    : [...groups].sort((a, b) => compareNames(a.branch, b.branch));
+
+  for (const group of branches) {
+    const entries = sortMode === 'default'
+      ? group.entries
+      : [...group.entries].sort((a, b) => compareNames(
+        sortKeyFor(a.meta.name, sortMode),
+        sortKeyFor(b.meta.name, sortMode)
+      ));
+    listNode.append(group.header, ...entries.map((entry) => entry.row));
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Rows
  * ------------------------------------------------------------------ */
 
@@ -221,6 +277,26 @@ const ACCESS_BADGE = {
 
 /** Outlined, because unlike the others this tag is a button. */
 const NOT_DEFAULT_BADGE = 'border border-red-400 bg-red-50 text-red-700';
+
+/*
+ * A `.enable` setting says on or off, which is worth reading as a state
+ * rather than a value -- these are the rows people scan a page for.
+ * Neither hue is one a `.enable` row already carries: those are bool
+ * (cyan) and read/write (emerald).
+ */
+const ENABLE_BADGE = {
+  on: ['enabled', 'bg-lime-100 text-lime-800'],
+  off: ['disabled', 'bg-zinc-200 text-zinc-700'],
+};
+
+/** The on/off tag for a `.enable` setting, or nothing for anything else. */
+function enableTag(meta) {
+  if (!meta.name.endsWith('.enable')) return null;
+  const state = String(values[meta.name] ?? '').trim().toLowerCase();
+  const badge = ENABLE_BADGE[state];
+  if (!badge) return null;
+  return el('span', { class: `pill shrink-0 ${badge[1]}` }, [badge[0]]);
+}
 
 function buildRow(meta) {
   const nameNode = el('code', {
@@ -274,6 +350,7 @@ function buildTags(entry) {
   // constant tags keep their place at the right edge either way.
   return el('div', { class: 'ml-auto flex shrink-0 items-center gap-2' }, [
     entry.resetBtn,
+    enableTag(meta),
     el('span', { class: `pill ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
     el('span', { class: `pill ${accessClass}` }, [accessText]),
   ]);
@@ -541,6 +618,15 @@ export function mountSettings(panel) {
     return el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [box, labelText]);
   };
 
+  const sortSelect = el('select', {
+    class: 'field w-auto',
+    title: 'How the settings are ordered within each branch',
+  }, SORT_MODES.map(([value, label]) => el('option', { value }, [label])));
+  sortSelect.addEventListener('change', () => {
+    sortMode = sortSelect.value;
+    applySort();
+  });
+
   refreshBtn = el('button', {
     class: 'btn-secondary btn-sm',
     onclick: () => refresh(),
@@ -554,6 +640,7 @@ export function mountSettings(panel) {
   panel.append(el('div', { class: 'card overflow-hidden' }, [
     el('div', { class: 'toolbar' }, [
       filterInput,
+      sortSelect,
       toggle('Changed from default', (v) => { modifiedOnly = v; }),
       el('div', { class: 'ml-auto flex items-center gap-3' }, [countNode, refreshBtn]),
     ]),
