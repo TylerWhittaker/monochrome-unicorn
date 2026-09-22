@@ -177,3 +177,34 @@ a 500).
 - The setting catalogue is captured at build time. Deploying a build to
   a different printer model may show settings it does not have; re-run
   `./deploy.sh <ip>` against that printer to recapture.
+
+## Licence
+
+Copyright (C) 2026 Tyler Whittaker.
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU Affero General Public License as published by the
+Free Software Foundation, either version 3 of the License, or (at your
+option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE)
+for the full text, or <https://www.gnu.org/licenses/agpl-3.0.html>.
+
+The built `INDEX.SHTML` is a copy of this program, so a printer you hand
+to someone else carries it: the page states the licence in its footer and
+in an HTML comment at the top. If you give out a printer or a build, you
+also owe the recipient the corresponding source — this repository, at the
+commit the build came from.
+
+Third-party code, all AGPL-compatible and under its own terms:
+
+- [htmx](https://htmx.org) 2.0.4 (`vendor/htmx.min.js`), inlined into the
+  build — Zero-Clause BSD.
+- [Tailwind CSS](https://tailwindcss.com) (build-time only; the generated
+  CSS is inlined) — MIT.
+- [Ace](https://ace.c9.io), fetched from cdnjs at runtime when the source
+  editor opens, never redistributed here — BSD 3-Clause.
+
+The Zebra manuals under `reference/` are Zebra Technologies' documents,
+included for reference only and not covered by this licence; they are
+kept out of the repository by `.gitignore`.

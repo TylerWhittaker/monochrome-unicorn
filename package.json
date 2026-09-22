@@ -1,7 +1,9 @@
 {
   "name": "zebra-printer-web-app",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "private": true,
+  "license": "AGPL-3.0-or-later",
+  "author": "Tyler Whittaker",
   "type": "module",
   "description": "Single-page app served from a Zebra printer's onboard web server (E:INDEX.SHTML)",
   "scripts": {

@@ -1,4 +1,23 @@
 <!DOCTYPE HTML>
+<!--
+  Zebra Printer Console -- a web console served from a Zebra printer.
+  Copyright (C) 2026 Tyler Whittaker
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
 <HTML lang="en">
 <HEAD>
 <META HTTP-EQUIV="content-type" CONTENT="text/html; charset=UTF-8">
@@ -47,6 +66,13 @@
 
 <footer class="mx-auto max-w-6xl px-4 pb-6 text-[11px] text-ink-400">
   Served from the printer &middot; built {{BUILD_STAMP}}
+  <div class="mt-1">
+    Zebra Printer Console &middot; Copyright &copy; 2026 Tyler Whittaker &middot;
+    free software under the
+    <a class="underline hover:text-ink-600" href="https://www.gnu.org/licenses/agpl-3.0.html"
+       target="_blank" rel="noreferrer">GNU AGPL v3</a>
+    or later, with ABSOLUTELY NO WARRANTY.
+  </div>
 </footer>
 
 <div id="toasts" class="pointer-events-none fixed left-1/2 top-3 z-50 flex w-[min(26rem,calc(100vw-1.5rem))] -translate-x-1/2 flex-col items-center gap-2"></div>

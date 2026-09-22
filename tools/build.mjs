@@ -1,5 +1,25 @@
 #!/usr/bin/env node
 /*
+ * Zebra Printer Console -- a web console served from a Zebra printer.
+ * Copyright (C) 2026 Tyler Whittaker
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/*
  * build.mjs -- assemble dist/INDEX.SHTML and the V_*.SHTML helper files.
  *
  * The printer will not serve a page that references local assets we cannot
@@ -25,6 +45,17 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * four. display.text is the same screen as a 20x6 character grid.
  */
 const LCD_VARS = ['display.text', 'display.backlight', 'display.contrast'];
+
+/*
+ * The one comment that survives squeeze(): the built page is a conveyed
+ * copy of this program, so the script it carries says what it is and under
+ * what terms. src/index.html carries the full notice as HTML.
+ */
+const JS_BANNER = [
+  '/*! Zebra Printer Console -- Copyright (C) 2026 Tyler Whittaker.',
+  ' * Free software under the GNU AGPL v3 or later, with ABSOLUTELY NO WARRANTY.',
+  ' * See <https://www.gnu.org/licenses/agpl-3.0.html>. */',
+].join('\n');
 
 /* Settings shown in the page header, read live by the SSI preprocessor. */
 const BOOT_VARS = [
@@ -269,7 +300,7 @@ export function build({ schemaPath, outDir }) {
   const template = readFileSync(join(ROOT, 'src/index.html'), 'utf8');
   const css = buildCss(outDir);
   const htmx = readFileSync(join(ROOT, 'vendor/htmx.min.js'), 'utf8').trim();
-  const app = squeeze(bundle(join(ROOT, 'src/js/app.js')));
+  const app = JS_BANNER + '\n' + squeeze(bundle(join(ROOT, 'src/js/app.js')));
 
   const replacements = {
     '{{STYLES}}': css,
