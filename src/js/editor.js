@@ -33,7 +33,7 @@ import { el, qs, toast, modal, confirmDialog, requirePassword, debounce, formatB
 import { printer, loadUnitPreference } from './state.js';
 import { listFiles, readScript, saveScript, deleteFile } from './printer.js';
 import { uploadImageDialog } from './imagedialog.js';
-import { newLabel, newElement, toZpl, parseZpl, elementId } from './zpl.js';
+import { newLabel, newElement, toZpl, parseZpl, elementId, nextFieldNumber } from './zpl.js';
 import { createCanvas } from './wysiwyg.js';
 import { renderLabelPanel, renderElementPanel, panelHeading } from './inspector.js';
 import { createCodeEditor } from './codeeditor.js';
@@ -62,6 +62,10 @@ let addBar = null;
 /** A label another mode asked for, waiting for this one to exist. */
 let pendingOpen = null;
 
+const EDITOR_HOST_CLASS = {
+  visual: 'flex min-h-0 flex-col overflow-hidden',
+  source: 'flex h-[60vh] min-h-[20rem] flex-col overflow-hidden',
+};
 
 /* ------------------------------------------------------------------ *
  * Document plumbing
@@ -157,6 +161,9 @@ function rebuildEditorView() {
   editorHost.replaceChildren();
 
   addBar.hidden = editorState.view !== 'visual';
+  // The canvas takes its height from the label it is showing; the source
+  // editor has no natural height of its own and has to be given one.
+  editorHost.className = EDITOR_HOST_CLASS[editorState.view] || EDITOR_HOST_CLASS.visual;
   for (const btn of qs('#view-toggle').querySelectorAll('button')) {
     btn.setAttribute('aria-selected', String(btn.dataset.view === editorState.view));
     btn.className = btn.dataset.view === editorState.view
@@ -214,6 +221,9 @@ function renderEditorInspector() {
     },
     onDuplicate: () => {
       const copy = { ...item, id: elementId(), x: item.x + 20, y: item.y + 20 };
+      // Two fields sharing a ^FN number are one field as far as the
+      // printer is concerned, so a copied field gets the next one.
+      if (copy.type === 'field') copy.number = nextFieldNumber(editorState.doc);
       editorState.doc.elements.push(copy);
       canvas.setSelected(copy.id);
       onDocChanged();
@@ -440,11 +450,11 @@ export function mountEditor(panel) {
     ]),
   ]);
 
-  editorHost = el('div', { class: 'flex h-[60vh] min-h-[20rem] flex-col overflow-hidden' });
+  editorHost = el('div', { class: EDITOR_HOST_CLASS.visual });
   inspectorHost = el('div');
   labelPanelHost = el('div');
 
-  editorPreview = createPreview();
+  editorPreview = createPreview({ onPrint: () => printEditorLabel() });
 
   // Editor, preview and properties sit side by side once there is room,
   // and stack in that order when there is not. Every column is min-w-0:

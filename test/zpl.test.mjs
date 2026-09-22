@@ -25,7 +25,7 @@ import assert from 'node:assert/strict';
 // zpl.js is written for the inliner, which strips the module keywords.
 const src = readFileSync(new URL('../src/js/zpl.js', import.meta.url), 'utf8');
 const mod = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
-const { toZpl, parseZpl, newLabel, newElement, findFieldNumbers, escapeFieldData, tokenizeZpl } = mod;
+const { toZpl, parseZpl, newLabel, newElement, findFieldNumbers, escapeFieldData, tokenizeZpl, nextFieldNumber } = mod;
 
 let failures = 0;
 function check(name, fn) {
@@ -190,6 +190,33 @@ check('tokenizer handles ^A font suffix', () => {
   assert.equal(tokens[0].cmd, 'A');
   assert.equal(tokens[0].args, '0N,30,30');
   assert.equal(tokens[1].args, 'AN,18,10');
+});
+
+check('a duplicated field takes the next free ^FN number', () => {
+  const doc = {
+    elements: [
+      { type: 'field', number: 1 },
+      { type: 'text', text: 'not a field' },
+      { type: 'field', number: 7 },
+    ],
+    passthrough: [],
+  };
+  assert.equal(nextFieldNumber(doc), 8);
+});
+
+check('^FN numbers the canvas does not model still count', () => {
+  // A field inside a command the visual editor kept verbatim would
+  // otherwise be handed out a second time.
+  const doc = {
+    elements: [{ type: 'field', number: 2 }],
+    passthrough: ['^FO10,10^FN12"lot"^FS'],
+  };
+  assert.equal(nextFieldNumber(doc), 13);
+});
+
+check('a label with no fields starts at one', () => {
+  assert.equal(nextFieldNumber({ elements: [], passthrough: [] }), 1);
+  assert.equal(nextFieldNumber({}), 1);
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

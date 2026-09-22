@@ -570,6 +570,28 @@ function barcodeFromArgs(symbology, args, by) {
  * ^FN takes a number and may be followed by ^FDdefault, and newer firmware
  * allows a name via ^FN1"ORDER_ID".
  */
+/**
+ * The number a new ^FN field should take: one past the highest already
+ * in the label.
+ *
+ * Counts the fields the canvas models *and* any ^FN inside the commands
+ * it does not -- a duplicate that reused a number would quietly merge
+ * itself with another field when the format is filled in, which is the
+ * one thing a duplicate must not do.
+ */
+export function nextFieldNumber(doc) {
+  let highest = 0;
+  for (const item of (doc && doc.elements) || []) {
+    if (item.type !== 'field') continue;
+    const number = Number(item.number);
+    if (Number.isFinite(number)) highest = Math.max(highest, number);
+  }
+  for (const raw of (doc && doc.passthrough) || []) {
+    for (const found of findFieldNumbers(raw)) highest = Math.max(highest, found.number);
+  }
+  return highest + 1;
+}
+
 export function findFieldNumbers(zpl) {
   const found = new Map();
   const tokens = tokenizeZpl(zpl);

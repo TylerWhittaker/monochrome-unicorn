@@ -210,8 +210,11 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
   const surface = el('div', {
     class: 'preview-surface relative shrink-0 border border-ink-300 shadow-sm',
   });
+  // The grey field hugs the label: the same 16px of it shows on all four
+  // sides, and it only starts scrolling once a label (or a zoom) is
+  // taller than the budget computeScale() fits to.
   const scroller = el('div', {
-    class: 'min-w-0 flex-1 overflow-auto bg-ink-100 p-4',
+    class: 'min-h-0 min-w-0 max-h-[70vh] overflow-auto bg-ink-100 p-4',
     onpointerdown: (event) => {
       if (event.target === scroller || event.target === surface) select(null);
     },
@@ -226,7 +229,10 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
     if (zoom !== 'fit') { scale = zoom; return; }
     const doc = getDoc();
     const availableW = Math.max(160, scroller.clientWidth - 32);
-    const availableH = Math.max(160, scroller.clientHeight - 32);
+    // Height comes from the viewport rather than from the scroller,
+    // which now takes its height from the label: measuring the box we
+    // are about to resize would feed its own last answer back in.
+    const availableH = Math.max(160, Math.round(window.innerHeight * 0.7) - 32);
     scale = Math.min(1, availableW / Math.max(1, doc.width), availableH / Math.max(1, doc.height));
   }
 

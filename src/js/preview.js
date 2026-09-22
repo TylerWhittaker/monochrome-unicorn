@@ -63,7 +63,7 @@ function htmxPost(path, values, options) {
  * Returns {node, update(zpl), print(zpl)}. `update` is safe to call often;
  * callers debounce it, and a superseded render is simply overwritten.
  */
-export function createPreview({ onPrinted } = {}) {
+export function createPreview({ onPrinted, onPrint } = {}) {
   const id = `preview-${++seq}`;
 
   const imageHost = el('div', {
@@ -81,10 +81,20 @@ export function createPreview({ onPrinted } = {}) {
     onclick: () => run('preview'),
   }, ['Refresh']);
 
+  // Printing is the thing you do after looking at the preview, so the
+  // pane offers it where you are already looking. The caller supplies
+  // the action rather than this pane calling print() itself: it is the
+  // caller that knows what is being printed and asks before doing it.
+  const printBtn = onPrint && el('button', {
+    class: 'btn-primary btn-sm',
+    type: 'button',
+    onclick: () => onPrint(),
+  }, ['Print']);
+
   const node = el('div', { class: 'card flex flex-col self-start overflow-hidden' }, [
     el('div', { class: 'toolbar' }, [
       el('span', { class: 'text-[12px] font-medium text-ink-700' }, ['Preview']),
-      el('div', { class: 'ml-auto flex items-center gap-2' }, [status, refreshBtn]),
+      el('div', { class: 'ml-auto flex items-center gap-2' }, [status, refreshBtn, printBtn]),
     ]),
     imageHost,
   ]);
