@@ -296,6 +296,60 @@ Everything else was tried and does not work:
   No error, no file. (`:B64:` does work for the types that store at
   all, and a CRC of `0000` is accepted.)
 
+## Printers older than Link-OS
+
+A printer running firmware below **V68** predates Link-OS and has no
+JSON channel at all, so `{}{"allconfig":null}` gets nothing back. `~HI`
+says which generation a printer is:
+
+```
+~HI  ->  \x02ZD500R-300dpi,V74.20.23Z,12,4096KB,CUTTER DETECTED\x03
+```
+
+The second field is the firmware version; the number after the `V` is
+what decides. The build picks the catalogue command from that, and
+`./deploy.sh <ip> --allcv` (or `--allconfig`) forces it either way.
+
+### allcv
+
+`! U1 getvar "allcv"` works on every printer, Link-OS included, which
+is how this was tested without a pre-Link-OS one to hand. It answers
+with a flat listing:
+
+```
+bluetooth.                                       <- category marker
+bluetooth.discoverable : off , Choices: on,off   <- value and choices
+bluetooth.friendly_name : 40J132100037           <- value only
+bluetooth.clear_bonding_cache                    <- no value at all
+ip.netstat : Active Internet connections         <- value carries on
+Proto Recv-Q Send-Q  Local Address ...              over more lines
+```
+
+Things that cost time to discover, all measured on the bench ZD500R:
+
+- **It ends with a quote character alone on a line, with no line ending
+  after it** -- and that printer sends `""`, not `"`. A quote can also
+  be the last line of a multi-line value, so seeing one is not proof:
+  wait five seconds for more data before believing it.
+- **A value may run over any number of lines** (`ip.netstat` runs to 34,
+  `file.dir` to 192), and a continuation line can look like anything.
+  Only a line that starts at column zero with a dotted lower-case name
+  begins a new setting.
+- **Choices are not access flags.** Of the 581 settings listed by both
+  allcv and allconfig on the same printer, 206 of the 208 with choices
+  were read/write -- but of the 318 with a value and no choices, 195
+  were read-only and **111 were writable**. Neither "no choices means
+  read-only" nor the reverse is true, so the console marks those
+  `RW?`: editable, tagged as a guess, and confirmed by the read-back
+  every write does anyway.
+- **allcv lists more than allconfig**: 737 settings against 647, and it
+  includes `file.dir`, which allconfig hides and which takes three
+  seconds to read. That one is added to the slow list so it does not
+  join the `file` branch sweep.
+- **No factory defaults.** Nothing is marked as changed from default on
+  an allcv catalogue, and the Settings tab says why rather than leaving
+  a column mysteriously empty.
+
 ## Rendering
 
 `^PW` and `^LL` both take effect in the preview; width is rounded up to a

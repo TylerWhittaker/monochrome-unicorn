@@ -200,6 +200,13 @@ a 500).
   (`setvar file.type`, which the manual offers for this, writes the
   contents back to the port the command arrived on — never to an HTTP
   request.)
+- Printers older than the QLn series (firmware below V68, i.e. before
+  Link-OS) have no JSON channel, so their catalogue comes from
+  `! U1 getvar "allcv"` instead. `~HI` decides which to use;
+  `--allcv`/`--allconfig` force it. allcv lists no factory defaults and
+  no access flags, so nothing is marked as changed from default and a
+  setting with no list of choices is tagged `read/write?` -- editable,
+  and confirmed by the read-back. The Settings tab says so at the top.
 - The setting catalogue is captured at build time. Deploying a build to
   a different printer model may show settings it does not have; re-run
   `./deploy.sh <ip>` against that printer to recapture.

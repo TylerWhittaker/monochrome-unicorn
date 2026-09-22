@@ -25,6 +25,12 @@
 #     --no-schema   reuse data/sgd-schema.json instead of re-reading the
 #                   printer's SGD catalogue (faster; use when you know the
 #                   target printer matches the captured one)
+#     --allcv       read the catalogue with `! U1 getvar "allcv"` rather
+#                   than the JSON allconfig. Pre-Link-OS printers (firmware
+#                   below V68) have no JSON channel and are detected by ~HI,
+#                   so this is only needed to force it on a printer that
+#                   would otherwise be asked for JSON
+#     --allconfig   force the JSON catalogue, skipping the ~HI check
 #     --no-upload   build only, leave the printer alone
 #     --clean       remove the helper files this tool installed (V_* and
 #                   S_*) before uploading the new set
@@ -40,6 +46,7 @@ IP=""
 FETCH_SCHEMA=1
 UPLOAD=1
 CLEAN=0
+SCHEMA_ARGS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -47,6 +54,8 @@ while [ $# -gt 0 ]; do
     --no-upload) UPLOAD=0 ;;
     --clean)     CLEAN=1 ;;
     -h|--help)   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --allcv)     SCHEMA_ARGS+=(--allcv) ;;
+    --allconfig) SCHEMA_ARGS+=(--allconfig) ;;
     -*)          echo "unknown option: $1" >&2; exit 2 ;;
     *)           IP="$1" ;;
   esac
@@ -54,7 +63,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$IP" ] && { [ "$UPLOAD" = 1 ] || [ "$FETCH_SCHEMA" = 1 ]; }; then
-  echo "usage: ./deploy.sh <printer-ip> [--no-schema] [--no-upload] [--clean]" >&2
+  echo "usage: ./deploy.sh <printer-ip> [--no-schema] [--no-upload] [--clean] [--allcv|--allconfig]" >&2
   exit 2
 fi
 
@@ -63,7 +72,7 @@ for tool in node nc curl; do
 done
 
 if [ "$FETCH_SCHEMA" = 1 ]; then
-  node tools/fetch-schema.mjs "$IP"
+  node tools/fetch-schema.mjs "$IP" ${SCHEMA_ARGS[@]+"${SCHEMA_ARGS[@]}"}
 else
   echo "Using cached data/sgd-schema.json"
 fi

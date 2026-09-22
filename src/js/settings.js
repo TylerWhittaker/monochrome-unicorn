@@ -193,6 +193,25 @@ function wireTextCommit(input, original, commit) {
   });
 }
 
+/**
+ * What the catalogue could not tell us, said once at the top.
+ *
+ * A pre-Link-OS printer has no JSON channel, so the catalogue comes
+ * from allcv, which lists neither factory defaults nor access flags.
+ * Without a word of explanation the missing "not default" tags read as
+ * a broken page rather than a printer that never said.
+ */
+function sourceNotice() {
+  if (!printer.schema || printer.schema.source !== 'allcv') return null;
+  return el('p', {
+    class: 'border-b border-ink-200 bg-ink-50 px-3 py-2 text-[12px] text-ink-600',
+  }, [
+    'This printer\u2019s settings were read with allcv, which is all a pre-Link-OS printer '
+    + 'offers: no factory defaults, so nothing is marked as changed, and no access flags, '
+    + 'so anything without a list of choices is tagged read/write? and can be tried.',
+  ]);
+}
+
 /* ------------------------------------------------------------------ *
  * Sorting
  *
@@ -273,6 +292,18 @@ const ACCESS_BADGE = {
   // cannot act on.
   R: ['read-only', 'bg-ink-100 text-ink-500'],
   W: ['write-only', 'bg-rose-100 text-rose-800'],
+  // A catalogue read from allcv does not say whether a setting can be
+  // written unless it lists choices for it. Rather than guess in either
+  // direction, such a row is editable and says that it is a guess: the
+  // write is checked by reading the value back, so trying it is how you
+  // find out.
+  'RW?': ['read/write?', 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200'],
+};
+
+const ACCESS_TITLE = {
+  'RW?': 'This printer\u2019s catalogue (allcv) does not say whether this setting can be '
+    + 'written. You can try: the value is read back afterwards, and the row reports what '
+    + 'the printer kept.',
 };
 
 /** Outlined, because unlike the others this tag is a button. */
@@ -352,7 +383,7 @@ function buildTags(entry) {
     entry.resetBtn,
     enableTag(meta),
     el('span', { class: `pill ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
-    el('span', { class: `pill ${accessClass}` }, [accessText]),
+    el('span', { class: `pill ${accessClass}`, title: ACCESS_TITLE[meta.access] || null }, [accessText]),
   ]);
 }
 
@@ -638,6 +669,7 @@ export function mountSettings(panel) {
   listNode.append(...buildGroups());
 
   panel.append(el('div', { class: 'card overflow-hidden' }, [
+    sourceNotice(),
     el('div', { class: 'toolbar' }, [
       filterInput,
       sortSelect,
