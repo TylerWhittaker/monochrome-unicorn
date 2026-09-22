@@ -59,6 +59,9 @@ let labelPanelHost = null;
 let fileSelect = null;
 let titleNode = null;
 let addBar = null;
+/** A label another mode asked for, waiting for this one to exist. */
+let pendingOpen = null;
+
 
 /* ------------------------------------------------------------------ *
  * Document plumbing
@@ -488,6 +491,7 @@ export function mountEditor(panel) {
   rebuildEditorView();
   refreshFileList();
   refreshEditorPreview();
+  drainPendingOpen();
 }
 
 /** Re-read the printer's file list whenever the tab comes back into view. */
@@ -495,4 +499,26 @@ export function onEditorShown() {
   refreshFileList();
   if (codeEditor) codeEditor.resize();
   if (canvas) canvas.render();
+  drainPendingOpen();
+}
+
+/**
+ * Open a stored label from another mode.
+ *
+ * The File System tab hands labels over this way. It may be called
+ * before this mode has ever been mounted -- the tab switch that follows
+ * is what mounts it -- so the request is parked until there is
+ * something to open it into.
+ */
+export function openInEditor(file) {
+  pendingOpen = file;
+  if (editorHost) drainPendingOpen();
+}
+
+function drainPendingOpen() {
+  const file = pendingOpen;
+  if (!file) return;
+  pendingOpen = null;
+  refreshFileList();
+  openFile(`${file.dev}:${file.oname}`);
 }

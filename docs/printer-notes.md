@@ -229,6 +229,15 @@ Three findings worth keeping:
   through `setvars.cgi` returns an empty body: the contents go to the
   port the command arrived on, and for HTTP that is nowhere. Reading it
   back through the SSI preprocessor gives `"?"`.
+- **A file on E: is served at `/NAME.EXT`** — which is how the helper
+  files work, and it turns out to be general. `GET /FF.BAT` returns the
+  batch file, `GET /LOGO.PNG` the whole graphic (unlike `/png`, which
+  drops four bytes). Not everything: `.NRD` and `.TTF` answer 500, and
+  a wrong extension is a 404. This is the only way to read anything
+  that is not a `.ZPL`.
+- **A stored `.ZPL` is tokenized on disk.** Fetched as a file it comes
+  back with `^` as `0x1e`, `,` as `0x1f` and no line breaks at all; the
+  `/zpl` form is what reassembles it. `detokenizeZpl` undoes it.
 
 ### Filling in a stored format, per language
 
@@ -242,6 +251,50 @@ EPL's `V` command carries the prompt it would have shown on a keyboard
 unit (`V00,15,N,"Enter Product Name:"`), which makes a far better field
 label than a number. CPCL placeholders have no names at all, so the
 console labels each with the command line it sits in.
+
+## The file.* command settings
+
+These three are write-only SGDs that make the printer do something, and
+unlike `file.type` they work perfectly well through `setvars.cgi` --
+nothing has to come back:
+
+| setting | value | what it does |
+|---|---|---|
+| `file.print` | `E:NAME.ZPL` | prints a stored format |
+| `file.run` | `E:NAME.BAT` | runs a stored batch file |
+| `file.delete` | `E:NAME.EXT` | deletes, **without the password** |
+
+`file.delete` is the better of the two delete routes: the `/delete` CGI
+wants the password and still refuses some types -- `E:X.NRD` answers
+"could not be queued for deletion", and the SGD removes it without
+complaint. Neither reports success, so confirm with `/dir`.
+
+## What a browser can upload
+
+Only two things, both through the `/zpl` form:
+
+| payload | how | result |
+|---|---|---|
+| ZPL text | `save=Save` + `pw=` | stored as `.ZPL` |
+| 1-bit graphic | `~DY...,A,G,...` hex, preview action | stored as `.GRF` |
+
+Everything else was tried and does not work:
+
+- **`save=Save` ignores `otype`.** Posting with `otype=TXT` stores
+  `E:NAME.ZPL`, and the text is run through the ZPL formatter on the
+  way in -- 26 bytes of prose arrived as a 5-byte file.
+- **`! CISDFCRC16` through the form does nothing.** The header that
+  works on port 9100 (and is how `tools/upload.mjs` writes `.SHTML`)
+  stores nothing when it arrives as the `data` field, with CRLF or LF.
+- **`~DY` parses its extension parameter by first letter**, whatever
+  the manual's table implies: `x=BAT` stored `.BMP`, `x=TXT` stored
+  `.TTF`, `x=EPL` stored `.TTE`. `NRD` is matched whole. So `.BAT`,
+  `.TXT`, `.EPL`, `.FMT` and `.LBL` cannot be written from a browser
+  at all.
+- **`~DY` still will not store a `.PNG`**, in any of the three
+  encodings: `A` with ASCII hex, `A` with `:B64:`, `P` with `:B64:`.
+  No error, no file. (`:B64:` does work for the types that store at
+  all, and a CRC of `0000` is accepted.)
 
 ## Rendering
 

@@ -19,6 +19,7 @@
  */
 
 /*
+ * app.js -- entry point. Wires the header, the tab bar and the modes.
  *
  * Each mode exposes mount(panel), called the first time its tab is opened
  * so a cold page only pays for what the user actually looks at.
@@ -30,11 +31,13 @@ import { mountSettings } from './settings.js';
 import { mountEditor, onEditorShown } from './editor.js';
 import { mountFormat, onFormatShown } from './format.js';
 import { mountLcd, onLcdShown, onLcdHidden } from './lcd.js';
+import { mountFiles, onFilesShown } from './files.js';
 
 const MODES = {
   settings: { mount: mountSettings },
   editor: { mount: mountEditor, onShow: onEditorShown },
   format: { mount: mountFormat, onShow: onFormatShown },
+  files: { mount: mountFiles, onShow: onFilesShown },
   lcd: { mount: mountLcd, onShow: onLcdShown, onHide: onLcdHidden },
 };
 

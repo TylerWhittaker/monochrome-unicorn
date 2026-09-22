@@ -35,6 +35,13 @@
  *   /dir                     directory listing (HTML table)
  *   /delete                  delete a stored object (needs pw + confirm)
  *   /png?prev=Y&...          the bitmap a preview rendered into
+ *   /<NAME.EXT>              a file on E: served as itself, which is the
+ *                            only way to read anything that is not a .ZPL
+ *
+ * Three file.* settings are commands rather than values -- file.print,
+ * file.run and file.delete -- and those do work through setvars.cgi,
+ * because they need no reply. file.type does not: it writes the file to
+ * whichever port asked, and an HTTP request is not a port it can answer.
  *
  * Nothing here throws for a printer-level failure; callers get a result
  * object and decide how loud to be about it.
@@ -345,6 +352,136 @@ export async function listFiles({ dev = 'E', otype = '*  ' } = {}) {
     });
   }
   return files;
+}
+
+/**
+ * Every file on a drive, with its real extension.
+ *
+ * /dir is fast but reports any type the web server does not know as
+ * "---", which loses the extension -- and the extension is what says
+ * whether a file can be printed, run or viewed. file.drive_listing is
+ * the one place the real name survives. It costs about nine seconds, so
+ * callers treat it as a background repair of a /dir listing rather than
+ * the way to list a drive.
+ *
+ * The value is JSON: {"E": {"NAME.EXT": {access, size, date, flags}}}.
+ */
+export async function readDriveListing({ fileStem, timeout = 60000 } = {}) {
+  const values = await readSlowSetting(fileStem, { timeout });
+  return parseDriveListing(values['file.drive_listing']);
+}
+
+/** Flatten the file.drive_listing JSON into the shape listFiles returns. */
+export function parseDriveListing(raw) {
+  if (!raw) return [];
+  let tree;
+  try {
+    tree = JSON.parse(raw);
+  } catch (err) {
+    throw new Error('The printer returned a drive listing that is not valid JSON');
+  }
+
+  const files = [];
+  for (const [dev, entries] of Object.entries(tree)) {
+    if (!entries || typeof entries !== 'object') continue;
+    for (const [filename, meta] of Object.entries(entries)) {
+      const dot = filename.lastIndexOf('.');
+      if (dot < 1) continue;
+      files.push({
+        name: `${dev}:${filename}`,
+        dev,
+        oname: filename.slice(0, dot),
+        otype: filename.slice(dot + 1).toUpperCase(),
+        bytes: (meta && Number(meta.size)) || 0,
+        date: (meta && meta.date) || '',
+        access: (meta && meta.access) || '',
+      });
+    }
+  }
+  return files;
+}
+
+/**
+ * Fetch a stored file byte for byte, the way the printer's own web
+ * server serves it: a file on E: is published at /NAME.EXT.
+ *
+ * This is the only way to read anything other than a .ZPL -- /zpl
+ * refuses every other type -- but the server does not serve everything
+ * either. Measured on a ZD500R: .ZPL, .PNG, .BAT and .SHTML come back,
+ * .NRD and .TTF answer 500. A 404 usually means the real extension is
+ * not what /dir said it was.
+ *
+ * The obvious alternative, `setvar file.type`, cannot work here: the
+ * printer writes the contents back to the port the command arrived on,
+ * and for a request through setvars.cgi that is nowhere.
+ */
+export async function fetchStoredFile({ dev, oname, otype }, { timeout = 60000 } = {}) {
+  if (dev && dev !== 'E') {
+    throw new Error(`The web server only serves files on E:, and this one is on ${dev}:`);
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const res = await fetch(`/${encodeURIComponent(`${oname}.${otype}`)}`, {
+      signal: ctrl.signal, cache: 'no-store',
+    });
+    if (res.status === 404) {
+      throw new Error(`The printer does not serve ${oname}.${otype} (is that the real extension?)`);
+    }
+    if (!res.ok) {
+      throw new Error(`The printer's web server will not hand over a .${otype} (HTTP ${res.status})`);
+    }
+    return new Uint8Array(await res.arrayBuffer());
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Undo the way the printer stores a ZPL format: it tokenizes the file,
+ * writing ^ as 0x1E and , as 0x1F and dropping the line breaks. The
+ * /zpl form hands back readable text, so this is only needed when a
+ * .ZPL has been fetched as a file.
+ */
+export function detokenizeZpl(text) {
+  return text.replace(/\x1e/g, '\n^').replace(/\x1f/g, ',').replace(/^\n/, '');
+}
+
+/**
+ * Write a command setting -- one of the write-only SGDs that make the
+ * printer do something (file.print, file.run, file.delete) rather than
+ * hold a value.
+ *
+ * There is nothing to read back: the setting is not readable, and
+ * setvars.cgi answers 200 with an empty body either way. So this
+ * reports only that the request was delivered, and callers confirm by
+ * looking at what changed -- a file that disappeared, a label printed.
+ */
+export async function sendCommandSetting(name, value) {
+  const res = await postForm('/Zebra/cgi/setvars.cgi', { [name]: value });
+  if (!res.ok) throw new Error(`setvars.cgi answered HTTP ${res.status}`);
+  return true;
+}
+
+/** Print a stored format by name, e.g. "E:LABEL.ZPL". */
+export function printStoredFile(name) {
+  return sendCommandSetting('file.print', name);
+}
+
+/** Run a stored .BAT file by name, e.g. "E:SETUP.BAT". */
+export function runStoredFile(name) {
+  return sendCommandSetting('file.run', name);
+}
+
+/**
+ * Delete through the SGD rather than the /delete CGI.
+ *
+ * It needs no password and, unlike the CGI, it will remove the types the
+ * CGI refuses -- anything /dir lists as "---", .NRD included. Nothing is
+ * reported back, so the caller re-lists to find out whether it worked.
+ */
+export function deleteStoredFile(name) {
+  return sendCommandSetting('file.delete', name);
 }
 
 /** Read a stored ZPL script out of the /zpl edit form's textarea. */

@@ -56,6 +56,8 @@ const formatState = {
 };
 
 let formatSelect = null;
+/** A format another mode asked for, waiting for this one to exist. */
+let pendingFormat = null;
 let fieldsHost = null;
 let sourceHost = null;
 let noticeHost = null;
@@ -378,7 +380,7 @@ async function scanForCpcl() {
  * Selecting and printing
  * ------------------------------------------------------------------ */
 
-async function selectFormat(value) {
+async function selectFormat(value, preloaded = null) {
   if (!value) {
     formatState.current = null;
     formatState.lang = null;
@@ -403,9 +405,14 @@ async function selectFormat(value) {
   formatState.current = { dev, oname, otype };
   formatState.lang = lang;
 
-  // Only ZPL comes back from /zpl; the others are refused, so do not
-  // make the user wait on a request known to fail.
-  if (lang.id === 'zpl') {
+  // A mode that has already read the file hands the source over with it,
+  // which is the only way an EPL or CPCL format ever gets its fields
+  // named: /zpl will not open one, but the file itself can be fetched.
+  if (preloaded) {
+    applySource(preloaded, true);
+  } else if (lang.id === 'zpl') {
+    // Only ZPL comes back from /zpl; the others are refused, so do not
+    // make the user wait on a request known to fail.
     const busy = toast(`Reading ${dev}:${oname}.${otype}…`, 'busy', { timeout: 0 });
     try {
       applySource(await readScript({ dev, oname, otype }), true);
@@ -494,10 +501,41 @@ export function mountFormat(panel) {
 
   renderFields();
   formatPreview.idle('Choose a format to see it rendered.');
-  refreshFormats();
+  refreshFormats().then(drainPendingFormat);
 }
 
 /** Stored formats can change from the Label Editor, so re-read the list. */
 export function onFormatShown() {
-  refreshFormats();
+  refreshFormats().then(drainPendingFormat);
+}
+
+/**
+ * Fill in a particular stored format, at another mode's request.
+ *
+ * The File System tab sends anything it finds fields in this way, with
+ * the source it has already read -- which is how an EPL or CPCL format
+ * arrives here with its fields named, rather than as a count the user
+ * has to guess.
+ */
+export function openInFormat(file, source = null) {
+  pendingFormat = { file, source };
+  if (formatSelect) drainPendingFormat();
+}
+
+function drainPendingFormat() {
+  const pending = pendingFormat;
+  if (!pending || !formatSelect) return;
+  pendingFormat = null;
+
+  const { file, source } = pending;
+  const value = `${file.dev}:${file.oname}.${file.otype}`;
+  if (!formatState.formats.some((f) => f.name === value)) {
+    formatState.formats = [...formatState.formats, {
+      name: value, dev: file.dev, oname: file.oname, otype: file.otype, bytes: file.bytes || 0,
+    }];
+  }
+  formatState.current = { dev: file.dev, oname: file.oname, otype: file.otype };
+  renderFormatOptions();
+  formatSelect.value = value;
+  selectFormat(value, source);
 }

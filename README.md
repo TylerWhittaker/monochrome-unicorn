@@ -21,6 +21,13 @@ Three modes:
   and print. What is possible varies by language, because the printer's
   web server will only hand back the contents of a `.ZPL`; the mode says
   so rather than pretending otherwise.
+- **File System** — every stored object on a drive, with what can be
+  done to each: view it (a label as its ZPL, a graphic as a picture, a
+  batch file as its escape sequences), edit a `.ZPL` in the Label
+  Editor, print a stored format, run a `.BAT`, delete, and upload from
+  your computer. Which buttons a row gets is decided by the type,
+  because the printer's web server treats types very differently; a
+  button that is off says why.
 - **LCD Viewer** — mirror the printer's front panel on an adjustable
   timer (2 s by default), with a note of how long ago it last refreshed.
   Drawn as a classic green LCD, which brightens when the printer's
@@ -174,6 +181,25 @@ a 500).
   polls only while its tab is on screen and the browser tab is visible,
   so it does not compete with the rest of the console for the printer's
   single-request-at-a-time web server.
+- `/dir` is the fast way to list a drive but reports any type the web
+  server does not know as `---`, losing the extension. The File System
+  mode reads `file.drive_listing` in the background to put the real
+  names back; that takes about nine seconds, during which the printer
+  answers nothing else.
+- What the console can put **on** the printer is what its web server
+  accepts: a `.ZPL` through the label form, and a picture as a `.GRF`
+  (reduced to one bit here in the browser). A `.PNG` cannot be stored
+  over HTTP at all — `~DY` reports success and writes nothing — and
+  `.BAT`, `.TXT`, `.EPL` and the rest need the `CISDFCRC16` header on
+  port 9100, which a page cannot open. `tools/upload.mjs` does that
+  from a computer on the network, and the upload dialog says so with
+  the command already filled in.
+- Reading a file is the same story in reverse: `.ZPL` comes back from
+  the label form and `.BAT`, `.SHTML` and graphics can be fetched
+  directly, but the web server answers 500 for a `.NRD` or a `.TTF`.
+  (`setvar file.type`, which the manual offers for this, writes the
+  contents back to the port the command arrived on — never to an HTTP
+  request.)
 - The setting catalogue is captured at build time. Deploying a build to
   a different printer model may show settings it does not have; re-run
   `./deploy.sh <ip>` against that printer to recapture.
