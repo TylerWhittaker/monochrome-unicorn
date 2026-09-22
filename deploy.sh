@@ -53,9 +53,11 @@ while [ $# -gt 0 ]; do
     --no-schema) FETCH_SCHEMA=0 ;;
     --no-upload) UPLOAD=0 ;;
     --clean)     CLEAN=1 ;;
-    -h|--help)   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --allcv)     SCHEMA_ARGS+=(--allcv) ;;
     --allconfig) SCHEMA_ARGS+=(--allconfig) ;;
+    # The usage block is the comment paragraph that names this script,
+    # not the licence notice above it.
+    -h|--help)   awk '/^# deploy\.sh --/,/^$/' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)          echo "unknown option: $1" >&2; exit 2 ;;
     *)           IP="$1" ;;
   esac
