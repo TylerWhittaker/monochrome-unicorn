@@ -2,3 +2,4 @@ node_modules/
 dist/
 *.log
 reference/*.pdf
+data/sgd-schema.json

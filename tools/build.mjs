@@ -299,6 +299,16 @@ function helperFiles(schema) {
 export function build({ schemaPath, outDir }) {
   mkdirSync(outDir, { recursive: true });
 
+  // The catalogue is captured from a printer rather than kept in the
+  // repository, so a fresh clone has none until a deploy has run once.
+  if (!existsSync(schemaPath)) {
+    throw new Error(
+      `No settings catalogue at ${rel(schemaPath)}.\n`
+      + '       It is read from a printer rather than checked in:\n'
+      + '         node tools/fetch-schema.mjs <printer-ip>\n'
+      + '       or ./deploy.sh <printer-ip>, which does both.'
+    );
+  }
   const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
   const { files: helpers, slowFiles } = helperFiles(schema);
 

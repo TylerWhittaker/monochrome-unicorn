@@ -43,6 +43,11 @@ npm install                      # once, for the Tailwind CLI
 That reads the printer's setting catalogue, builds `dist/INDEX.SHTML`,
 uploads it plus its helper files, and checks what the printer now serves.
 
+The catalogue it captures (`data/sgd-schema.json`) is a property of the
+printer in front of you, not of this project, so it is generated rather
+than checked in: a fresh clone has none until a deploy -- or
+`node tools/fetch-schema.mjs <printer-ip>` -- has fetched one.
+
 ```
 --no-schema   reuse data/sgd-schema.json instead of re-reading the printer
 --no-upload   build only
