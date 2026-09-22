@@ -52,6 +52,7 @@
       <button class="tab-btn" role="tab" data-tab="settings" aria-selected="true">Printer Settings</button>
       <button class="tab-btn" role="tab" data-tab="editor" aria-selected="false" title="Design and edit ZPL labels">Label Editor</button>
       <button class="tab-btn" role="tab" data-tab="format" aria-selected="false" title="Fill in stored ZPL, EPL or CPCL formats">Format Printer</button>
+      <button class="tab-btn" role="tab" data-tab="files" aria-selected="false" title="Browse, view, print and upload the printer's stored files">File System</button>
       <button class="tab-btn" role="tab" data-tab="lcd" aria-selected="false">LCD Viewer</button>
     </nav>
   </div>
@@ -66,7 +67,7 @@
 </main>
 
 <footer class="mx-auto max-w-6xl px-4 pb-6 text-[11px] text-ink-400">
-  Served from the printer &middot; built {{BUILD_STAMP}}
+  <div>Version {{VERSION}} &middot; Built {{BUILD_STAMP}}</div>
   <div class="mt-1">
     Zebra Printer Console &middot; Copyright &copy; 2026 Tyler Whittaker &middot;
     free software under the

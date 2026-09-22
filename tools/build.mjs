@@ -32,6 +32,7 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { readVersion } from './version.mjs';
 import { execFileSync } from 'node:child_process';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -217,6 +218,18 @@ function squeeze(js) {
     .trim();
 }
 
+/**
+ * "YYYY-MM-DD HH:MM:SS", in UTC.
+ *
+ * A printer on a bench and the machine that built the page are rarely
+ * in the same room, let alone the same timezone, so the stamp in the
+ * footer says when the build happened in the one timezone that does not
+ * depend on who is reading it.
+ */
+function buildStamp(now = new Date()) {
+  return now.toISOString().slice(0, 19).replace('T', ' ');
+}
+
 /** The @name=value@ block the preprocessor fills in before serving. */
 function bootVarsBlock() {
   return BOOT_VARS
@@ -308,7 +321,8 @@ export function build({ schemaPath, outDir }) {
     '{{APP_JS}}': app,
     '{{SGD_SCHEMA}}': JSON.stringify(schema),
     '{{BOOT_VARS}}': bootVarsBlock(),
-    '{{BUILD_STAMP}}': new Date().toISOString().slice(0, 19).replace('T', ' ') + 'Z',
+    '{{VERSION}}': readVersion(),
+    '{{BUILD_STAMP}}': buildStamp(),
   };
 
   let html = template;
@@ -334,6 +348,7 @@ export function build({ schemaPath, outDir }) {
 
   return {
     indexPath,
+    version: replacements['{{VERSION}}'],
     indexBytes: Buffer.byteLength(html),
     helperDir,
     helpers: helpers.map((f) => f.dest),
@@ -359,7 +374,7 @@ function main() {
   });
 
   const kb = (n) => (n / 1024).toFixed(1).padStart(6) + ' KB';
-  console.log('Built dist/INDEX.SHTML');
+  console.log(`Built dist/INDEX.SHTML  (version ${result.version})`);
   console.log(`  tailwind css ${kb(result.parts.css)}`);
   console.log(`  htmx         ${kb(result.parts.htmx)}`);
   console.log(`  app js       ${kb(result.parts.app)}`);

@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Zebra Printer Console -- a web console served from a Zebra printer.
+# Copyright (C) 2026 Tyler Whittaker
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+#
+# pre-commit -- every commit moves the version on.
+#
+# A patch bump is the default because it is the safe answer when nobody
+# has said otherwise. A commit that adds a feature or breaks something
+# says so first:
+#
+#     node tools/version.mjs bump minor
+#
+# and this hook then leaves the version alone, because it is already
+# ahead of the committed one.
+#
+# Installed by `npm install` (package.json's "prepare" script), or by
+# hand with:  git config core.hooksPath tools/githooks
+#
+
+set -euo pipefail
+
+# Nothing to move on from in the very first commit, and nothing sensible
+# to do in the middle of a merge or a rebase either.
+git rev-parse -q --verify HEAD >/dev/null 2>&1 || exit 0
+git_dir=$(git rev-parse --git-dir)
+if [ -e "$git_dir/MERGE_HEAD" ] \
+  || [ -d "$git_dir/rebase-merge" ] \
+  || [ -d "$git_dir/rebase-apply" ]; then
+  exit 0
+fi
+
+version_in() {
+  git show "$1:package.json" 2>/dev/null \
+    | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    | head -1
+}
+
+staged=$(git show :package.json 2>/dev/null \
+  | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+committed=$(version_in HEAD)
+
+if [ -z "$staged" ] || [ -z "$committed" ]; then
+  echo "pre-commit: no version field found; leaving it alone" >&2
+  exit 0
+fi
+
+if [ "$staged" != "$committed" ]; then
+  echo "pre-commit: version already set to $staged"
+  exit 0
+fi
+
+next=$(node tools/version.mjs bump patch)
+git add package.json
+echo "pre-commit: version $committed -> $next"

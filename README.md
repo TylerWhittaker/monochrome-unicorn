@@ -204,6 +204,30 @@ a 500).
   a different printer model may show settings it does not have; re-run
   `./deploy.sh <ip>` against that printer to recapture.
 
+## Versioning
+
+[Semantic Versioning](https://semver.org). The version lives in exactly
+one place, `package.json`'s `version` field; everything else asks for
+it, so there is nothing to keep in step:
+
+```sh
+node tools/version.mjs              # what version is this?
+node tools/version.mjs bump minor   # a feature; major breaks something
+```
+
+The build stamps that version and the time into the page footer, which
+is how you tell what a printer is actually running.
+
+Every commit moves the version on: `tools/githooks/pre-commit` bumps the
+patch level unless the commit already changes the version itself, so a
+feature or a breaking change is a `bump minor`/`bump major` before
+committing and the hook then leaves it alone. `npm install` points git
+at the hook; by hand it is:
+
+```sh
+git config core.hooksPath tools/githooks
+```
+
 ## Licence
 
 Copyright (C) 2026 Tyler Whittaker.

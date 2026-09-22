@@ -1,6 +1,6 @@
 {
   "name": "zebra-printer-web-app",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "author": "Tyler Whittaker",
@@ -9,7 +9,9 @@
   "scripts": {
     "css": "tailwindcss -i src/css/app.css -o dist/app.css --minify",
     "build": "node tools/build.mjs",
-    "deploy": "./deploy.sh"
+    "deploy": "./deploy.sh",
+    "version:show": "node tools/version.mjs",
+    "prepare": "git config core.hooksPath tools/githooks"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.17"
