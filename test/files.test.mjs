@@ -105,6 +105,7 @@ check('text that was never tokenized is left alone', () => {
 check('a stored ZPL can do everything', () => {
   const caps = fs.fsCapabilities({ dev: 'E', oname: 'LABEL', otype: 'ZPL' });
   assert.equal(caps.view, null);
+  assert.equal(caps.download, null);
   assert.equal(caps.edit, null);
   assert.equal(caps.print, null);
   assert.equal(caps.delete, null);
@@ -133,13 +134,33 @@ check('a type /dir could not name offers nothing, and says so', () => {
   assert.ok(fs.fsIsUnknownType('---') && fs.fsIsUnknownType('') && !fs.fsIsUnknownType('ZPL'));
 });
 
-check('the ROM drive is read-only, and R: cannot be fetched as a file', () => {
-  const rom = fs.fsCapabilities({ dev: 'Z', oname: 'FONT', otype: 'ZPL' });
+check('the ROM drive can be read but not written', () => {
+  // The web server's path namespace is flat -- /BLUETOOTH.WML fetches a
+  // ROM file as readily as a flash one -- so View and Download are open
+  // on every drive, and only writing is refused.
+  const rom = fs.fsCapabilities({ dev: 'Z', oname: 'BLUETOOTH', otype: 'WML' });
+  assert.equal(rom.view, null);
+  assert.equal(rom.download, null);
   assert.match(rom.delete, /read-only/);
   assert.match(rom.edit, /read-only/);
 
   const ram = fs.fsCapabilities({ dev: 'R', oname: 'TEMP', otype: 'ZPL' });
-  assert.match(ram.view, /only serves files on E:/);
+  assert.equal(ram.view, null, 'RAM is fetched the same way');
+  assert.equal(ram.edit, null, 'and it is writable');
+});
+
+check('Download goes wherever View goes', () => {
+  for (const file of [
+    { dev: 'E', oname: 'LABEL', otype: 'ZPL' },
+    { dev: 'Z', oname: 'A', otype: 'FNT' },
+    { dev: 'E', oname: 'FF', otype: 'BAT' },
+  ]) {
+    const caps = fs.fsCapabilities(file);
+    assert.equal(caps.download, caps.view, `${file.oname}.${file.otype}`);
+  }
+  // Except where there is no name to ask for.
+  const unknown = fs.fsCapabilities({ dev: 'E', oname: 'X', otype: '---' });
+  assert.match(unknown.download, /did not report/);
 });
 
 check('the drive listing’s access flags are believed when present', () => {

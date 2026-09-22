@@ -35,13 +35,19 @@
  *   /dir                     directory listing (HTML table)
  *   /delete                  delete a stored object (needs pw + confirm)
  *   /png?prev=Y&...          the bitmap a preview rendered into
- *   /<NAME.EXT>              a file on E: served as itself, which is the
- *                            only way to read anything that is not a .ZPL
+ *   /<NAME.EXT>              a stored file served as itself, on any drive
+ *                            (the namespace is flat), which is the only
+ *                            way to read anything that is not a .ZPL
  *
  * Three file.* settings are commands rather than values -- file.print,
  * file.run and file.delete -- and those do work through setvars.cgi,
- * because they need no reply. file.type does not: it writes the file to
- * whichever port asked, and an HTTP request is not a port it can answer.
+ * because they need no reply. Its results page is not the evidence it
+ * looks like: it reports "FAILED" for every write-only setting, for a
+ * file.delete that demonstrably deleted the file as much as for a
+ * file.type that did nothing. The only proof is what changed.
+ *
+ * file.type cannot work here at all: it writes the file to whichever
+ * port asked, and an HTTP request is not a port it can answer.
  *
  * Nothing here throws for a printer-level failure; callers get a result
  * object and decide how loud to be about it.
@@ -411,14 +417,19 @@ export function parseDriveListing(raw) {
  * .NRD and .TTF answer 500. A 404 usually means the real extension is
  * not what /dir said it was.
  *
- * The obvious alternative, `setvar file.type`, cannot work here: the
+ * The path namespace is flat -- /NAME.EXT, whichever drive the file is
+ * on -- so a ROM file comes back the same way a flash one does. Where
+ * two drives hold the same name, the printer decides which it serves.
+ *
+ * The obvious alternative, `setvar file.type`, cannot work here. The
  * printer writes the contents back to the port the command arrived on,
- * and for a request through setvars.cgi that is nowhere.
+ * and through setvars.cgi that is nowhere: the CGI answers with a
+ * results page reading "file.type->E:NAME FAILED", and reading the
+ * setting back through the preprocessor gives "?". (That page says
+ * FAILED for every write-only setting, file.delete included, so it is
+ * no evidence either way -- but nothing arrives.)
  */
-export async function fetchStoredFile({ dev, oname, otype }, { timeout = 60000 } = {}) {
-  if (dev && dev !== 'E') {
-    throw new Error(`The web server only serves files on E:, and this one is on ${dev}:`);
-  }
+export async function fetchStoredFile({ oname, otype }, { timeout = 60000 } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {

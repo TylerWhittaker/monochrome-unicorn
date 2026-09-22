@@ -252,6 +252,58 @@ unit (`V00,15,N,"Enter Product Name:"`), which makes a far better field
 label than a number. CPCL placeholders have no names at all, so the
 console labels each with the command line it sits in.
 
+## Reading a file over HTTP
+
+- **The path namespace is flat.** `/NAME.EXT` serves a stored file from
+  whichever drive holds it, ROM included: `GET /BLUETOOTH.WML` returns
+  the 7881-byte ROM file. There is no `dev` in the path, so where two
+  drives hold the same name the printer chooses.
+- Which *types* it will part with is a separate question and only the
+  request answers it: `.WML`, `.BAT`, `.PNG`, `.BMP`, `.ZPL` and
+  `.SHTML` come back; `.FNT`, `.TTF` and `.NRD` answer 500.
+- **`file.type` returns nothing over HTTP**, retested every way there
+  is: through `setvars.cgi`, read back through the preprocessor (`"?"`),
+  called as `getvar.cgi?file.type` (404 -- the CGI is only reachable
+  through an SSI `#exec`), and from inside a `file.run` script. The
+  contents go to the port the command arrived on, and an HTTP request
+  is not one.
+- **`setvars.cgi`'s results page is not evidence.** It answers
+  `name->value SUCCEEDED` for an ordinary setting, and `FAILED` for
+  every write-only one -- including a `file.delete` that demonstrably
+  deleted the file. Only what changed proves anything.
+
+## Running commands from the browser
+
+`file.run` feeds a stored file to the parser exactly as if it had been
+sent to port 9100, which is a way out of nearly every CGI limitation.
+The chain needs no password and no socket, and all three links are
+measured:
+
+1. `~DYR:NAME,A,B,<len>,,<raw text>` stores the data field **verbatim**
+   (the `A`/`B` pair does no hex decoding), so the browser can write an
+   arbitrary byte stream through the `/zpl` preview form.
+2. `setvar file.run R:NAME.BMP` executes it. A stored `~DY` ran and
+   created its object; `! U1 setvar` lines work too (a `file.delete`
+   inside a script removed a file).
+3. A `! CISDFCRC16` header inside such a script writes **any filename
+   with any extension, byte for byte** -- `E:HELLO.TXT` was created
+   from the browser and served back identical. That is the header
+   `tools/upload.mjs` uses on port 9100, and it is what the console
+   would need to upload a `.BAT`, `.EPL` or `.FMT`.
+
+Two things that do **not** work:
+
+- **Binary payloads hang the printer.** A `CISDFCRC16` body containing
+  NUL bytes, sent through the `/zpl` form, left the printer accepting
+  TCP connections on both ports and answering neither -- the signature
+  of a download header still waiting for bytes the form truncated.
+  Flushing 300 KB, `CAN` (0x18) and `~JA` did not clear it; only a
+  power cycle did. Keep these payloads to printable ASCII.
+- **`file.capture_response` captures nothing here**, with or without a
+  filename, whether begun inside the `file.run` script or over HTTP
+  either side of one. There is no read-back channel: `file.run` writes
+  and executes, and that is all.
+
 ## The file.* command settings
 
 These three are write-only SGDs that make the printer do something, and

@@ -21,13 +21,15 @@ Three modes:
   and print. What is possible varies by language, because the printer's
   web server will only hand back the contents of a `.ZPL`; the mode says
   so rather than pretending otherwise.
-- **File System** — every stored object on a drive, with what can be
-  done to each: view it (a label as its ZPL, a graphic as a picture, a
-  batch file as its escape sequences), edit a `.ZPL` in the Label
-  Editor, print a stored format, run a `.BAT`, delete, and upload from
-  your computer. Which buttons a row gets is decided by the type,
-  because the printer's web server treats types very differently; a
-  button that is off says why.
+- **File System** — every stored object on every drive, with what can
+  be done to each: view it (a label as its ZPL, a graphic as a picture,
+  a batch file as its escape sequences), download it to your computer,
+  edit a `.ZPL` in the Label Editor, print a stored format, run a
+  `.BAT`, delete, and upload. Which buttons a row gets is decided by the
+  type, because the printer's web server treats types very differently;
+  a button that is off says why. The listing is one read of
+  `file.drive_listing` — about nine seconds, with the header saying so
+  — which is the only place the real extensions live.
 - **LCD Viewer** — mirror the printer's front panel on an adjustable
   timer (2 s by default), with a note of how long ago it last refreshed.
   Drawn as a classic green LCD, which brightens when the printer's
@@ -186,11 +188,12 @@ a 500).
   polls only while its tab is on screen and the browser tab is visible,
   so it does not compete with the rest of the console for the printer's
   single-request-at-a-time web server.
-- `/dir` is the fast way to list a drive but reports any type the web
-  server does not know as `---`, losing the extension. The File System
-  mode reads `file.drive_listing` in the background to put the real
-  names back; that takes about nine seconds, during which the printer
-  answers nothing else.
+- `/dir` answers in 0.14 s but reports any type the web server does not
+  know as `---`, losing the extension that decides what can be done with
+  a file, and it covers one drive per request. The File System mode
+  therefore reads `file.drive_listing` instead: one nine-second read
+  with the real names, sizes, dates and all three drives, during which
+  the printer answers nothing else.
 - What the console can put **on** the printer is what its web server
   accepts: a `.ZPL` through the label form, and a picture as a `.GRF`
   (reduced to one bit here in the browser). A `.PNG` cannot be stored
@@ -204,7 +207,8 @@ a 500).
   directly, but the web server answers 500 for a `.NRD` or a `.TTF`.
   (`setvar file.type`, which the manual offers for this, writes the
   contents back to the port the command arrived on — never to an HTTP
-  request.)
+  request. Retested through `setvars.cgi`, through the preprocessor and
+  from inside a `file.run`: nothing arrives.)
 - Printers older than the QLn series (firmware below V68, i.e. before
   Link-OS) have no JSON channel, so their catalogue comes from
   `! U1 getvar "allcv"` instead. `~HI` decides which to use;

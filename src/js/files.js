@@ -40,13 +40,17 @@
  *
  * `setvar file.type` is the documented way to read a file and is no use
  * here: the contents go back to the port the command arrived on, and
- * that is not the HTTP request. printer.js has the detail.
+ * that is not the HTTP request. Retested every way there is -- through
+ * setvars.cgi, read back through the preprocessor, and from inside a
+ * file.run -- and nothing ever arrives. printer.js has the detail.
  *
- * /dir is the fast listing (0.14 s) but reports any type it does not
- * know as "---", losing the extension -- which is exactly what decides
- * the buttons above. file.drive_listing has the real names and takes
- * about nine seconds, so it runs in the background and repairs the
- * rows in place.
+ * The listing comes from file.drive_listing rather than /dir. /dir is
+ * far faster -- 0.14 s against nine seconds -- and unusable: it reports
+ * any type it does not know as "---", losing the extension that decides
+ * every button above, and it answers for one drive at a time. One
+ * drive_listing read has the real names, sizes, dates, access flags and
+ * all three drives at once, so it is read once and the header says so
+ * while it happens.
  */
 
 import {
@@ -70,33 +74,31 @@ const FS_IMAGE_TYPES = ['PNG', 'GRF', 'BMP', 'PCX'];
 /** Types worth offering a Print button for. */
 const FS_PRINTABLE_TYPES = ['ZPL', 'LBL', 'FMT', 'EPL'];
 
-/** Drives to offer. Z: is the firmware's own, and read-only. */
+/**
+ * Drives to offer. One listing covers them all, so these filter what
+ * has already been read rather than asking the printer again.
+ */
 const FS_DRIVES = [
   ['E', 'E: onboard flash'],
   ['R', 'R: RAM'],
   ['Z', 'Z: ROM (read-only)'],
-  ['USER', 'E: and R:'],
+  ['*', 'All drives'],
 ];
 
 const fsState = {
   drive: 'E',
+  /** Every file on every drive, as the last listing found them. */
   files: [],
   filter: '',
-  resolving: false,
+  loading: false,
+  /** Set once a listing has landed, so returning to the tab is instant. */
+  loaded: false,
 };
-
-/**
- * Real names learnt from file.drive_listing, keyed "<dev>:<oname>".
- *
- * Kept for the life of the page: the listing costs nine seconds, and
- * the tab is re-read every time it comes back into view. A file that
- * appears later and is still unnamed is what triggers another read.
- */
-const fsRealNames = new Map();
 
 let fsListNode = null;
 let fsCountNode = null;
 let fsNoticeNode = null;
+let fsLoadingNode = null;
 let fsDriveSelect = null;
 let fsRefreshBtn = null;
 
@@ -125,13 +127,17 @@ export function fsCapabilities(file) {
   // writable rather than greying out buttons that do work.
   const readOnly = file.dev === 'Z' || (Boolean(file.access) && !file.access.includes('W'));
 
-  const caps = { view: null, edit: null, print: null, run: null, delete: null };
+  const caps = { view: null, edit: null, download: null, print: null, run: null, delete: null };
 
+  // The web server's path namespace is flat: a file is served as
+  // /NAME.EXT whichever drive it is on, ROM included. Whether it will
+  // part with a particular type is a different question, and one only
+  // the request itself answers -- a .WML comes back, a .FNT is a 500 --
+  // so View stays enabled and reports what the printer said.
   if (unknown) {
     caps.view = 'The printer did not report this file’s type, so there is no way to ask for it.';
-  } else if (file.dev !== 'E' && !FS_IMAGE_TYPES.includes(otype)) {
-    caps.view = `The web server only serves files on E:, and this one is on ${file.dev}:.`;
   }
+  caps.download = caps.view;
 
   if (otype !== 'ZPL') {
     caps.edit = unknown
@@ -177,78 +183,54 @@ const FS_TYPE_BADGE = {
  * Listing
  * ------------------------------------------------------------------ */
 
-async function fsRefresh({ quiet = false } = {}) {
-  fsRefreshBtn.disabled = true;
-  const busy = quiet ? null : toast(`Listing ${fsState.drive}:…`, 'busy', { timeout: 0 });
-  try {
-    const files = await listFiles({ dev: fsState.drive, otype: '*  ' });
-    fsState.files = files.sort((a, b) => a.name.localeCompare(b.name)).map(fsApplyRealName);
-    if (busy) busy.close();
-  } catch (err) {
-    if (busy) busy.update(`Could not list the drive: ${err.message}`, 'error');
-    else toast(`Could not list the drive: ${err.message}`, 'error');
-    return;
-  } finally {
-    fsRefreshBtn.disabled = false;
-  }
-
-  fsRenderList();
-  if (fsState.files.some((f) => fsIsUnknownType(f.otype))) fsResolveNames();
-}
-
 /**
- * Put back what a previous drive listing knew about this file.
+ * Read the whole filesystem.
  *
- * Only where /dir had nothing to say: a cached name can be stale (the
- * file may have been replaced by one of another type since), and /dir
- * has just been read, so where the two disagree /dir wins.
+ * Nine seconds, during which the printer's web server answers nothing
+ * else, so it happens once and the header says it is happening. The
+ * Refresh button is how you ask for it again.
  */
-function fsApplyRealName(file) {
-  if (!fsIsUnknownType(file.otype)) return file;
-  const known = fsRealNames.get(`${file.dev}:${file.oname}`);
-  if (!known) return file;
-  return { ...file, otype: known.otype, name: known.name, date: known.date, access: known.access };
-}
+async function fsRefresh({ force = false } = {}) {
+  if (fsState.loading) return;
+  if (fsState.loaded && !force) { fsRenderList(); return; }
 
-/**
- * Repair the rows /dir could not name, in the background.
- *
- * Worth doing without being asked -- an unnamed row has no buttons at
- * all -- but not worth blocking the listing on: it takes about nine
- * seconds, during which the printer's web server answers nothing else.
- */
-async function fsResolveNames() {
   const stem = (printer.schema.slowFiles || {})['file.drive_listing'];
-  if (!stem || fsState.resolving) return;
+  if (!stem) {
+    fsSetNotice('This build has no helper file for file.drive_listing, so the filesystem cannot '
+      + 'be listed. Re-deploy against this printer.', 'warn');
+    return;
+  }
 
-  fsState.resolving = true;
-  fsSetNotice('Reading the full drive listing to find the types /dir did not report…', 'info');
+  fsState.loading = true;
+  fsRenderLoading();
+  fsRenderList();
 
   try {
-    const real = await readDriveListing({ fileStem: stem });
-    for (const found of real) fsRealNames.set(`${found.dev}:${found.oname}`, found);
-
-    let repaired = 0;
-    for (const file of fsState.files) {
-      const match = fsRealNames.get(`${file.dev}:${file.oname}`);
-      if (!match) continue;
-      if (fsIsUnknownType(file.otype) && !fsIsUnknownType(match.otype)) repaired++;
-      file.otype = match.otype;
-      file.name = match.name;
-      file.date = match.date;
-      file.access = match.access;
-      if (!file.bytes) file.bytes = match.bytes;
-    }
-
-    fsSetNotice(repaired
-      ? `${repaired} file type(s) that /dir reports as "---" were read from file.drive_listing.`
-      : '', 'info');
-    fsRenderList();
+    const files = await readDriveListing({ fileStem: stem });
+    fsState.files = files.sort((a, b) => a.name.localeCompare(b.name));
+    fsState.loaded = true;
+    fsSetNotice('');
   } catch (err) {
-    fsSetNotice(`The full drive listing could not be read (${err.message}), so some types stay unknown.`, 'warn');
+    fsSetNotice(`The drive listing could not be read: ${err.message}`, 'warn');
   } finally {
-    fsState.resolving = false;
+    fsState.loading = false;
+    fsRenderLoading();
+    fsRenderList();
   }
+}
+
+/** The spinner and its word, while the listing is on its way. */
+function fsRenderLoading() {
+  if (fsRefreshBtn) fsRefreshBtn.disabled = fsState.loading;
+  if (!fsState.loading) { replaceChildren(fsLoadingNode, []); return; }
+  replaceChildren(fsLoadingNode, [
+    el('span', {
+      class: 'inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-300 border-t-ink-700',
+      role: 'status',
+      'aria-label': 'Loading',
+    }),
+    el('span', { class: 'text-[11px] text-ink-500' }, ['reading the drive listing…']),
+  ]);
 }
 
 /**
@@ -258,8 +240,8 @@ async function fsResolveNames() {
  * "busy processing another request", so say what is really happening.
  */
 function fsPrinterBusy() {
-  if (!fsState.resolving) return false;
-  toast('The full drive listing is still being read — the printer answers one request at a time. '
+  if (!fsState.loading) return false;
+  toast('The drive listing is still being read — the printer answers one request at a time. '
     + 'Try again in a moment.', 'info');
   return true;
 }
@@ -275,21 +257,29 @@ function fsSetNotice(text, kind = 'info') {
 
 function fsVisibleFiles() {
   const needle = fsState.filter.toLowerCase();
-  if (!needle) return fsState.files;
-  return fsState.files.filter((f) => f.name.toLowerCase().includes(needle));
+  return fsState.files.filter((file) => {
+    if (fsState.drive !== '*' && file.dev !== fsState.drive) return false;
+    return !needle || file.name.toLowerCase().includes(needle);
+  });
 }
 
 function fsRenderList() {
   const files = fsVisibleFiles();
   const total = fsState.files.length;
-  fsCountNode.textContent = files.length === total
-    ? `${total} file${total === 1 ? '' : 's'}`
-    : `${files.length} of ${total} files`;
+  fsCountNode.textContent = !fsState.loaded ? ''
+    : files.length === total
+      ? `${total} file${total === 1 ? '' : 's'}`
+      : `${files.length} of ${total} files`;
 
   if (!files.length) {
-    replaceChildren(fsListNode, [el('p', { class: 'px-3 py-6 text-center text-ink-400' }, [
-      total ? 'No files match this filter.' : 'This drive holds no files.',
-    ])]);
+    // "No files" is a fact about a drive, not about a listing that has
+    // not arrived yet -- nine seconds of the wrong answer reads as a
+    // broken tab.
+    const empty = fsState.loading ? 'Reading the drive listing…'
+      : !fsState.loaded ? 'The drive listing has not been read yet.'
+        : total ? 'No files match this filter.'
+          : 'This drive holds no files.';
+    replaceChildren(fsListNode, [el('p', { class: 'px-3 py-6 text-center text-ink-400' }, [empty])]);
     return;
   }
 
@@ -325,6 +315,7 @@ function fsBuildRow(file) {
     el('div', { class: 'flex shrink-0 flex-wrap items-center gap-1.5' }, [
       button('View', caps.view, () => fsViewFile(file)),
       button('Edit', caps.edit, () => fsEditFile(file)),
+      button('Download', caps.download, () => fsDownloadFile(file)),
       caps.print === null ? button('Print', null, () => fsPrintFile(file)) : null,
       caps.run === null ? button('Run', null, () => fsRunFile(file)) : null,
       button('Delete', caps.delete, () => fsDeleteFile(file), 'btn-danger btn-sm'),
@@ -449,6 +440,48 @@ async function fsViewFile(file) {
       el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Close']),
     ]),
   ]));
+}
+
+/* ------------------------------------------------------------------ *
+ * Download
+ * ------------------------------------------------------------------ */
+
+/**
+ * Hand the file to the browser to save.
+ *
+ * What gets saved is what the file is, with one deliberate exception: a
+ * stored .ZPL is tokenized on the printer (^ as 0x1e, no line breaks),
+ * and saving that would give you a file no editor will open and the
+ * printer itself only half understands. So a .ZPL is saved as the ZPL
+ * the /zpl form hands back -- the text you would write by hand.
+ */
+async function fsDownloadFile(file) {
+  if (fsPrinterBusy()) return;
+  const busy = toast(`Fetching ${file.name}…`, 'busy', { timeout: 0 });
+
+  let blob;
+  try {
+    if (file.otype === 'ZPL') {
+      const text = await readScript({ dev: file.dev, oname: file.oname, otype: 'ZPL' });
+      blob = new Blob([text], { type: 'text/plain' });
+    } else {
+      const bytes = await fetchStoredFile(file);
+      blob = new Blob([bytes], { type: 'application/octet-stream' });
+    }
+  } catch (err) {
+    busy.update(`Could not fetch ${file.name}: ${err.message}`, 'error', { timeout: 8000 });
+    return;
+  }
+
+  const url = URL.createObjectURL(blob);
+  const link = el('a', { href: url, download: `${file.oname}.${file.otype}` });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // Give the browser the moment it needs to start the save before the
+  // object URL stops pointing at anything.
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  busy.update(`Saved ${file.oname}.${file.otype}`, 'success');
 }
 
 /* ------------------------------------------------------------------ *
@@ -600,7 +633,7 @@ async function fsDeleteFile(file) {
 
 /** Re-list the drive and say whether the file survived, dropping it if not. */
 async function fsStillThere(file) {
-  const files = await listFiles({ dev: fsState.drive, otype: '*  ' });
+  const files = await listFiles({ dev: file.dev, otype: '*  ' });
   const survived = files.some((f) => f.dev === file.dev && f.oname === file.oname);
   if (!survived) fsState.files = fsState.files.filter((f) => f !== file);
   return survived;
@@ -655,7 +688,7 @@ async function fsHandlePickedFile(file) {
     const stored = await uploadImageDialog({
       doc: { unit: loadUnitPreference(), width: printer.dpi * 4 },
     });
-    if (stored) await fsRefresh({ quiet: true });
+    if (stored) await fsRefresh({ force: true });
     return;
   }
 
@@ -738,7 +771,7 @@ async function fsUploadTextFile(file, ext) {
   try {
     await saveScript({ dev: 'E', oname, otype: 'ZPL', data: text, password });
     busy.update(`Stored E:${oname}.ZPL`, 'success');
-    await fsRefresh({ quiet: true });
+    await fsRefresh({ force: true });
   } catch (err) {
     busy.close();
     if (/password/i.test(err.message)) {
@@ -768,8 +801,8 @@ export function mountFiles(panel) {
     FS_DRIVES.map(([value, label]) => el('option', { value, selected: value === fsState.drive }, [label])));
   fsDriveSelect.addEventListener('change', () => {
     fsState.drive = fsDriveSelect.value;
-    fsSetNotice('');
-    fsRefresh();
+    // One listing covers every drive, so this is a filter, not a re-read.
+    fsRenderList();
   });
 
   const picker = fsUploadPicker();
@@ -777,8 +810,11 @@ export function mountFiles(panel) {
     class: 'btn-primary btn-sm', onclick: () => picker.click(),
   }, ['Upload…']);
 
-  fsRefreshBtn = el('button', { class: 'btn-secondary btn-sm', onclick: () => fsRefresh() }, ['Refresh']);
+  fsRefreshBtn = el('button', {
+    class: 'btn-secondary btn-sm', onclick: () => fsRefresh({ force: true }),
+  }, ['Refresh']);
   fsCountNode = el('span', { class: 'text-[11px] text-ink-500' });
+  fsLoadingNode = el('span', { class: 'flex items-center gap-1.5' });
   fsNoticeNode = el('div');
   fsListNode = el('div');
 
@@ -787,7 +823,9 @@ export function mountFiles(panel) {
       fsDriveSelect,
       filterInput,
       picker,
-      el('div', { class: 'ml-auto flex items-center gap-3' }, [fsCountNode, uploadBtn, fsRefreshBtn]),
+      el('div', { class: 'ml-auto flex items-center gap-3' }, [
+        fsLoadingNode, fsCountNode, uploadBtn, fsRefreshBtn,
+      ]),
     ]),
     fsNoticeNode,
     fsListNode,
@@ -797,7 +835,13 @@ export function mountFiles(panel) {
   fsRefresh();
 }
 
-/** Files change from the other modes, so re-read the listing on return. */
+/**
+ * Coming back to the tab shows what was already read.
+ *
+ * The listing is nine seconds of the printer answering nothing else, so
+ * it is not something to spend on a tab switch; Refresh asks for a new
+ * one, and the actions that change the filesystem re-read it themselves.
+ */
 export function onFilesShown() {
-  fsRefresh({ quiet: true });
+  fsRefresh();
 }
