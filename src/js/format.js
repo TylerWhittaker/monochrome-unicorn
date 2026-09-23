@@ -70,7 +70,7 @@ let scanBtn = null;
  * The command stream for the current state
  * ------------------------------------------------------------------ */
 
-function formatZpl() {
+function recallZpl() {
   if (!formatState.current || !formatState.lang) return '';
   return buildRecall(
     formatState.lang,
@@ -82,7 +82,7 @@ function formatZpl() {
 }
 
 const scheduleFormatPreview = debounce(() => {
-  if (formatState.current && formatState.lang.previewable) formatPreview.update(formatZpl());
+  if (formatState.current && formatState.lang.previewable) formatPreview.update(recallZpl());
 }, 600);
 
 /* ------------------------------------------------------------------ *
@@ -227,7 +227,7 @@ function renderFields() {
       lang.previewable
         ? el('button', {
           class: 'btn-secondary btn-sm',
-          onclick: () => formatPreview.update(formatZpl()),
+          onclick: () => formatPreview.update(recallZpl()),
         }, ['Preview now'])
         : el('span', { class: 'text-[11px] text-ink-400' }, [`no preview for ${lang.label}`]),
     ]),
@@ -430,7 +430,7 @@ async function selectFormat(value, preloaded = null) {
   renderSource();
   renderSummary();
 
-  if (lang.previewable) formatPreview.update(formatZpl());
+  if (lang.previewable) formatPreview.update(recallZpl());
   else formatPreview.idle(`The printer only renders ZPL previews, so there is none for ${lang.label}.`);
 
   const first = fieldsHost.querySelector('input[type="text"]');
@@ -448,7 +448,7 @@ async function printFormatLabel() {
     'Print'
   );
   if (!ok) return;
-  formatPreview.print(formatZpl());
+  formatPreview.print(recallZpl());
 }
 
 /* ------------------------------------------------------------------ *

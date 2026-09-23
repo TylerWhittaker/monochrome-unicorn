@@ -63,6 +63,7 @@ import {
   deleteFile,
 } from './printer.js';
 import { languageOf, parseFields } from './formats.js';
+import { formatZpl } from './zpl.js';
 import { openInEditor } from './editor.js';
 import { openInFormat } from './format.js';
 import { uploadImageDialog } from './imagedialog.js';
@@ -387,7 +388,9 @@ export function fsHexDump(bytes, limit = 1024) {
 async function fsReadText(file) {
   if (file.otype === 'ZPL') {
     try {
-      return await readScript({ dev: file.dev, oname: file.oname, otype: 'ZPL' });
+      // /zpl hands back the commands but barely any line breaks: most
+      // of a label arrives as one long line, comments and all.
+      return formatZpl(await readScript({ dev: file.dev, oname: file.oname, otype: 'ZPL' }));
     } catch (err) {
       /* fall through to the file itself */
     }
@@ -451,9 +454,9 @@ async function fsViewFile(file) {
  *
  * What gets saved is what the file is, with one deliberate exception: a
  * stored .ZPL is tokenized on the printer (^ as 0x1e, no line breaks),
- * and saving that would give you a file no editor will open and the
- * printer itself only half understands. So a .ZPL is saved as the ZPL
- * the /zpl form hands back -- the text you would write by hand.
+ * and saving that would give you a file no editor will open. So a .ZPL
+ * is saved as the ZPL the /zpl form hands back, laid out one field to a
+ * line -- the form's own output runs most of a label together on one.
  */
 async function fsDownloadFile(file) {
   if (fsPrinterBusy()) return;
@@ -462,7 +465,7 @@ async function fsDownloadFile(file) {
   let blob;
   try {
     if (file.otype === 'ZPL') {
-      const text = await readScript({ dev: file.dev, oname: file.oname, otype: 'ZPL' });
+      const text = formatZpl(await readScript({ dev: file.dev, oname: file.oname, otype: 'ZPL' }));
       blob = new Blob([text], { type: 'text/plain' });
     } else {
       const bytes = await fetchStoredFile(file);

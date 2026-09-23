@@ -25,7 +25,7 @@ import assert from 'node:assert/strict';
 // zpl.js is written for the inliner, which strips the module keywords.
 const src = readFileSync(new URL('../src/js/zpl.js', import.meta.url), 'utf8');
 const mod = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
-const { toZpl, parseZpl, newLabel, newElement, findFieldNumbers, escapeFieldData, tokenizeZpl, nextFieldNumber } = mod;
+const { toZpl, parseZpl, newLabel, newElement, findFieldNumbers, escapeFieldData, tokenizeZpl, nextFieldNumber, formatZpl } = mod;
 
 let failures = 0;
 function check(name, fn) {
@@ -217,6 +217,40 @@ check('^FN numbers the canvas does not model still count', () => {
 check('a label with no fields starts at one', () => {
   assert.equal(nextFieldNumber({ elements: [], passthrough: [] }), 1);
   assert.equal(nextFieldNumber({}), 1);
+});
+
+check('formatting puts one field on a line, and nothing else', () => {
+  const out = formatZpl('^XA^PW600^LL200^FO50,50^A0N,30,30^FDHello^FS^FO50,99^GB10,10,2^FS^XZ');
+  assert.deepEqual(out.trim().split('\n'), [
+    '^XA',
+    '^PW600',
+    '^LL200',
+    '^FO50,50^A0N,30,30^FDHello^FS',
+    '^FO50,99^GB10,10,2^FS',
+    '^XZ',
+  ]);
+});
+
+check('formatting only moves line breaks; every byte survives', () => {
+  const src = '^XA^FO10,10^FDone^FS\r\n^FO10,40^FDtwo^FS^XZ';
+  const strip = (t) => t.replace(/\s/g, '');
+  assert.equal(strip(formatZpl(src)), strip(src));
+  assert.equal(formatZpl(formatZpl(src)), formatZpl(src), 'and it settles after one pass');
+});
+
+check('a caret inside field data does not split the line', () => {
+  // ^FD data is taken verbatim to ^FS, so a caret in it is text, not a
+  // command, and a line break there would change what prints.
+  const out = formatZpl('^XA^FO10,10^FDprice ^ 5^FS^XZ').trim().split('\n');
+  assert.deepEqual(out, ['^XA', '^FO10,10^FDprice ^ 5^FS', '^XZ']);
+});
+
+check('^CT~ keeps its argument', () => {
+  // The tilde is what ^CT sets the control character to. Read as a
+  // command it used to become a line of its own that never settled.
+  assert.deepEqual(formatZpl('^XA^CT~^FWN^XZ').trim().split('\n'), ['^XA', '^CT~', '^FWN', '^XZ']);
+  const tokens = tokenizeZpl('^CT~^FWN');
+  assert.deepEqual(tokens.map((t) => t.cmd), ['CT', 'FW']);
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');
