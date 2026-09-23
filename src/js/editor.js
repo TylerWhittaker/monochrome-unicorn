@@ -59,6 +59,8 @@ let labelPanelHost = null;
 let fileSelect = null;
 let titleNode = null;
 let addBar = null;
+let viewBar = null;
+let zoomGroup = null;
 /** A label another mode asked for, waiting for this one to exist. */
 let pendingOpen = null;
 
@@ -161,6 +163,8 @@ function rebuildEditorView() {
   editorHost.replaceChildren();
 
   addBar.hidden = editorState.view !== 'visual';
+  // The toggle stays put in both views -- it is how you get back.
+  if (zoomGroup) zoomGroup.hidden = editorState.view !== 'visual';
   // The canvas takes its height from the label it is showing; the source
   // editor has no natural height of its own and has to be given one.
   editorHost.className = EDITOR_HOST_CLASS[editorState.view] || EDITOR_HOST_CLASS.visual;
@@ -463,11 +467,16 @@ export function mountEditor(panel) {
       class: 'btn-secondary btn-sm capitalize',
       onclick: () => addElement(type),
     }, [type])),
-    el('div', { class: 'ml-auto flex items-center gap-2' }, [
-      el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, ['Zoom']),
-      zoomSelect,
-    ]),
   ]);
+
+  // Which view you are in, and how big it is drawn: both are about
+  // looking at the label rather than about the file, so they share a
+  // row under the elements you can add to it.
+  zoomGroup = el('div', { class: 'ml-auto flex items-center gap-2' }, [
+    el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, ['Zoom']),
+    zoomSelect,
+  ]);
+  viewBar = el('div', { class: 'toolbar' }, [viewToggle, zoomGroup]);
 
   editorHost = el('div', { class: EDITOR_HOST_CLASS.visual });
   inspectorHost = el('div');
@@ -486,19 +495,23 @@ export function mountEditor(panel) {
     // card keeps a band of white below the canvas whenever the label is
     // shorter than the rails beside it.
     el('div', { class: 'card min-w-0 self-start overflow-hidden lg:col-span-2 xl:col-span-1' }, [
+      // Which label, and what to do with it when it is finished.
       el('div', { class: 'toolbar' }, [
         fileSelect,
+        el('div', { class: 'ml-auto flex items-center gap-2' }, [
+          titleNode,
+          el('button', { class: 'btn-primary btn-sm', onclick: () => printEditorLabel() }, ['Print']),
+        ]),
+      ]),
+      // What to do with the file itself, under the name of it.
+      el('div', { class: 'toolbar' }, [
         el('button', { class: 'btn-secondary btn-sm', onclick: () => newLabelDoc() }, ['New']),
         el('button', { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: false }) }, ['Save']),
         el('button', { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: true }) }, ['Save as…']),
         el('button', { class: 'btn-danger btn-sm', onclick: () => deleteCurrent() }, ['Delete']),
-        el('div', { class: 'ml-auto flex items-center gap-2' }, [
-          titleNode,
-          viewToggle,
-          el('button', { class: 'btn-primary btn-sm', onclick: () => printEditorLabel() }, ['Print']),
-        ]),
       ]),
       addBar,
+      viewBar,
       editorHost,
     ]),
     // Object properties sit immediately right of the designer, since
