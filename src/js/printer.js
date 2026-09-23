@@ -474,6 +474,21 @@ export async function sendCommandSetting(name, value) {
   return true;
 }
 
+/**
+ * Press a button on the printer's own front panel.
+ *
+ * `diag.simulate_event` is undocumented and not in any catalogue --
+ * allconfig and allcv both omit it -- but a getvar answers "" rather
+ * than "?", which is how a write-only setting that exists replies. It
+ * works through setvars.cgi like the other commands, and the value is
+ * exact: "ButtonUp:Set", with the prefix, the capitals and the suffix.
+ * "do" instead of "setvar", lower case, or a missing ":Set" all do
+ * nothing at all.
+ */
+export function pressPanelButton(button) {
+  return sendCommandSetting('diag.simulate_event', `${button}:Set`);
+}
+
 /** Print a stored format by name, e.g. "E:LABEL.ZPL". */
 export function printStoredFile(name) {
   return sendCommandSetting('file.print', name);

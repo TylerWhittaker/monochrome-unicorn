@@ -33,7 +33,10 @@ Three modes:
 - **LCD Viewer** — mirror the printer's front panel on an adjustable
   timer (2 s by default), with a note of how long ago it last refreshed.
   Drawn as a classic green LCD, which brightens when the printer's
-  backlight is on.
+  backlight is on. Its keypad presses the printer's own buttons through
+  the undocumented `diag.simulate_event`, so the menus can be driven
+  from here — and Up and Down change the value on screen, as they do on
+  the printer.
 
 ## Deploying
 

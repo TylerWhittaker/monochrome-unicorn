@@ -402,6 +402,30 @@ Things that cost time to discover, all measured on the bench ZD500R:
   an allcv catalogue, and the Settings tab says why rather than leaving
   a column mysteriously empty.
 
+## The front panel, from the browser
+
+`diag.simulate_event` presses the printer's own buttons. It is in no
+catalogue -- neither allconfig nor allcv lists it -- but a getvar
+answers `""` rather than `"?"`, which is how an existing write-only
+setting replies, and it works through `setvars.cgi` like the other
+command settings.
+
+```
+! U1 setvar "diag.simulate_event" "ButtonP1:Set"
+```
+
+Verified on a ZD500R: `ButtonP1`, `ButtonP2`, `ButtonSelect`,
+`ButtonUp`, `ButtonDown`, `ButtonLeft`, `ButtonRight` and
+`ButtonPause`. P1 opens SETTINGS from the home screen, Select enters an
+item, and **Up and Down change the value**, not just the highlight --
+this drives the printer, it does not browse it.
+
+The value is exact. `do` instead of `setvar`, lower case, a missing
+`:Set`, or `PAUSE:Set` without the `Button` prefix: all do nothing,
+silently. And a press that does nothing is not proof the command
+failed -- Down does nothing on the home screen, which is what made the
+first attempt look like a dead end.
+
 ## Rendering
 
 `^PW` and `^LL` both take effect in the preview; width is rounded up to a

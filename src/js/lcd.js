@@ -34,7 +34,7 @@
  */
 
 import { el, replaceChildren } from './ui.js';
-import { readLcd } from './printer.js';
+import { readLcd, pressPanelButton } from './printer.js';
 
 /** The front panel is twenty characters across and six rows down. */
 const COLS = 20;
@@ -175,6 +175,71 @@ function updateActivity() {
  * Mount
  * ------------------------------------------------------------------ */
 
+/*
+ * The buttons
+ * ------------------------------------------------------------------
+ * diag.simulate_event presses the printer's own front-panel keys, so
+ * the mirror becomes a remote control: the menus, the values, the lot.
+ * Laid out as the panel is -- the arrows around Select, with the two
+ * soft keys under the corners of the screen they belong to.
+ *
+ * Up and Down change the setting on screen, not just the highlight, so
+ * this is a real front panel and not a viewer with decoration.
+ */
+const LCD_BUTTONS = [
+  { key: 'ButtonP1', label: 'P1', title: 'Left soft key, under the screen' },
+  { key: 'ButtonUp', label: '\u25b2', title: 'Up' },
+  { key: 'ButtonP2', label: 'P2', title: 'Right soft key, under the screen' },
+  { key: 'ButtonLeft', label: '\u25c0', title: 'Left' },
+  { key: 'ButtonSelect', label: 'OK', title: 'Select' },
+  { key: 'ButtonRight', label: '\u25b6', title: 'Right' },
+  null,
+  { key: 'ButtonDown', label: '\u25bc', title: 'Down' },
+  null,
+];
+
+/**
+ * Press a key, then look at the screen.
+ *
+ * The read is immediate rather than left to the next poll: a front
+ * panel that answers a keypress two seconds later does not feel like
+ * one. The panel needs a moment to repaint first.
+ */
+async function pressButton(button, node) {
+  node.disabled = true;
+  try {
+    await pressPanelButton(button);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await poll();
+  } catch (err) {
+    state.lastError = `button press failed: ${err.message}`;
+    tick();
+  } finally {
+    node.disabled = false;
+  }
+}
+
+/** The keypad, in the shape of the printer's own. */
+function buildKeypad() {
+  const cells = LCD_BUTTONS.map((spec) => {
+    if (!spec) return el('span');
+    const node = el('button', {
+      class: 'btn-secondary h-9 w-full font-mono text-[13px] leading-none',
+      title: spec.title,
+      'aria-label': spec.title,
+    }, [spec.label]);
+    node.addEventListener('click', () => pressButton(spec.key, node));
+    return node;
+  });
+
+  return el('div', { class: 'mt-3 w-0 min-w-full' }, [
+    el('div', { class: 'grid grid-cols-3 gap-1.5' }, cells),
+    el('p', { class: 'mt-1.5 text-[11px] text-ink-400' }, [
+      'These press the printer\u2019s own buttons. Up and Down change the value on screen.',
+    ]),
+  ]);
+}
+
 export function mountLcd(panel) {
   const intervalInput = el('input', {
     class: 'field field-mono w-20', type: 'number',
@@ -226,6 +291,7 @@ export function mountLcd(panel) {
       el('div', {
         class: 'mt-1.5 flex w-0 min-w-full flex-wrap items-baseline justify-between gap-x-4 gap-y-1',
       }, [ageNode, metaNode]),
+      buildKeypad(),
     ]),
   ]));
 
