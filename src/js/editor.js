@@ -33,7 +33,7 @@ import { el, qs, toast, modal, confirmDialog, withPrinterPassword, debounce, for
 import { printer, loadUnitPreference } from './state.js';
 import { listFiles, readScript, saveScript, deleteFile, parseObjectName } from './printer.js';
 import { uploadImageDialog } from './imagedialog.js';
-import { newLabel, newElement, toZpl, parseZpl, elementId, nextFieldNumber } from './zpl.js';
+import { newLabel, newElement, toZpl, parseZpl, elementId, nextFieldNumber, formatZpl } from './zpl.js';
 import { createCanvas } from './wysiwyg.js';
 import { renderLabelPanel, renderElementPanel, panelHeading } from './inspector.js';
 import { createCodeEditor } from './codeeditor.js';
@@ -273,7 +273,9 @@ async function openFile(value) {
 
   const busy = toast(`Opening ${dev}:${oname}.ZPL…`, 'busy', { timeout: 0 });
   try {
-    const zpl = await readScript({ dev, oname, otype: 'ZPL' });
+    // /zpl returns most of a label as one long line; lay it out the way
+    // a download does, so the source view is readable from the off.
+    const zpl = formatZpl(await readScript({ dev, oname, otype: 'ZPL' }));
     loadDocument(zpl, { dev, oname });
     busy.close();
   } catch (err) {
