@@ -54,13 +54,13 @@
  */
 
 import {
-  el, toast, confirmDialog, modal, debounce, formatBytes, replaceChildren, requirePassword,
+  el, toast, confirmDialog, modal, debounce, formatBytes, replaceChildren, withPrinterPassword,
 } from './ui.js';
 import { printer, loadUnitPreference } from './state.js';
 import {
   listFiles, readDriveListing, fetchStoredFile, detokenizeZpl, readScript, saveScript,
   loadStoredImage, forgetStoredImage, printStoredFile, runStoredFile, deleteStoredFile,
-  deleteFile,
+  deleteFile, parseObjectName,
 } from './printer.js';
 import { languageOf, parseFields } from './formats.js';
 import { formatZpl } from './zpl.js';
@@ -618,9 +618,9 @@ async function fsDeleteFile(file) {
   try {
     await deleteStoredFile(file.name);
     if (await fsStillThere(file)) {
-      const password = await requirePassword();
-      if (password === null) { busy.update(`${file.name} was not deleted.`, 'info'); return; }
-      await deleteFile({ dev: file.dev, oname: file.oname, otype: file.otype, password });
+      await withPrinterPassword((password) => deleteFile({
+        dev: file.dev, oname: file.oname, otype: file.otype, password,
+      }));
       if (await fsStillThere(file)) {
         busy.update(`The printer kept ${file.name}.`, 'error');
         return;
@@ -630,7 +630,8 @@ async function fsDeleteFile(file) {
     busy.update(`Deleted ${file.name}`, 'success');
     fsRenderList();
   } catch (err) {
-    busy.update(`Delete failed: ${err.message}`, 'error');
+    if (err.cancelled) busy.update(`${file.name} was not deleted.`, 'info');
+    else busy.update(`Delete failed: ${err.message}`, 'error');
   }
 }
 
@@ -735,7 +736,7 @@ async function fsUploadTextFile(file, ext) {
     return;
   }
 
-  const suggested = objectNameFrom(file.name);
+  const suggested = `${objectNameFrom(file.name)}.ZPL`;
   const target = await modal('Upload to the printer', (close) => {
     const nameInput = el('input', {
       class: 'field field-mono', type: 'text', maxlength: '16', value: suggested,
@@ -754,7 +755,7 @@ async function fsUploadTextFile(file, ext) {
         nameInput,
       ]),
       el('p', { class: 'text-[11px] text-ink-400' }, [
-        'Upper case, up to 16 characters, no extension. An existing file of that name is overwritten.',
+        'Upper case, up to 16 characters. An existing file of that name is overwritten.',
       ]),
       el('div', { class: 'flex justify-end gap-2' }, [
         el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Cancel']),
@@ -764,25 +765,19 @@ async function fsUploadTextFile(file, ext) {
   });
 
   if (!target) return;
-  const oname = objectNameFrom(target);
+  const { oname, otype } = parseObjectName(target, 'ZPL');
   if (!oname) { toast('That name has no usable characters.', 'error'); return; }
 
-  const password = await requirePassword();
-  if (password === null) return;
-
-  const busy = toast(`Uploading ${oname}.ZPL…`, 'busy', { timeout: 0 });
+  const busy = toast(`Uploading ${oname}.${otype}…`, 'busy', { timeout: 0 });
   try {
-    await saveScript({ dev: 'E', oname, otype: 'ZPL', data: text, password });
-    busy.update(`Stored E:${oname}.ZPL`, 'success');
+    await withPrinterPassword((password) => saveScript({
+      dev: 'E', oname, otype, data: text, password,
+    }));
+    busy.update(`Stored E:${oname}.${otype}`, 'success');
     await fsRefresh({ force: true });
   } catch (err) {
     busy.close();
-    if (/password/i.test(err.message)) {
-      toast('The printer rejected that password.', 'error');
-      await requirePassword({ force: true });
-    } else {
-      toast(`Upload failed: ${err.message}`, 'error');
-    }
+    if (!err.cancelled) toast(`Upload failed: ${err.message}`, 'error');
   }
 }
 

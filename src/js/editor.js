@@ -29,9 +29,9 @@
  * through untouched rather than discarded.
  */
 
-import { el, qs, toast, modal, confirmDialog, requirePassword, debounce, formatBytes } from './ui.js';
+import { el, qs, toast, modal, confirmDialog, withPrinterPassword, debounce, formatBytes } from './ui.js';
 import { printer, loadUnitPreference } from './state.js';
-import { listFiles, readScript, saveScript, deleteFile } from './printer.js';
+import { listFiles, readScript, saveScript, deleteFile, parseObjectName } from './printer.js';
 import { uploadImageDialog } from './imagedialog.js';
 import { newLabel, newElement, toZpl, parseZpl, elementId, nextFieldNumber } from './zpl.js';
 import { createCanvas } from './wysiwyg.js';
@@ -232,7 +232,9 @@ function renderEditorInspector() {
 }
 
 function renderEditorTitle() {
-  const name = editorState.file ? `${editorState.file.dev}:${editorState.file.oname}.ZPL` : 'Untitled label';
+  const name = editorState.file
+    ? `${editorState.file.dev}:${editorState.file.oname}.${editorState.file.otype || 'ZPL'}`
+    : 'Untitled label';
   titleNode.textContent = name + (editorState.dirty ? ' •' : '');
   titleNode.title = editorState.dirty ? 'Unsaved changes' : '';
 }
@@ -283,15 +285,16 @@ async function saveFile({ saveAs }) {
   let target = editorState.file;
 
   if (saveAs || !target) {
-    const name = await modal(saveAs ? 'Save label as' : 'Save label', (close) => {
+    const typed = await modal(saveAs ? 'Save label as' : 'Save label', (close) => {
       const input = el('input', {
-        class: 'field field-mono', type: 'text', maxlength: '16',
-        placeholder: 'LABELNAME', value: target ? target.oname : '',
+        class: 'field field-mono', type: 'text', maxlength: '25',
+        placeholder: 'LABELNAME.ZPL', value: target ? `${target.oname}.${target.otype || 'ZPL'}` : '',
         onkeydown: (e) => { if (e.key === 'Enter') close(input.value); },
       });
       return el('div', { class: 'space-y-3' }, [
         el('p', { class: 'text-ink-600' }, [
-          'Object names are upper case, up to 16 characters, no extension.',
+          'Object names are upper case, up to 16 characters. Give an extension and it is '
+          + 'used as it stands; leave it off and the label is saved as .ZPL.',
         ]),
         input,
         el('div', { class: 'flex justify-end gap-2' }, [
@@ -300,32 +303,47 @@ async function saveFile({ saveAs }) {
         ]),
       ]);
     });
-    if (!name) return;
-    const clean = name.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '');
-    if (!clean) { toast('That name has no usable characters.', 'error'); return; }
-    target = { dev: 'E', oname: clean.slice(0, 16) };
+    if (!typed) return;
+
+    const { oname, otype } = parseObjectName(typed, 'ZPL');
+    if (!oname) { toast('That name has no usable characters.', 'error'); return; }
+    target = { dev: 'E', oname, otype };
   }
 
-  const password = await requirePassword();
-  if (password === null) return;
+  const otype = target.otype || 'ZPL';
+  const full = `${target.dev}:${target.oname}.${otype}`;
+  const busy = toast(`Saving ${full}…`, 'busy', { timeout: 0 });
 
-  const busy = toast(`Saving ${target.dev}:${target.oname}.ZPL…`, 'busy', { timeout: 0 });
   try {
-    await saveScript({ dev: target.dev, oname: target.oname, otype: 'ZPL', data: editorZpl(), password });
-    editorState.file = target;
-    editorState.dirty = false;
-    renderEditorTitle();
-    busy.update(`Saved ${target.dev}:${target.oname}.ZPL`, 'success');
-    await refreshFileList();
-    fileSelect.value = `${target.dev}:${target.oname}`;
+    await withPrinterPassword((password) => saveScript({
+      dev: target.dev, oname: target.oname, otype, data: editorZpl(), password,
+    }));
   } catch (err) {
     busy.close();
-    if (/password/i.test(err.message)) {
-      toast('The printer rejected that password.', 'error');
-      await requirePassword({ force: true });
-    } else {
-      toast(`Save failed: ${err.message}`, 'error');
-    }
+    if (!err.cancelled) toast(`Save failed: ${err.message}`, 'error');
+    return;
+  }
+
+  editorState.file = target;
+  editorState.dirty = false;
+  renderEditorTitle();
+  await refreshFileList();
+  fileSelect.value = `${target.dev}:${target.oname}`;
+
+  // The label form stores what it likes: asked for an extension it does
+  // not write, it saves a .ZPL and says nothing. Say what actually
+  // landed rather than repeating what was asked for.
+  const stored = editorState.scripts.find((f) => f.oname === target.oname && f.otype === otype)
+    || editorState.scripts.find((f) => f.oname === target.oname);
+  if (stored && stored.otype !== otype) {
+    busy.update(
+      `Saved as ${stored.name} — the printer's label form only writes .ZPL, whatever it is asked for.`,
+      'info', { timeout: 8000 }
+    );
+    editorState.file = { dev: stored.dev, oname: stored.oname, otype: stored.otype };
+    renderEditorTitle();
+  } else {
+    busy.update(`Saved ${full}`, 'success');
   }
 }
 
@@ -333,18 +351,17 @@ async function deleteCurrent() {
   if (!editorState.file) { toast('This label has not been saved yet.', 'info'); return; }
   const { dev, oname } = editorState.file;
 
-  if (!await confirmDialog('Delete label?', `${dev}:${oname}.ZPL will be removed from the printer.`, 'Delete')) return;
-  const password = await requirePassword();
-  if (password === null) return;
+  const otype = editorState.file.otype || 'ZPL';
+  if (!await confirmDialog('Delete label?', `${dev}:${oname}.${otype} will be removed from the printer.`, 'Delete')) return;
 
   try {
-    await deleteFile({ dev, oname, otype: 'ZPL', password });
-    toast(`Deleted ${dev}:${oname}.ZPL`, 'success');
+    await withPrinterPassword((password) => deleteFile({ dev, oname, otype, password }));
+    toast(`Deleted ${dev}:${oname}.${otype}`, 'success');
     editorState.file = null;
     renderEditorTitle();
     await refreshFileList();
   } catch (err) {
-    toast(`Delete failed: ${err.message}`, 'error');
+    if (!err.cancelled) toast(`Delete failed: ${err.message}`, 'error');
   }
 }
 
