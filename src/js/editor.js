@@ -463,7 +463,10 @@ export function mountEditor(panel) {
   panel.append(el('div', {
     class: 'grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_21rem_21rem]',
   }, [
-    el('div', { class: 'card min-w-0 overflow-hidden lg:col-span-2 xl:col-span-1' }, [
+    // self-start, or a grid item stretches to the tallest column and the
+    // card keeps a band of white below the canvas whenever the label is
+    // shorter than the rails beside it.
+    el('div', { class: 'card min-w-0 self-start overflow-hidden lg:col-span-2 xl:col-span-1' }, [
       el('div', { class: 'toolbar' }, [
         fileSelect,
         el('button', { class: 'btn-secondary btn-sm', onclick: () => newLabelDoc() }, ['New']),
