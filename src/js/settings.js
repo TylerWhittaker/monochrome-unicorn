@@ -22,7 +22,7 @@
  * settings.js -- Mode 1: browse and edit every SGD on the printer.
  *
  * Modelled on about:config. The catalogue (name, type, range, access,
- * factory default) is inlined at build time; live values are read from the
+ * factory default) is inlined at build time; SGD values are read from the
  * V_*.SHTML helper files, one request per branch.
  *
  * setvars.cgi answers 200 with an empty body whether or not it liked the
@@ -651,7 +651,7 @@ async function refresh() {
   for (const entry of rows.values()) renderValueCell(entry);
   applyFilter();
 
-  const progress = toast(`Reading live values… 0/${total}`, 'busy', { timeout: 0 });
+  const progress = toast(`Reading SGD values… 0/${total}`, 'busy', { timeout: 0 });
   let read = 0;
 
   const paint = (batch) => {
@@ -661,7 +661,7 @@ async function refresh() {
       if (entry) renderValueCell(entry);
       read++;
     }
-    progress.update(`Reading live values… ${read}/${total}`, 'busy', { timeout: 0 });
+    progress.update(`Reading SGD values… ${read}/${total}`, 'busy', { timeout: 0 });
   };
 
   let failure = null;
@@ -680,7 +680,7 @@ async function refresh() {
       'error', { timeout: 8000 }
     );
   } else {
-    progress.update(`Read ${read} live values`, 'success');
+    progress.update(`Read ${read} SGD values`, 'success');
   }
 }
 
