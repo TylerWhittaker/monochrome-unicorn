@@ -184,6 +184,15 @@ export async function confirmDialog(title, message, confirmLabel = 'Confirm') {
 
 const PW_KEY = 'zebra.pw';
 
+/**
+ * The factory password, tried before anyone is asked to type one.
+ *
+ * Most printers still have it, and the ones that do not say so plainly
+ * ("ERROR: Invalid password"), which is a better prompt than a dialog
+ * that appears before anything has gone wrong.
+ */
+const DEFAULT_PASSWORD = '1234';
+
 export function getPassword() {
   try {
     return sessionStorage.getItem(PW_KEY) || '';
@@ -201,7 +210,7 @@ export function setPassword(value) {
 }
 
 /** Return a password, prompting only when we do not already have one. */
-export async function requirePassword({ force = false } = {}) {
+export async function requirePassword({ force = false, hint = null } = {}) {
   const existing = getPassword();
   if (existing && !force) return existing;
 
@@ -212,6 +221,9 @@ export async function requirePassword({ force = false } = {}) {
       onkeydown: (event) => { if (event.key === 'Enter') close(input.value); },
     });
     return el('div', { class: 'space-y-3' }, [
+      hint ? el('p', {
+        class: 'rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[12px] text-amber-900',
+      }, [hint]) : null,
       el('p', { class: 'text-ink-600' }, [
         'Writing to the printer’s filesystem needs its 4-digit password (factory default 1234).',
       ]),
@@ -226,6 +238,49 @@ export async function requirePassword({ force = false } = {}) {
   if (value === null) return null;
   setPassword(value);
   return value;
+}
+
+/**
+ * Do something that needs the printer's password, asking for one only
+ * if the printer objects.
+ *
+ * `attempt(password)` is expected to throw an error mentioning the
+ * password when the printer rejects it, which is what its own error
+ * page says. A password that works is remembered for the session, so
+ * the question is asked at most once -- and on a printer still set to
+ * the factory default, never.
+ *
+ * Cancelling throws an error carrying `cancelled`, so a caller can tell
+ * "you changed your mind" from "the printer refused".
+ */
+export async function withPrinterPassword(attempt, { attempts = 3 } = {}) {
+  let password = getPassword() || DEFAULT_PASSWORD;
+  let asked = false;
+
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const result = await attempt(password);
+      setPassword(password);
+      return result;
+    } catch (err) {
+      if (!/password/i.test(err.message || '')) throw err;
+
+      const next = await requirePassword({
+        force: true,
+        hint: asked
+          ? 'That password was not accepted either.'
+          : `The printer did not accept ${password === DEFAULT_PASSWORD ? 'the factory default (1234)' : 'the saved password'}.`,
+      });
+      asked = true;
+      if (next === null) {
+        const cancelled = new Error('No password given');
+        cancelled.cancelled = true;
+        throw cancelled;
+      }
+      password = next;
+    }
+  }
+  throw new Error('The printer rejected that password');
 }
 
 /* ------------------------------------------------------------------ *
