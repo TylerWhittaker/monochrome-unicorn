@@ -146,8 +146,22 @@ returns, so a single request still paints values as they land rather
 than freezing until the end.
 
 The branch files are still worth keeping. A write is confirmed by
-re-reading the setting, and one branch is 0.1 s against the whole
-file's 3.9 s.
+re-reading the setting, and a branch is the smallest readable thing
+there is -- a value only comes back through a helper holding an #exec
+for it, and `getvar.cgi` cannot be called directly (404). What that
+costs depends on the branch:
+
+| read-back | time | settings |
+|---|---|---|
+| `V_PRINT.SHTML` | 0.12 s | 5 |
+| `V_MEDIA.SHTML` | 0.17 s | 12 |
+| `V_IP.SHTML` | 0.59 s | 74 |
+| `V_DEVICE.SHTML` | 0.84 s | 77 |
+
+One file per setting would make that 0.12 s everywhere, at the price of
+574 files on flash and a deploy measured in minutes. Instead the
+console keeps the other 76 values the read already returned: one write
+often moves its neighbours, and they have been paid for.
 
 ## Writing settings
 

@@ -247,28 +247,36 @@ export async function writeSetting(name, value) {
   try {
     await postForm('/Zebra/cgi/setvars.cgi', { [name]: value });
   } catch (err) {
-    return { ok: false, actual: null, reason: 'Could not reach setvars.cgi' };
+    return { ok: false, actual: null, branch: null, reason: 'Could not reach setvars.cgi' };
   }
 
+  // A branch is the smallest thing that can be read: a value only comes
+  // back through a helper file holding an #exec for it, and the build
+  // writes one per branch. So the read-back returns every setting in
+  // the branch whether we want them or not -- and we do want them. One
+  // write often moves others (print.tone carries print.tone_zpl with
+  // it; a mode changes what its neighbours are allowed to hold), and
+  // those values have already been paid for.
   const branch = name.split('.')[0];
-  let actual;
+  let values;
   try {
-    const values = await readBranch(branch);
-    actual = values[name];
+    values = await readBranch(branch);
   } catch (err) {
     // The write probably landed, we just cannot prove it.
-    return { ok: true, actual: null, reason: 'Applied, but read-back failed' };
+    return { ok: true, actual: null, branch: null, reason: 'Applied, but read-back failed' };
   }
 
+  const actual = values[name];
   if (actual === undefined) {
-    return { ok: true, actual: null, reason: 'Applied, but value is not readable' };
+    return { ok: true, actual: null, branch: values, reason: 'Applied, but value is not readable' };
   }
   if (valuesMatch(actual, value)) {
-    return { ok: true, actual, reason: null };
+    return { ok: true, actual, branch: values, reason: null };
   }
   return {
     ok: false,
     actual,
+    branch: values,
     reason: `Printer kept "${actual}"` + (actual === '?' ? ' (rejected)' : ''),
   };
 }

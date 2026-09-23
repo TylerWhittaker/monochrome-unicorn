@@ -503,6 +503,20 @@ async function applyChange(entry, value) {
     values[meta.name] = value;
   }
 
+  // The read-back brought the whole branch with it, so the rows around
+  // this one can be brought up to date for free. Only the ones that
+  // actually moved are repainted, and never the row being edited --
+  // rebuilding that would take the focus out of the widget in use.
+  if (result.branch) {
+    for (const [name, fresh] of Object.entries(result.branch)) {
+      if (name === meta.name) continue;
+      if (values[name] === fresh) continue;
+      values[name] = fresh;
+      const sibling = rows.get(name);
+      if (sibling) renderValueCell(sibling);
+    }
+  }
+
   if (result.ok) {
     note(entry, result.reason || 'saved', result.reason ? 'info' : 'success');
     if (entry.editor && result.actual != null && entry.editor.value !== result.actual) {
