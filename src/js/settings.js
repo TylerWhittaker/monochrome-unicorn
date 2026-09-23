@@ -32,7 +32,7 @@
 
 import { el, qs, replaceChildren, toast, debounce } from './ui.js';
 import { printer, allSettings } from './state.js';
-import { readAllBranches, readSlowSetting, writeSetting, valuesMatch } from './printer.js';
+import { readAllSettings, readSlowSetting, writeSetting, valuesMatch } from './printer.js';
 
 /** Shown wherever the live value has not been read yet. */
 const UNKNOWN = '\u2014';
@@ -619,8 +619,15 @@ function readableCount() {
   return allSettings().filter((m) => m.readable && !slow.has(m.name)).length;
 }
 
+/**
+ * Read every live value.
+ *
+ * One request for the lot, read as it streams: the values arrive a few
+ * at a time and are painted as they land, the same as when this walked
+ * the branch files, but without paying 95 ms of request overhead
+ * thirty-two times over.
+ */
 async function refresh() {
-  const branches = printer.schema.helperBranches || printer.schema.branches;
   const total = readableCount();
   refreshBtn.disabled = true;
 
@@ -631,25 +638,31 @@ async function refresh() {
   applyFilter();
 
   const progress = toast(`Reading live values… 0/${total}`, 'busy', { timeout: 0 });
+  let read = 0;
 
-  const { failed, read } = await readAllBranches(branches, ({ values: branchValues, read: soFar }) => {
-    if (branchValues) {
-      Object.assign(values, branchValues);
-      // Repaint only the rows this branch just filled in.
-      for (const name of Object.keys(branchValues)) {
-        const entry = rows.get(name);
-        if (entry) renderValueCell(entry);
-      }
+  const paint = (batch) => {
+    Object.assign(values, batch);
+    for (const name of Object.keys(batch)) {
+      const entry = rows.get(name);
+      if (entry) renderValueCell(entry);
+      read++;
     }
-    progress.update(`Reading live values… ${soFar}/${total}`, 'busy', { timeout: 0 });
-  });
+    progress.update(`Reading live values… ${read}/${total}`, 'busy', { timeout: 0 });
+  };
+
+  let failure = null;
+  try {
+    await readAllSettings(printer.schema.allFile || 'V_ALL', paint);
+  } catch (err) {
+    failure = err;
+  }
 
   applyFilter();
   refreshBtn.disabled = false;
 
-  if (failed.length) {
+  if (failure) {
     progress.update(
-      `Read ${read} of ${total} values; ${failed.length} branch(es) failed: ${failed.join(', ')}`,
+      `Read ${read} of ${total} values before the read failed: ${failure.message}`,
       'error', { timeout: 8000 }
     );
   } else {

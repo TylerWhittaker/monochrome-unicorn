@@ -164,31 +164,78 @@ export async function readLcd({ timeout = 15000 } = {}) {
 }
 
 /**
- * Read live values for every branch, handing each one to `onBranch` as it
- * lands so the caller can show values arriving rather than waiting for the
- * whole sweep.
+ * Pull whole "@name=value@" records out of a buffer that is still growing.
  *
- * Fetched sequentially: the printer's web server closes each connection
- * and handles one request at a time, so firing these in parallel makes it
- * slower, not faster. A branch is also the finest granularity available --
- * it is one HTTP request, so its settings arrive together.
+ * A record is only complete once its closing @ has a line ending after
+ * it -- values run to several lines (device.syslog), and a value can
+ * contain an @ of its own -- so whatever follows the last complete one
+ * is handed back to be prepended to the next chunk.
  */
-export async function readAllBranches(branches, onBranch) {
-  const failed = [];
-  let read = 0;
-
-  for (let i = 0; i < branches.length; i++) {
-    const branch = branches[i];
-    let values = null;
-    try {
-      values = await readBranch(branch);
-      read += Object.keys(values).length;
-    } catch (err) {
-      failed.push(branch);
-    }
-    if (onBranch) onBranch({ branch, values, read, branchesDone: i + 1 });
+export function extractVarRecords(buffer) {
+  const values = {};
+  const re = /@([a-z0-9_.]+)=([\s\S]*?)@(?=\r?\n)/gi;
+  let consumed = 0;
+  let match;
+  while ((match = re.exec(buffer)) !== null) {
+    values[match[1]] = decodeEntities(match[2].replace(/^[\r\n]+|[\r\n]+$/g, ''));
+    consumed = match.index + match[0].length;
   }
-  return { failed, read };
+  return { values, rest: buffer.slice(consumed) };
+}
+
+/**
+ * Read every setting in one request, painting as it arrives.
+ *
+ * One file rather than one per branch: this web server charges about
+ * 95 ms a request, which over 32 branches is three seconds of doing
+ * nothing. It answers this one in 3.9 s against 6.9 s for the set --
+ * and because the preprocessor streams its output as each getvar
+ * returns, the values still arrive a few at a time. The first lands at
+ * about 120 ms, which is sooner than the first branch file used to.
+ *
+ * `onValues` is called with each batch as it is decoded.
+ */
+export async function readAllSettings(fileStem, onValues, { timeout = 120000 } = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const res = await fetch(`/${fileStem}.SHTML`, { signal: ctrl.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${fileStem}.SHTML`);
+
+    // Without a body reader there is nothing to stream; take it whole.
+    if (!res.body || !res.body.getReader) {
+      const values = parseVarFile(await res.text());
+      if (onValues) onValues(values);
+      return values;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    const all = {};
+    let buffer = '';
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const batch = extractVarRecords(buffer);
+      buffer = batch.rest;
+      if (Object.keys(batch.values).length) {
+        Object.assign(all, batch.values);
+        if (onValues) onValues(batch.values);
+      }
+    }
+
+    // The last record has no line ending after it, so it never matched.
+    const tail = parseVarFile(buffer + '\n');
+    if (Object.keys(tail).length) {
+      Object.assign(all, tail);
+      if (onValues) onValues(tail);
+    }
+    return all;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

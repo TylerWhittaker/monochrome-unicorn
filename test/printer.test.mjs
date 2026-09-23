@@ -24,7 +24,7 @@ import assert from 'node:assert/strict';
 
 const src = readFileSync(new URL('../src/js/printer.js', import.meta.url), 'utf8');
 const mod = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
-const { parseVarFile, decodeEntities, valuesMatch, extractPrinterError } = mod;
+const { parseVarFile, decodeEntities, valuesMatch, extractPrinterError, extractVarRecords } = mod;
 
 let failures = 0;
 function check(name, fn) {
@@ -113,6 +113,28 @@ check('a short or missing read still yields a full grid', () => {
   assert.deepEqual(lcd.gridRows('HI').length, 6);
   assert.equal(lcd.gridRows('HI')[0], 'HI' + ' '.repeat(18));
   assert.ok(lcd.gridRows(null).every((r) => r === ' '.repeat(20)));
+});
+
+check('records are pulled out of a stream as they complete', () => {
+  // The sweep reads one file as it arrives, so a chunk boundary can
+  // fall anywhere -- including the middle of a value.
+  const first = extractVarRecords('@ip.addr=192.168.1.81@\n@ip.port=61');
+  assert.deepEqual(first.values, { 'ip.addr': '192.168.1.81' });
+  assert.equal(first.rest, '\n@ip.port=61', 'the half-read record waits for the rest');
+
+  const second = extractVarRecords(first.rest + '01@\n');
+  assert.deepEqual(second.values, { 'ip.port': '6101' });
+});
+
+check('a value spanning lines is one record, @ and all', () => {
+  const { values } = extractVarRecords('@device.syslog=one\ntwo@three\n@four@\n@ip.addr=1.2.3.4@\n');
+  assert.equal(values['device.syslog'], 'one\ntwo@three\n@four');
+  assert.equal(values['ip.addr'], '1.2.3.4', 'and the next record still parses');
+});
+
+check('entities are decoded on the way out of the stream, as in a file', () => {
+  const { values } = extractVarRecords('@device.friendly_name=A&amp;B &quot;q&quot;@\n');
+  assert.equal(values['device.friendly_name'], 'A&B "q"');
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

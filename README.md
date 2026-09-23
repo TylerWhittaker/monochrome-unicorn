@@ -7,9 +7,10 @@ where its onboard web server serves it at `http://<printer>/`.
 Three modes:
 
 - **Printer Settings** — every SGD on the printer, `about:config` style:
-  filter by name or value, edit the writable ones with a widget chosen
-  from the setting's type and range, see at a glance which differ from
-  their factory default.
+  filter by name or value, sort them, edit the writable ones with a
+  widget chosen from the setting's type and range, see at a glance which
+  differ from their factory default. All 574 of them arrive in one
+  streamed request, painted as they land.
 - **Label Editor** — create and edit stored `.ZPL` labels, either by
   dragging text, barcodes, images, boxes, lines and `^FN` fields around a
   canvas or by writing ZPL directly. The preview beside it is the

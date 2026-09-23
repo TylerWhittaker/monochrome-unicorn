@@ -58,6 +58,9 @@ const JS_BANNER = [
   ' * See <https://www.gnu.org/licenses/agpl-3.0.html>. */',
 ].join('\n');
 
+/** The helper holding every readable setting; see helperFiles(). */
+const ALL_FILE = 'V_ALL';
+
 /* Settings shown in the page header, read live by the SSI preprocessor. */
 const BOOT_VARS = [
   'device.product_name',
@@ -289,6 +292,19 @@ function helperFiles(schema) {
 
   files.push({ dest: 'E:LCD.SHTML', contents: LCD_VARS.map(varLine).join('\n') + '\n' });
 
+  /*
+   * Every readable setting in one file, for the sweep.
+   *
+   * The branch files are still written, because a write is confirmed by
+   * re-reading just that branch and this one takes four seconds. But
+   * asking for it once beats asking 32 times: the per-request overhead
+   * on this web server is about 95 ms, so the sweep went from 6.9 s to
+   * 3.9 s by dropping the round trips. The preprocessor streams its
+   * output as it goes, so values still arrive to be painted one at a
+   * time -- sooner, in fact, with the first at ~120 ms.
+   */
+  files.push({ dest: `E:${ALL_FILE}.SHTML`, contents: readable.map(varLine).join('\n') + '\n' });
+
   return { files, slowFiles };
 }
 
@@ -316,9 +332,10 @@ export function build({ schemaPath, outDir }) {
   // setting (some are write-only commands), so this is narrower than
   // schema.branches and asking for the difference would just 404.
   schema.helperBranches = helpers
-    .filter((f) => f.dest.startsWith('E:V_'))
+    .filter((f) => f.dest.startsWith('E:V_') && f.dest !== `E:${ALL_FILE}.SHTML`)
     .map((f) => f.dest.slice(4, -6).toLowerCase());
   schema.slowFiles = slowFiles;
+  schema.allFile = ALL_FILE;
 
   const template = readFileSync(join(ROOT, 'src/index.html'), 'utf8');
   const css = buildCss(outDir);

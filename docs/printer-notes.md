@@ -129,6 +129,26 @@ everything else:
 Branch enumeration of `device` is far slower than reading its members,
 which is why the helper files list settings individually.
 
+### One file or many
+
+Reading all 574 readable settings, measured on the bench printer:
+
+| how | time |
+|---|---|
+| 32 branch files, one request each | 6.9 s |
+| one file holding every setting | 3.9 s |
+
+The difference is request overhead -- about 95 ms a time on this web
+server -- not the getvar work, which is the same either way. **The SSI
+preprocessor streams**: the first bytes of that one file arrive at
+~120 ms and the rest follow in hundreds of small chunks as each getvar
+returns, so a single request still paints values as they land rather
+than freezing until the end.
+
+The branch files are still worth keeping. A write is confirmed by
+re-reading the setting, and one branch is 0.1 s against the whole
+file's 3.9 s.
+
 ## Writing settings
 
 ```
