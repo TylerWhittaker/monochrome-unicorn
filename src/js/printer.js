@@ -565,6 +565,26 @@ export function deleteStoredFile(name) {
   return sendCommandSetting('file.delete', name);
 }
 
+/**
+ * Split what someone typed into an object name and a type.
+ *
+ * The printer stores NAME.EXT, so "test.zpl" is a name and a type, not
+ * a name with a dot in it -- and TESTZPL.ZPL, which is what stripping
+ * the dot gives you, is nobody's idea of the same file. A name with no
+ * extension gets the default.
+ */
+export function parseObjectName(input, defaultType = 'ZPL') {
+  const raw = String(input).trim();
+  const dot = raw.lastIndexOf('.');
+  const hasExt = dot > 0 && dot < raw.length - 1;
+
+  const clean = (part, max) => part.toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, max);
+  const oname = clean(hasExt ? raw.slice(0, dot) : raw, 16);
+  const otype = (hasExt && clean(raw.slice(dot + 1), 8)) || String(defaultType).toUpperCase();
+
+  return { oname, otype };
+}
+
 /** Read a stored ZPL script out of the /zpl edit form's textarea. */
 export async function readScript({ dev, oname, otype = 'ZPL' }) {
   const html = await getText(`/zpl?dev=${dev}&oname=${encodeURIComponent(oname)}&otype=${otype}`);

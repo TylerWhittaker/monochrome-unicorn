@@ -24,7 +24,7 @@ import assert from 'node:assert/strict';
 
 const src = readFileSync(new URL('../src/js/printer.js', import.meta.url), 'utf8');
 const mod = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
-const { parseVarFile, decodeEntities, valuesMatch, extractPrinterError, extractVarRecords } = mod;
+const { parseVarFile, decodeEntities, valuesMatch, extractPrinterError, extractVarRecords, parseObjectName } = mod;
 
 let failures = 0;
 function check(name, fn) {
@@ -135,6 +135,26 @@ check('a value spanning lines is one record, @ and all', () => {
 check('entities are decoded on the way out of the stream, as in a file', () => {
   const { values } = extractVarRecords('@device.friendly_name=A&amp;B &quot;q&quot;@\n');
   assert.equal(values['device.friendly_name'], 'A&B "q"');
+});
+
+check('a typed name is split into an object name and a type', () => {
+  // "test.zpl" used to become TESTZPL.ZPL, which is a different file.
+  assert.deepEqual(parseObjectName('test.zpl'), { oname: 'TEST', otype: 'ZPL' });
+  assert.deepEqual(parseObjectName('TEST.EPL'), { oname: 'TEST', otype: 'EPL' });
+  assert.deepEqual(parseObjectName('my label.zpl'), { oname: 'MYLABEL', otype: 'ZPL' });
+});
+
+check('a name with no extension gets the default', () => {
+  assert.deepEqual(parseObjectName('test'), { oname: 'TEST', otype: 'ZPL' });
+  assert.deepEqual(parseObjectName('test.'), { oname: 'TEST', otype: 'ZPL' }, 'a bare dot is not a type');
+  assert.deepEqual(parseObjectName('logo', 'GRF'), { oname: 'LOGO', otype: 'GRF' });
+});
+
+check('names are cut to what the printer will hold', () => {
+  assert.deepEqual(parseObjectName('verylongfilenamehere.zpl'),
+    { oname: 'VERYLONGFILENAME', otype: 'ZPL' });
+  assert.deepEqual(parseObjectName('a.b.zpl'), { oname: 'AB', otype: 'ZPL' },
+    'only the last dot separates the type');
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');
