@@ -548,7 +548,7 @@ export function mountEditor(panel) {
 
   addBar = el('div', { class: 'toolbar' }, [
     el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, ['Add']),
-    ...['text', 'barcode', 'image', 'box', 'line', 'field'].map((type) =>
+    ...['text', 'barcode', 'image', 'box', 'line', 'field', 'date'].map((type) =>
       el(
         'button',
         {

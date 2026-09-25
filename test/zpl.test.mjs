@@ -35,6 +35,7 @@ const {
   tokenizeZpl,
   nextFieldNumber,
   formatZpl,
+  expandClock,
 } = mod;
 
 let failures = 0;
@@ -327,6 +328,74 @@ check('^CT~ keeps its argument', () => {
     tokens.map((t) => t.cmd),
     ['CT', 'FW'],
   );
+});
+
+check('a date element is written as ^FC then ^FD, and read back', () => {
+  const doc = newLabel(DPI);
+  const item = newElement('date', doc, DPI);
+  item.x = 40;
+  item.y = 50;
+  item.format = '%Y-%m-%d %H:%M';
+  doc.elements.push(item);
+  const zpl = toZpl(doc);
+  assert.match(zpl, /\^FO40,50\^A0N,\d+,\d+\^FC%\^FH\^FD%Y-%m-%d %H:%M\^FS/);
+  const back = parseZpl(zpl, DPI).doc.elements;
+  assert.equal(back.length, 1);
+  assert.equal(back[0].type, 'date');
+  assert.equal(back[0].format, '%Y-%m-%d %H:%M');
+  assert.equal(back[0].clock, '%');
+  assert.equal(back[0].height, item.height);
+});
+
+check('a hand-written clock field with its own indicators opens as a date', () => {
+  const { doc, unsupported } = parseZpl('^XA^FO10,20^ADR,36,20^FC{,#^FDMade {d/{m ^FS^XZ', DPI);
+  assert.deepEqual(unsupported, []);
+  const [item] = doc.elements;
+  assert.equal(item.type, 'date');
+  assert.equal(item.clock, '{,#');
+  assert.equal(item.format, 'Made {d/{m ');
+  assert.equal(item.rotation, 'R');
+  assert.equal(item.font, 'D');
+  assert.match(toZpl(doc), /\^FC\{,#\^FH\^FDMade \{d\/\{m \^FS/);
+});
+
+check('a reversed, wrapped clock field keeps ^FR and ^FB', () => {
+  const src = '^XA^FO5,5^A0N,30,30^FB400,1,0,C,0^FR^FC%^FH^FD%d %B^FS^XZ';
+  const { doc } = parseZpl(src, DPI);
+  assert.equal(doc.elements[0].type, 'date');
+  assert.match(toZpl(doc), /\^FO5,5\^A0N,30,30\^FB400,1,0,C,0\^FR\^FC%\^FH\^FD%d %B\^FS/);
+});
+
+check('^FC on a barcode or a ^FN field survives a round trip', () => {
+  const src = [
+    '^XA',
+    '^FO10,10^BY2,3,50^BCN,50,Y,N,N^FC%^FD%y%j^FS',
+    '^FO10,90^A0N,30,30^FC%^FN3^FD%m/%d^FS',
+    '^XZ',
+  ].join('\n');
+  const { doc } = parseZpl(src, DPI);
+  assert.deepEqual(
+    doc.elements.map((e) => [e.type, e.clock]),
+    [
+      ['barcode', '%'],
+      ['field', '%'],
+    ],
+  );
+  const out = toZpl(doc);
+  assert.match(out, /\^BCN,50,Y,N,N\^FC%\^FH\^FD%y%j\^FS/);
+  assert.match(out, /\^FC%\^FN3\^FH\^FD%m\/%d\^FS/);
+});
+
+check('expandClock fills in what the printer will', () => {
+  const at = new Date(2026, 0, 5, 14, 7, 9); // Monday 5 January 2026
+  assert.equal(expandClock('%m/%d/%Y', '%', at), '01/05/2026');
+  assert.equal(expandClock('%a %d %b %y', '%', at), 'Mon 05 Jan 26');
+  assert.equal(expandClock('%A, %B', '%', at), 'Monday, January');
+  assert.equal(expandClock('%H:%M:%S = %I%p', '%', at), '14:07:09 = 02PM');
+  assert.equal(expandClock('day %j, wd %w', '%', at), 'day 005, wd 01');
+  // 2026 starts on a Thursday: the 4th is the first Sunday, the 5th the first Monday.
+  assert.equal(expandClock('%U %W', '%', at), '01 01');
+  assert.equal(expandClock('#d %d %q', '#,{', at), '05 %d %q', 'only the primary indicator');
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

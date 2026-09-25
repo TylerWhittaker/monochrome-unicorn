@@ -28,7 +28,15 @@
 
 import { el, replaceChildren } from './ui.js';
 import { printer, toDots, fromDots, unitStep, unitStepFine, saveUnitPreference } from './state.js';
-import { SYMBOLOGIES, ROTATIONS, FONTS } from './zpl.js';
+import {
+  SYMBOLOGIES,
+  ROTATIONS,
+  FONTS,
+  DATE_FORMATS,
+  CLOCK_CODES,
+  expandClock,
+  primaryClockIndicator,
+} from './zpl.js';
 
 /* ------------------------------------------------------------------ *
  * Field builders
@@ -174,6 +182,116 @@ function section(title, children) {
   return el('div', { class: 'space-y-3 border-b border-ink-200 px-3 py-3 last:border-b-0' }, [
     el('h3', { class: 'text-[11px] font-semibold uppercase tracking-wide text-ink-500' }, [title]),
     ...children,
+  ]);
+}
+
+/**
+ * Properties of a clock field: what it prints, in which font.
+ *
+ * The format is the ^FD, codes and all; the list of common ones is only a
+ * way to fill it in, and says "Custom" for anything else.
+ */
+function dateSection(item, unit, commit) {
+  const ind = primaryClockIndicator(item.clock);
+  // The presets are written with %, so they follow the indicator in use.
+  const withIndicator = (format) => format.replace(/%(?=[A-Za-z])/g, ind);
+  const presets = DATE_FORMATS.map((f) => [withIndicator(f.value), f.label]);
+  const isPreset = presets.some(([value]) => value === item.format);
+
+  return section('Date / time', [
+    row(
+      'Common formats',
+      selectField(
+        isPreset ? item.format : '',
+        [...(isPreset ? [] : [['', 'Custom']]), ...presets],
+        commit((v) => {
+          if (v) item.format = v;
+        }),
+      ),
+    ),
+    row(
+      'Format',
+      textField(
+        item.format,
+        commit((v) => {
+          item.format = v;
+        }),
+        { placeholder: `${ind}m/${ind}d/${ind}Y` },
+      ),
+    ),
+    el('p', { class: 'text-[11px] text-ink-400' }, [
+      `Prints as “${expandClock(item.format, item.clock)}” now, by this computer's clock. ` +
+        'The printer uses its own when it prints; the preview shows that. ' +
+        'Saved as ^FC with ^FD.',
+    ]),
+    el('details', { class: 'text-[11px] text-ink-500' }, [
+      el('summary', { class: 'cursor-pointer select-none' }, ['Codes']),
+      el(
+        'dl',
+        { class: 'mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5' },
+        CLOCK_CODES.flatMap(([code, meaning]) => [
+          el('dt', { class: 'font-mono text-ink-700' }, [ind + code]),
+          el('dd', {}, [meaning]),
+        ]),
+      ),
+    ]),
+    grid([
+      row(
+        'Font',
+        selectField(
+          item.font,
+          FONTS,
+          commit((v) => {
+            item.font = v;
+          }),
+        ),
+      ),
+      row(
+        'Height',
+        dotsField(
+          item.height,
+          unit,
+          commit((v) => {
+            item.height = Math.max(4, v);
+          }),
+        ),
+      ),
+    ]),
+    grid([
+      row(
+        'Char width',
+        dotsField(
+          item.width || 0,
+          unit,
+          commit((v) => {
+            item.width = v;
+          }),
+        ),
+      ),
+      checkField(
+        'Reverse (white on black)',
+        item.reverse,
+        commit((v) => {
+          item.reverse = v;
+        }),
+      ),
+    ]),
+    row(
+      'Clock indicator',
+      textField(
+        ind,
+        commit((v) => {
+          const next = v.trim()[0];
+          // ^, ~ and , are ZPL's own; _ is ^FH's escape.
+          if (!next || '^~,_'.includes(next) || next === ind) return;
+          // Only where it starts a code: a literal % elsewhere stays one.
+          item.format = [...item.format]
+            .map((ch, i, all) => (ch === ind && /[A-Za-z]/.test(all[i + 1] || '') ? next : ch))
+            .join('');
+          item.clock = next + String(item.clock || '%').slice(1);
+        }),
+      ),
+    ),
   ]);
 }
 
@@ -533,6 +651,8 @@ export function renderElementPanel(
       ]),
     );
   }
+
+  if (item.type === 'date') specific.push(dateSection(item, unit, commit));
 
   if (item.type === 'barcode') {
     const spec = SYMBOLOGIES[item.symbology] || SYMBOLOGIES.code128;

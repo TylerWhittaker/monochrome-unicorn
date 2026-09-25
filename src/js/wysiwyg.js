@@ -30,7 +30,7 @@
 
 import { el } from './ui.js';
 import { loadStoredImage } from './printer.js';
-import { SYMBOLOGIES } from './zpl.js';
+import { SYMBOLOGIES, expandClock } from './zpl.js';
 
 /** Rough advance width of the scalable font, as a fraction of cap height. */
 const FONT_ASPECT = 0.58;
@@ -54,6 +54,9 @@ export function elementBounds(item) {
     const charWidth = (item.width || item.height) * FONT_ASPECT;
     const caption = item.name || `FN${item.number}`;
     return { w: Math.max(60, (caption.length + 2) * charWidth), h: item.height };
+  }
+  if (item.type === 'date') {
+    return elementBounds({ ...item, type: 'text', text: dateSample(item) });
   }
   if (item.type === 'text') {
     const charWidth = (item.width || item.height) * FONT_ASPECT;
@@ -100,6 +103,22 @@ function renderText(item, scale) {
     },
     [item.text],
   );
+  return node;
+}
+
+/** A clock field as it would print right now, by this computer's clock. */
+function dateSample(item) {
+  return expandClock(item.format, item.clock);
+}
+
+/**
+ * A clock field drawn as today's date, outlined so it reads as live
+ * rather than typed. The printer fills it from its own clock, which the
+ * preview shows.
+ */
+function renderDate(item, scale) {
+  const node = renderText({ ...item, text: dateSample(item) }, scale);
+  node.classList.add('outline', 'outline-1', 'outline-dotted', 'outline-amber-500');
   return node;
 }
 
@@ -408,7 +427,7 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
       item.h = Math.max(item.thickness, origin.h + dy);
     } else if (item.type === 'line') {
       item.length = Math.max(4, origin.length + (item.vertical ? dy : dx));
-    } else if (item.type === 'text' || item.type === 'field') {
+    } else if (item.type === 'text' || item.type === 'field' || item.type === 'date') {
       item.height = Math.max(6, origin.height + dy);
       if (origin.width) item.width = Math.max(4, origin.width + dx);
     } else if (item.type === 'barcode') {
@@ -439,6 +458,7 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
       let body;
       if (item.type === 'field') body = renderField(item, scale);
       else if (item.type === 'text') body = renderText(item, scale);
+      else if (item.type === 'date') body = renderDate(item, scale);
       else if (item.type === 'barcode') body = renderBarcode(item, scale);
       else if (item.type === 'image') body = renderImage(item, scale, () => render());
       else if (item.type === 'box') body = renderBox(item, scale);

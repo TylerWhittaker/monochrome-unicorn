@@ -12,8 +12,9 @@ Three modes:
   differ from their factory default. All 574 of them arrive in one
   streamed request, painted as they land.
 - **Label Editor** — create and edit stored `.ZPL` labels, either by
-  dragging text, barcodes, images, boxes, lines and `^FN` fields around a
-  canvas or by writing ZPL directly. The preview beside it is the
+  dragging text, barcodes, images, boxes, lines, `^FN` fields and dates
+  (`^FC`, filled in from the printer's clock) around a canvas or by
+  writing ZPL directly. The preview beside it is the
   printer's own render, not a simulation. Every length is shown in
   inches, millimetres or dots, switched by one radio group and
   remembered between visits.

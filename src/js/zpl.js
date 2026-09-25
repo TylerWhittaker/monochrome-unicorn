@@ -70,6 +70,126 @@ export const FONTS = [
   { value: 'H', label: 'H — 21x13 OCR-A' },
 ];
 
+/*
+ * Date and time fields.
+ *
+ * ^FC names the clock indicator (normally %) for one field, and the
+ * printer then replaces "%d", "%Y" and the rest in that field's ^FD with
+ * its real-time clock as the label is formatted. Without the ^FC in the
+ * same field the codes print as typed.
+ */
+export const DATE_FORMATS = [
+  { value: '%m/%d/%Y', label: '01/31/2026' },
+  { value: '%d/%m/%Y', label: '31/01/2026' },
+  { value: '%Y-%m-%d', label: '2026-01-31' },
+  { value: '%m/%d/%y', label: '01/31/26' },
+  { value: '%d %b %Y', label: '31 Jan 2026' },
+  { value: '%B %d, %Y', label: 'January 31, 2026' },
+  { value: '%a %d %b %Y', label: 'Sat 31 Jan 2026' },
+  { value: '%m/%d/%Y %H:%M', label: '01/31/2026 14:05' },
+  { value: '%Y-%m-%d %H:%M:%S', label: '2026-01-31 14:05:09' },
+  { value: '%I:%M %p', label: '02:05 PM' },
+  { value: '%H:%M', label: '14:05' },
+  { value: '%y%j', label: '26031 (year + day of year)' },
+];
+
+/** The command characters the manual lists, and what each becomes. */
+export const CLOCK_CODES = [
+  ['a', 'weekday, short'],
+  ['A', 'weekday'],
+  ['b', 'month, short'],
+  ['B', 'month'],
+  ['d', 'day of month, 01-31'],
+  ['H', 'hour, 00-23'],
+  ['I', 'hour, 01-12'],
+  ['j', 'day of year, 001-366'],
+  ['m', 'month, 01-12'],
+  ['M', 'minute'],
+  ['p', 'AM or PM'],
+  ['S', 'second'],
+  ['U', 'week of year, from Sunday'],
+  ['W', 'week of year, from Monday'],
+  ['w', 'day of week, 00 = Sunday'],
+  ['y', 'year, 2 digits'],
+  ['Y', 'year, 4 digits'],
+];
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/** The primary indicator from ^FC's arguments ("%", or "%,{,#"). */
+export function primaryClockIndicator(clock) {
+  return String(clock || '%')[0] || '%';
+}
+
+/**
+ * What a clock field will print at `date`, for the canvas.
+ *
+ * Only the primary clock is expanded: the secondary and third are the
+ * primary plus a ^SO offset that lives in the printer, not the label, so
+ * their codes are left as written. The preview shows the real thing.
+ */
+export function expandClock(format, clock, date = new Date()) {
+  const ind = primaryClockIndicator(clock);
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  const startOfYear = new Date(date.getFullYear(), 0, 1);
+  const dayOfYear =
+    Math.round(
+      (new Date(date.getFullYear(), date.getMonth(), date.getDate()) - startOfYear) / 86400000,
+    ) + 1;
+  // Week 01 starts on the year's first Sunday (%U) or Monday (%W); the
+  // days before it are week 00.
+  const week = (firstDay) => {
+    const offset = (7 + firstDay - startOfYear.getDay()) % 7;
+    return Math.floor((dayOfYear - 1 - offset + 7) / 7);
+  };
+  const hour12 = date.getHours() % 12 || 12;
+  const codes = {
+    a: WEEKDAYS[date.getDay()].slice(0, 3),
+    A: WEEKDAYS[date.getDay()],
+    b: MONTHS[date.getMonth()].slice(0, 3),
+    B: MONTHS[date.getMonth()],
+    d: pad(date.getDate()),
+    H: pad(date.getHours()),
+    I: pad(hour12),
+    j: pad(dayOfYear, 3),
+    m: pad(date.getMonth() + 1),
+    M: pad(date.getMinutes()),
+    p: date.getHours() < 12 ? 'AM' : 'PM',
+    S: pad(date.getSeconds()),
+    U: pad(week(0)),
+    W: pad(week(1)),
+    w: pad(date.getDay()),
+    y: pad(date.getFullYear() % 100),
+    Y: String(date.getFullYear()),
+  };
+  let out = '';
+  const text = String(format);
+  for (let i = 0; i < text.length; i++) {
+    const code = text[i] === ind ? codes[text[i + 1]] : undefined;
+    if (code !== undefined) {
+      out += code;
+      i++;
+    } else {
+      out += text[i];
+    }
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------------ *
  * Document
  * ------------------------------------------------------------------ */
@@ -157,6 +277,18 @@ export function newElement(type, doc, dpi = 203) {
       initial: '',
     };
   }
+  if (type === 'date') {
+    return {
+      ...base,
+      font: '0',
+      height: Math.round(dpi * 0.15),
+      width: 0,
+      format: DATE_FORMATS[0].value,
+      clock: '%',
+      blockWidth: 0,
+      reverse: false,
+    };
+  }
   throw new Error(`Unknown element type: ${type}`);
 }
 
@@ -235,6 +367,25 @@ function fieldZpl(item) {
 }
 
 /**
+ * A date or time, filled in from the printer's clock as it prints. Laid
+ * out exactly like text, with the ^FC that makes the printer read the
+ * codes in its data.
+ */
+function dateZpl(item) {
+  return withClock(textZpl({ ...item, text: item.format }), item.clock || '%');
+}
+
+/**
+ * Put a ^FC read from someone else's label back where it was: ahead of
+ * the field's data, or of its ^FN when it has none.
+ */
+function withClock(zpl, clock) {
+  if (!clock) return zpl;
+  const at = zpl.search(/\^FN|\^FH\^FD/);
+  return at === -1 ? zpl : `${zpl.slice(0, at)}^FC${clock}${zpl.slice(at)}`;
+}
+
+/**
  * ^XG recalls a stored .GRF and can scale it; ^IM places the other
  * formats at their own size. Which one is right follows the extension.
  */
@@ -266,7 +417,7 @@ export function elementZpl(item) {
     case 'text':
       return textZpl(item);
     case 'barcode':
-      return barcodeZpl(item);
+      return withClock(barcodeZpl(item), item.clock);
     case 'image':
       return imageZpl(item);
     case 'box':
@@ -274,7 +425,9 @@ export function elementZpl(item) {
     case 'line':
       return lineZpl(item);
     case 'field':
-      return fieldZpl(item);
+      return withClock(fieldZpl(item), item.clock);
+    case 'date':
+      return dateZpl(item);
     default:
       return '';
   }
@@ -541,6 +694,9 @@ export function parseZpl(text, dpi = 203) {
       case 'FR':
         field.reverse = true;
         break;
+      case 'FC':
+        field.clock = token.args.trim() || '%';
+        break;
 
       case 'FN': {
         const match = /^\s*(\d+)\s*(?:"([^"]*)")?/.exec(token.args);
@@ -558,6 +714,7 @@ export function parseZpl(text, dpi = 203) {
           name: (match && match[2]) || '',
           initial: '',
         };
+        if (field.clock) field.fieldElement.clock = field.clock;
         doc.elements.push(field.fieldElement);
         break;
       }
@@ -649,6 +806,7 @@ export function parseZpl(text, dpi = 203) {
           field.fieldElement.initial = raw;
         } else if (field.barcode) {
           const item = { ...field.barcode, id: elementId(), x: field.x, y: field.y, data: raw };
+          if (field.clock) item.clock = field.clock;
           if (item.symbology === 'qr') {
             // "QA,payload" -- strip the error-correction/mode prefix.
             const match = /^([HQML])([AMNK]),?([\s\S]*)$/.exec(raw);
@@ -658,6 +816,25 @@ export function parseZpl(text, dpi = 203) {
             }
           }
           doc.elements.push(item);
+        } else if (field.clock) {
+          // A ^FC makes this a clock field, whether or not it has a font.
+          const font = field.pending || { rotation: 'N', font: '0', height: 30, width: 0 };
+          doc.elements.push({
+            id: elementId(),
+            type: 'date',
+            x: field.x,
+            y: field.y,
+            rotation: font.rotation,
+            font: font.font,
+            height: font.height,
+            width: font.width,
+            format: raw,
+            clock: field.clock,
+            reverse: field.reverse,
+            blockWidth: field.block ? field.block.blockWidth : 0,
+            blockLines: field.block ? field.block.blockLines : 0,
+            justify: field.block ? field.block.justify : 'L',
+          });
         } else if (field.pending) {
           doc.elements.push({
             id: elementId(),
