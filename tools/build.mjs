@@ -74,6 +74,11 @@ const BOOT_VARS = [
   'head.resolution.in_dpi',
   'media.darkness',
   'print.tone',
+  // Which interface is in use, and each one's address: ip.addr alone
+  // follows the wireless one even when the printer is on Ethernet.
+  'ip.active_network',
+  'wlan.ip.addr',
+  'internal_wired.ip.addr',
   'ip.addr',
 ];
 

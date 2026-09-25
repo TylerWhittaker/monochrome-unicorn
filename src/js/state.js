@@ -62,13 +62,39 @@ export function initState(document) {
   printer.name = boot['device.friendly_name'] || printer.model || 'Zebra Printer';
   printer.serial = boot['device.unique_id'] || '';
   printer.firmware = boot['appl.name'] || '';
-  printer.ip = boot['ip.addr'] || '';
+  printer.ip = activeIpAddress(boot);
   printer.status = parseHostStatus(boot['device.host_status']);
 
   const dpi = parseInt(boot['head.resolution.in_dpi'], 10);
   if (Number.isFinite(dpi) && dpi > 0) printer.dpi = dpi;
 
   return printer;
+}
+
+/** Where each value of ip.active_network keeps its address. */
+const ADDRESS_BY_NETWORK = {
+  wireless: 'wlan.ip.addr',
+  internal_wired: 'internal_wired.ip.addr',
+};
+
+/**
+ * The address the printer is actually reachable on.
+ *
+ * ip.addr is not it: on a printer with both interfaces it follows the
+ * wireless one, so a printer on Ethernet reports 0.0.0.0 there.
+ * ip.active_network names the interface in use, and each keeps its own
+ * address. ip.addr is only the fallback, for a network this does not know
+ * or a printer too old to say.
+ */
+export function activeIpAddress(boot) {
+  const network = String(boot['ip.active_network'] || '')
+    .trim()
+    .toLowerCase()
+    // The catalogue spells it "internal wired"; printers answer "internal_wired".
+    .replace(/\s+/g, '_');
+  const own = (boot[ADDRESS_BY_NETWORK[network]] || '').trim();
+  if (own && own !== '0.0.0.0') return own;
+  return (boot['ip.addr'] || '').trim();
 }
 
 /**

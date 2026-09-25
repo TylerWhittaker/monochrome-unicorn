@@ -158,6 +158,7 @@ reference/            the ZPL, CPCL and EPL2 programming manuals
 ```sh
 node test/zpl.test.mjs      # ZPL generation/parsing round-trips
 node test/printer.test.mjs  # helper-file parsing and entity decoding
+node test/state.test.mjs    # which interface's IP the header shows
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier
 ```
