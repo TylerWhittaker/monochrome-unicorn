@@ -74,7 +74,6 @@ let editorHost = null;
 let inspectorHost = null;
 let labelPanelHost = null;
 let fileSelect = null;
-let titleNode = null;
 let addBar = null;
 let viewBar = null;
 let zoomGroup = null;
@@ -114,7 +113,6 @@ const scheduleEditorPreview = debounce(refreshEditorPreview, 700);
 
 function markDirty() {
   editorState.dirty = true;
-  renderEditorTitle();
   scheduleEditorPreview();
 }
 
@@ -144,8 +142,6 @@ function loadDocument(zpl, file) {
       { timeout: 9000 },
     );
   }
-
-  renderEditorTitle();
   renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
   rebuildEditorView();
   refreshEditorPreview();
@@ -276,14 +272,6 @@ function renderEditorInspector() {
   });
 }
 
-function renderEditorTitle() {
-  const name = editorState.file
-    ? `${editorState.file.dev}:${editorState.file.oname}.${editorState.file.otype || 'ZPL'}`
-    : 'Untitled label';
-  titleNode.textContent = name + (editorState.dirty ? ' •' : '');
-  titleNode.title = editorState.dirty ? 'Unsaved changes' : '';
-}
-
 /* ------------------------------------------------------------------ *
  * File operations
  * ------------------------------------------------------------------ */
@@ -399,7 +387,6 @@ async function saveFile({ saveAs }) {
 
   editorState.file = target;
   editorState.dirty = false;
-  renderEditorTitle();
   await refreshFileList();
   fileSelect.value = `${target.dev}:${target.oname}`;
 
@@ -416,7 +403,6 @@ async function saveFile({ saveAs }) {
       { timeout: 8000 },
     );
     editorState.file = { dev: stored.dev, oname: stored.oname, otype: stored.otype };
-    renderEditorTitle();
   } else {
     busy.update(`Saved ${full}`, 'success');
   }
@@ -443,7 +429,6 @@ async function deleteCurrent() {
     await withPrinterPassword((password) => deleteFile({ dev, oname, otype, password }));
     toast(`Deleted ${dev}:${oname}.${otype}`, 'success');
     editorState.file = null;
-    renderEditorTitle();
     await refreshFileList();
   } catch (err) {
     if (!err.cancelled) toast(`Delete failed: ${err.message}`, 'error');
@@ -463,7 +448,6 @@ async function newLabelDoc() {
   editorState.file = null;
   editorState.dirty = false;
   fileSelect.value = '';
-  renderEditorTitle();
   rebuildEditorView();
   renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
   refreshEditorPreview();
@@ -523,8 +507,6 @@ export function mountEditor(panel) {
   editorState.doc = newLabel(printer.dpi);
   editorState.doc.unit = loadUnitPreference();
   editorState.source = toZpl(editorState.doc);
-
-  titleNode = el('span', { class: 'text-[12px] font-medium text-ink-700' });
 
   fileSelect = el('select', { class: 'field w-full min-w-0 sm:w-64' });
   fileSelect.addEventListener('change', () => openFile(fileSelect.value));
@@ -611,17 +593,9 @@ export function mountEditor(panel) {
           'div',
           { class: 'card min-w-0 self-start overflow-hidden lg:col-span-2 xl:col-span-1' },
           [
-            // Which label, and what to do with it when it is finished.
-            el('div', { class: 'toolbar' }, [
-              fileSelect,
-              el('div', { class: 'ml-auto flex items-center gap-2' }, [
-                titleNode,
-                el('button', { class: 'btn-primary btn-sm', onclick: () => printEditorLabel() }, [
-                  'Print',
-                ]),
-              ]),
-            ]),
-            // What to do with the file itself, under the name of it.
+            // Which label.
+            el('div', { class: 'toolbar' }, [fileSelect]),
+            // What to do with it: the file operations, then Print at the far end.
             el('div', { class: 'toolbar' }, [
               el('button', { class: 'btn-secondary btn-sm', onclick: () => newLabelDoc() }, [
                 'New',
@@ -639,6 +613,11 @@ export function mountEditor(panel) {
               el('button', { class: 'btn-danger btn-sm', onclick: () => deleteCurrent() }, [
                 'Delete',
               ]),
+              el(
+                'button',
+                { class: 'btn-primary btn-sm ml-auto', onclick: () => printEditorLabel() },
+                ['Print'],
+              ),
             ]),
             addBar,
             viewBar,
@@ -663,8 +642,6 @@ export function mountEditor(panel) {
       ],
     ),
   );
-
-  renderEditorTitle();
   renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
   rebuildEditorView();
   refreshFileList();
