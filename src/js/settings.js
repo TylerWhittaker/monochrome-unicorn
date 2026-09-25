@@ -85,6 +85,28 @@ export function parseChoices(range) {
  * Editors
  * ------------------------------------------------------------------ */
 
+/** About what the narrow value box shows on one line, in characters. */
+const NARROW_BOX_CHARS = 40;
+
+/**
+ * Whether a setting's value wants the full width of the row.
+ *
+ * For strings the range is a "min-max" length, not a value range. A
+ * handful of settings advertise 0-4294967295, which is really "no limit";
+ * those hold log dumps and the like, so they get a box you can actually
+ * read -- an editor as much as a read-only value. A read-only value is
+ * also widened when it simply will not fit the narrow box, since nobody
+ * can make it shorter.
+ */
+function holdsLongText(meta, current, { readOnly = false } = {}) {
+  // A number's range is its values, not its length.
+  const isNumber = meta.type === 'integer' || meta.type === 'double';
+  const numeric = isNumber ? null : parseNumericRange(meta.range);
+  const maxLen = numeric ? numeric.max : 0;
+  const text = current ?? '';
+  return maxLen > 512 || text.includes('\n') || (readOnly && text.length > NARROW_BOX_CHARS);
+}
+
 /**
  * Build the right input for a setting. `commit(value)` is called when the
  * user finishes editing -- change for pickers, blur or Enter for text.
@@ -158,11 +180,8 @@ function buildEditor(meta, current, commit) {
     return area;
   }
 
-  // Strings: the range is a "min-max" length, not a value range. A handful
-  // of settings advertise 0-4294967295, which is really "no limit"; those
-  // hold log dumps and the like, so they get a box you can actually read.
   const maxLen = numeric ? numeric.max : 0;
-  if (maxLen > 512 || (current && current.includes('\n'))) {
+  if (holdsLongText(meta, current)) {
     const area = el(
       'textarea',
       {
@@ -481,7 +500,17 @@ function renderValueCell(entry) {
     replaceChildren(entry.valueCell, [
       // Boxed like an input so it reads as a value, but filled and
       // borderless-looking enough to say you cannot type in it.
-      el('div', { class: 'field-static field-mono' }, [displayValue(current, isSlow)]),
+      // A long one takes the row, as the long editors do, and the tags
+      // wrap onto the line below it.
+      el(
+        'div',
+        {
+          class:
+            'field-static field-mono' +
+            (holdsLongText(meta, current, { readOnly: true }) ? ' sm:w-full' : ''),
+        },
+        [displayValue(current, isSlow)],
+      ),
       readNow,
       buildTags(entry),
     ]);
