@@ -21,14 +21,24 @@
 /* The catalogue a pre-Link-OS printer gives. Run: node test/allcv.test.mjs */
 import assert from 'node:assert/strict';
 import {
-  parseAllcv, parseHostIdentification, allcvLooksComplete, compactSchema,
-  typeFromEntry, accessFromEntry, LINK_OS_FIRMWARE,
+  parseAllcv,
+  parseHostIdentification,
+  allcvLooksComplete,
+  compactSchema,
+  typeFromEntry,
+  accessFromEntry,
+  LINK_OS_FIRMWARE,
 } from '../tools/fetch-schema.mjs';
 
 let failures = 0;
 function check(name, fn) {
-  try { fn(); console.log(`  ok   ${name}`); }
-  catch (err) { failures++; console.log(`  FAIL ${name}\n       ${err.message}`); }
+  try {
+    fn();
+    console.log(`  ok   ${name}`);
+  } catch (err) {
+    failures++;
+    console.log(`  FAIL ${name}\n       ${err.message}`);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -37,7 +47,9 @@ function check(name, fn) {
 
 check('~HI gives the firmware version, STX/ETX and all', () => {
   // What the bench ZD500R actually answers.
-  const linkOs = parseHostIdentification('\x02ZD500R-300dpi,V74.20.23Z,12,4096KB,CUTTER DETECTED\x03\r\n');
+  const linkOs = parseHostIdentification(
+    '\x02ZD500R-300dpi,V74.20.23Z,12,4096KB,CUTTER DETECTED\x03\r\n',
+  );
   assert.equal(linkOs.model, 'ZD500R-300dpi');
   assert.equal(linkOs.version, 'V74.20.23Z');
   assert.equal(linkOs.major, 74);
@@ -46,7 +58,10 @@ check('~HI gives the firmware version, STX/ETX and all', () => {
 
 check('firmware below V68 is pre-Link-OS', () => {
   assert.equal(parseHostIdentification('\x02QL320 Plus,V54.16.3Z,8,1024KB\x03').preLinkOs, true);
-  assert.equal(parseHostIdentification(`\x02X,V${LINK_OS_FIRMWARE - 1}.0.0Z,8\x03`).preLinkOs, true);
+  assert.equal(
+    parseHostIdentification(`\x02X,V${LINK_OS_FIRMWARE - 1}.0.0Z,8\x03`).preLinkOs,
+    true,
+  );
   assert.equal(parseHostIdentification(`\x02X,V${LINK_OS_FIRMWARE}.0.0Z,8\x03`).preLinkOs, false);
 });
 
@@ -63,8 +78,11 @@ check('an unreadable ~HI is treated as Link-OS rather than guessed at', () => {
 check('the closing quote line ends the listing, but only unterminated', () => {
   assert.equal(allcvLooksComplete('a.b : 1\r\n"'), true);
   assert.equal(allcvLooksComplete('a.b : 1\r\n""'), true, 'the bench printer sends two');
-  assert.equal(allcvLooksComplete('a.b : 1\r\n"\r\n'), false,
-    'a quote with a line ending after it is part of a value, not the end');
+  assert.equal(
+    allcvLooksComplete('a.b : 1\r\n"\r\n'),
+    false,
+    'a quote with a line ending after it is part of a value, not the end',
+  );
   assert.equal(allcvLooksComplete('a.b : 1\r\n'), false);
   assert.equal(allcvLooksComplete(''), false);
 });
@@ -76,26 +94,27 @@ check('the closing quote line ends the listing, but only unterminated', () => {
 // Every shape the format has, including the two that make it awkward:
 // a value that runs over several lines, and a quote alone on a line
 // inside one.
-const SAMPLE = [
-  'bluetooth.',
-  'bluetooth.discoverable : off , Choices: on,off',
-  'bluetooth.friendly_name : 40J132100037 ',
-  'bluetooth.clear_bonding_cache',
-  'bluetooth.minimum_security_mode : 4 , Choices: 1,2,3,4',
-  'ip.',
-  'ip.ping_remote',
-  'ip.dhcp.lease.length : 86400 , Choices: 0-4294967295',
-  'ip.netstat : Active Internet connections',
-  'Proto Recv-Q Send-Q  Local Address          Foreign Address        State',
-  'tcp        0      0  *.9100                 *.*                    LISTEN',
-  'device.',
-  'device.syslog : line one',
-  '"',
-  'line after a lone quote',
-  'device.epl_legacy_mode : allow , Choices: allow,disallow',
-  'print.',
-  'print.tone : 15.0 , Choices: -30.0-30.0',
-].join('\r\n') + '\r\n"';
+const SAMPLE =
+  [
+    'bluetooth.',
+    'bluetooth.discoverable : off , Choices: on,off',
+    'bluetooth.friendly_name : 40J132100037 ',
+    'bluetooth.clear_bonding_cache',
+    'bluetooth.minimum_security_mode : 4 , Choices: 1,2,3,4',
+    'ip.',
+    'ip.ping_remote',
+    'ip.dhcp.lease.length : 86400 , Choices: 0-4294967295',
+    'ip.netstat : Active Internet connections',
+    'Proto Recv-Q Send-Q  Local Address          Foreign Address        State',
+    'tcp        0      0  *.9100                 *.*                    LISTEN',
+    'device.',
+    'device.syslog : line one',
+    '"',
+    'line after a lone quote',
+    'device.epl_legacy_mode : allow , Choices: allow,disallow',
+    'print.',
+    'print.tone : 15.0 , Choices: -30.0-30.0',
+  ].join('\r\n') + '\r\n"';
 
 const config = parseAllcv(SAMPLE);
 
@@ -191,7 +210,10 @@ check('slow settings are only listed when the printer has them', () => {
   // will never be asked for: file.dir is in allcv but not in allconfig,
   // and ip.netstat -- a page of connections -- is in this sample.
   assert.deepEqual(compactSchema(config, 'allcv').slow, ['ip.netstat']);
-  const withDir = { ...config, 'file.dir': { type: 'string', range: '', access: 'R', default: null } };
+  const withDir = {
+    ...config,
+    'file.dir': { type: 'string', range: '', access: 'R', default: null },
+  };
   assert.deepEqual(compactSchema(withDir, 'allcv').slow, ['file.dir', 'ip.netstat']);
 });
 

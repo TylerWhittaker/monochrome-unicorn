@@ -93,23 +93,27 @@
       box = document.createElement('div');
       box.id = 'fatal';
       box.setAttribute('role', 'alert');
-      box.style.cssText = 'margin:1rem;padding:.75rem 1rem;border:1px solid #fca5a5;'
-        + 'background:#fef2f2;color:#7f1d1d;font:12px/1.5 ui-monospace,monospace;'
-        + 'white-space:pre-wrap;word-break:break-word;border-radius:6px';
+      box.style.cssText =
+        'margin:1rem;padding:.75rem 1rem;border:1px solid #fca5a5;' +
+        'background:#fef2f2;color:#7f1d1d;font:12px/1.5 ui-monospace,monospace;' +
+        'white-space:pre-wrap;word-break:break-word;border-radius:6px';
       (document.body || document.documentElement).appendChild(box);
     }
     box.textContent += (box.textContent ? '\n\n' : '') + what + ': ' + detail;
   }
   window.addEventListener('error', function (e) {
-    show('Script error', (e.message || 'unknown')
-      + (e.filename ? ' (line ' + e.lineno + ':' + e.colno + ')' : '')
-      + (e.error && e.error.stack ? '\n' + e.error.stack : ''));
+    show(
+      'Script error',
+      (e.message || 'unknown') +
+        (e.filename ? ' (line ' + e.lineno + ':' + e.colno + ')' : '') +
+        (e.error && e.error.stack ? '\n' + e.error.stack : ''),
+    );
   });
   window.addEventListener('unhandledrejection', function (e) {
     var r = e.reason;
     show('Unhandled promise rejection', (r && (r.stack || r.message)) || String(r));
   });
-}());
+})();
 </script>
 
 <script>{{HTMX}}</script>

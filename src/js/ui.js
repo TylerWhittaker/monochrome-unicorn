@@ -65,9 +65,10 @@ export function replaceChildren(node, ...children) {
 }
 
 export function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-  ));
+  return String(str).replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -89,10 +90,14 @@ export function toast(message, kind = 'info', { timeout = 4000 } = {}) {
   const host = qs('#toasts');
   if (!host) return { update() {}, close() {} };
 
-  const node = el('div', {
-    class: `pointer-events-auto rounded-md border px-3 py-2 shadow-md transition-opacity ${TOAST_STYLES[kind] || TOAST_STYLES.info}`,
-    role: kind === 'error' ? 'alert' : 'status',
-  }, [message]);
+  const node = el(
+    'div',
+    {
+      class: `pointer-events-auto rounded-md border px-3 py-2 shadow-md transition-opacity ${TOAST_STYLES[kind] || TOAST_STYLES.info}`,
+      role: kind === 'error' ? 'alert' : 'status',
+    },
+    [message],
+  );
   host.append(node);
 
   let timer = null;
@@ -142,18 +147,28 @@ export function modal(title, render) {
       if (event.key === 'Escape') close(null);
     };
 
-    const panel = el('div', {
-      class: 'card w-[min(30rem,calc(100vw-2rem))] max-h-[85vh] overflow-auto',
-      onclick: (event) => event.stopPropagation(),
-    }, [
-      el('div', { class: 'border-b border-ink-200 px-4 py-2.5 text-[13px] font-semibold' }, [title]),
-      el('div', { class: 'px-4 py-3' }, [render(close)]),
-    ]);
+    const panel = el(
+      'div',
+      {
+        class: 'card w-[min(30rem,calc(100vw-2rem))] max-h-[85vh] overflow-auto',
+        onclick: (event) => event.stopPropagation(),
+      },
+      [
+        el('div', { class: 'border-b border-ink-200 px-4 py-2.5 text-[13px] font-semibold' }, [
+          title,
+        ]),
+        el('div', { class: 'px-4 py-3' }, [render(close)]),
+      ],
+    );
 
-    const backdrop = el('div', {
-      class: 'fixed inset-0 z-40 flex items-center justify-center bg-ink-900/40 p-4',
-      onclick: () => close(null),
-    }, [panel]);
+    const backdrop = el(
+      'div',
+      {
+        class: 'fixed inset-0 z-40 flex items-center justify-center bg-ink-900/40 p-4',
+        onclick: () => close(null),
+      },
+      [panel],
+    );
 
     root.append(backdrop);
     document.addEventListener('keydown', onKey);
@@ -164,13 +179,15 @@ export function modal(title, render) {
 
 /** Ask for confirmation. Resolves true only if the user confirms. */
 export async function confirmDialog(title, message, confirmLabel = 'Confirm') {
-  const result = await modal(title, (close) => el('div', { class: 'space-y-3' }, [
-    el('p', { class: 'text-ink-700' }, [message]),
-    el('div', { class: 'flex justify-end gap-2' }, [
-      el('button', { class: 'btn-secondary', onclick: () => close(false) }, ['Cancel']),
-      el('button', { class: 'btn-danger', onclick: () => close(true) }, [confirmLabel]),
+  const result = await modal(title, (close) =>
+    el('div', { class: 'space-y-3' }, [
+      el('p', { class: 'text-ink-700' }, [message]),
+      el('div', { class: 'flex justify-end gap-2' }, [
+        el('button', { class: 'btn-secondary', onclick: () => close(false) }, ['Cancel']),
+        el('button', { class: 'btn-danger', onclick: () => close(true) }, [confirmLabel]),
+      ]),
     ]),
-  ]));
+  );
   return result === true;
 }
 
@@ -216,14 +233,27 @@ export async function requirePassword({ force = false, hint = null } = {}) {
 
   const value = await modal('Printer password', (close) => {
     const input = el('input', {
-      class: 'field field-mono', type: 'password', maxlength: '4',
-      inputmode: 'numeric', placeholder: '1234', value: existing,
-      onkeydown: (event) => { if (event.key === 'Enter') close(input.value); },
+      class: 'field field-mono',
+      type: 'password',
+      maxlength: '4',
+      inputmode: 'numeric',
+      placeholder: '1234',
+      value: existing,
+      onkeydown: (event) => {
+        if (event.key === 'Enter') close(input.value);
+      },
     });
     return el('div', { class: 'space-y-3' }, [
-      hint ? el('p', {
-        class: 'rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[12px] text-amber-900',
-      }, [hint]) : null,
+      hint
+        ? el(
+            'p',
+            {
+              class:
+                'rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[12px] text-amber-900',
+            },
+            [hint],
+          )
+        : null,
       el('p', { class: 'text-ink-600' }, [
         'Writing to the printer’s filesystem needs its 4-digit password (factory default 1234).',
       ]),

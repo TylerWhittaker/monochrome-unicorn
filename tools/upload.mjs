@@ -48,10 +48,13 @@ export function buildPayload(contents, destName) {
   const data = Buffer.isBuffer(contents) ? contents : Buffer.from(contents, 'utf8');
   const normalized = Buffer.from(
     data.toString('binary').replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'),
-    'binary'
+    'binary',
   );
   const size = normalized.length.toString(16).toUpperCase().padStart(8, '0');
-  const header = Buffer.from(`! CISDFCRC16\r\n0000\r\n${destName}\r\n${size}\r\n0000\r\n`, 'binary');
+  const header = Buffer.from(
+    `! CISDFCRC16\r\n0000\r\n${destName}\r\n${size}\r\n0000\r\n`,
+    'binary',
+  );
   return { payload: Buffer.concat([header, normalized]), bytes: normalized.length };
 }
 
@@ -81,7 +84,9 @@ export function sendRaw(ip, buffer, { timeout = 120000, quiet = 3 } = {}) {
       resolvePromise();
     });
 
-    nc.stdin.on('error', () => { /* printer closed early; close() reports it */ });
+    nc.stdin.on('error', () => {
+      /* printer closed early; close() reports it */
+    });
     nc.stdin.end(buffer);
   });
 }

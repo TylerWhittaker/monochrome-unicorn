@@ -146,7 +146,9 @@ export function parseEplVariables(source) {
     const prompt = match[4].replace(/^-/, '').trim();
     fields.push({
       key: number,
-      label: prompt ? `${prompt}  (V${String(number).padStart(2, '0')})` : `V${String(number).padStart(2, '0')}`,
+      label: prompt
+        ? `${prompt}  (V${String(number).padStart(2, '0')})`
+        : `V${String(number).padStart(2, '0')}`,
       initial: '',
       maxLength: parseInt(match[2], 10) || undefined,
     });
@@ -181,9 +183,8 @@ export function parseCpclPlaceholders(source) {
 export function blankFields(lang, count) {
   const fields = [];
   for (let i = 0; i < count; i++) {
-    const label = lang.id === 'epl'
-      ? `V${String(i).padStart(2, '0')}`
-      : `${lang.fieldNoun} ${i + 1}`;
+    const label =
+      lang.id === 'epl' ? `V${String(i).padStart(2, '0')}` : `${lang.fieldNoun} ${i + 1}`;
     fields.push({ key: lang.id === 'epl' ? i : i, label, initial: '' });
   }
   return fields;

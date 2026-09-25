@@ -158,7 +158,19 @@ reference/            the ZPL, CPCL and EPL2 programming manuals
 node test/zpl.test.mjs      # ZPL generation/parsing round-trips
 node test/printer.test.mjs  # helper-file parsing and entity decoding
 node tools/build.mjs        # build without touching a printer
+npm run format              # lay out every .js/.mjs with prettier
 ```
+
+All JavaScript is formatted by [prettier](https://prettier.io), with the
+settings in `.prettierrc.json` — the sources, the tools and the tests,
+and the JS the build embeds in `INDEX.SHTML` too: the build strips the
+comments from the bundled app, then runs it and the page shell's inline
+`<script>` back through prettier. The embedded copy is indented with tabs
+rather than two spaces, which is still prettier's layout but about 20 KB
+lighter to serve. The one exception is `vendor/htmx.min.js`, which is
+inlined minified as it ships; laying it out would roughly double its 50 KB.
+The pre-commit hook refuses a staged `.js` or `.mjs` that prettier would
+change.
 
 `tools/build.mjs` contains a deliberately small ES-module bundler rather
 than a dependency. It only understands `import { a, b } from './mod.js'`

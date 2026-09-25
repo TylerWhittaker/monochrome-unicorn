@@ -33,13 +33,17 @@
  *         finding these is a separate and slower scan.
  */
 
-import {
-  el, toast, confirmDialog, debounce, formatBytes, replaceChildren, modal,
-} from './ui.js';
+import { el, toast, confirmDialog, debounce, formatBytes, replaceChildren, modal } from './ui.js';
 import { printer } from './state.js';
 import { listFiles, readScript, readSlowSetting } from './printer.js';
 import {
-  LANGUAGES, FORMAT_OTYPES, languageOf, printerSpeaks, parseFields, blankFields, buildRecall,
+  LANGUAGES,
+  FORMAT_OTYPES,
+  languageOf,
+  printerSpeaks,
+  parseFields,
+  blankFields,
+  buildRecall,
 } from './formats.js';
 import { createPreview } from './preview.js';
 
@@ -77,7 +81,7 @@ function recallZpl() {
     formatState.current,
     formatState.fields,
     formatState.values,
-    { copies: formatState.copies }
+    { copies: formatState.copies },
   );
 }
 
@@ -91,40 +95,62 @@ const scheduleFormatPreview = debounce(() => {
 
 function renderNotice() {
   const { current, lang, sourceRead } = formatState;
-  if (!current) { replaceChildren(noticeHost, []); return; }
+  if (!current) {
+    replaceChildren(noticeHost, []);
+    return;
+  }
 
   const notes = [];
   const mode = printer.boot['device.languages'];
 
   if (!printerSpeaks(lang, mode)) {
-    notes.push(['warn',
-      `This printer is set to ${mode || 'an unknown language'}, which does not parse ${lang.label}. `
-      + 'Sending this format will most likely print nothing. device.languages is in Printer Settings.']);
+    notes.push([
+      'warn',
+      `This printer is set to ${mode || 'an unknown language'}, which does not parse ${lang.label}. ` +
+        'Sending this format will most likely print nothing. device.languages is in Printer Settings.',
+    ]);
   }
 
   if (!sourceRead) {
-    notes.push(['info',
-      `The web server will not return the contents of a ${lang.label} file, so its `
-      + `${lang.fieldNoun}s cannot be found automatically. Set how many there are, or paste the `
-      + 'source and they will be read from that.']);
+    notes.push([
+      'info',
+      `The web server will not return the contents of a ${lang.label} file, so its ` +
+        `${lang.fieldNoun}s cannot be found automatically. Set how many there are, or paste the ` +
+        'source and they will be read from that.',
+    ]);
   }
 
   if (!lang.previewable) {
-    notes.push(['info',
-      `The printer only renders ZPL previews, so there is none for ${lang.label}. Printing still works.`]);
+    notes.push([
+      'info',
+      `The printer only renders ZPL previews, so there is none for ${lang.label}. Printing still works.`,
+    ]);
   }
 
-  replaceChildren(noticeHost, notes.map(([kind, text]) => el('p', {
-    class: kind === 'warn'
-      ? 'border-b border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900'
-      : 'border-b border-ink-200 bg-ink-50 px-3 py-2 text-[12px] text-ink-600',
-  }, [text])));
+  replaceChildren(
+    noticeHost,
+    notes.map(([kind, text]) =>
+      el(
+        'p',
+        {
+          class:
+            kind === 'warn'
+              ? 'border-b border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900'
+              : 'border-b border-ink-200 bg-ink-50 px-3 py-2 text-[12px] text-ink-600',
+        },
+        [text],
+      ),
+    ),
+  );
 }
 
 /** How many fields a format we could not read has. */
 function countInput() {
   const input = el('input', {
-    class: 'field field-mono w-16', type: 'number', min: '0', max: '99',
+    class: 'field field-mono w-16',
+    type: 'number',
+    min: '0',
+    max: '99',
     value: String(formatState.fields.length),
   });
   input.addEventListener('change', () => {
@@ -142,7 +168,9 @@ function countInput() {
 function renderFields() {
   if (!formatState.current) {
     replaceChildren(fieldsHost, [
-      el('p', { class: 'px-3 py-6 text-center text-ink-400' }, ['Choose a stored format to fill in.']),
+      el('p', { class: 'px-3 py-6 text-center text-ink-400' }, [
+        'Choose a stored format to fill in.',
+      ]),
     ]);
     printBtn.disabled = true;
     return;
@@ -151,18 +179,31 @@ function renderFields() {
   printBtn.disabled = false;
   const { lang, fields } = formatState;
 
-  const controls = el('div', {
-    class: 'flex flex-wrap items-center gap-3 border-b border-ink-200 px-3 py-2',
-  }, [
-    el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, [`${lang.label} format`]),
-    !formatState.sourceRead && el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [
-      `${lang.fieldNoun}s`, countInput(),
-    ]),
-    !formatState.sourceRead && el('button', {
-      class: 'btn-secondary btn-sm',
-      onclick: () => pasteSourceDialog(),
-    }, ['Paste source…']),
-  ].filter(Boolean));
+  const controls = el(
+    'div',
+    {
+      class: 'flex flex-wrap items-center gap-3 border-b border-ink-200 px-3 py-2',
+    },
+    [
+      el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, [
+        `${lang.label} format`,
+      ]),
+      !formatState.sourceRead &&
+        el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [
+          `${lang.fieldNoun}s`,
+          countInput(),
+        ]),
+      !formatState.sourceRead &&
+        el(
+          'button',
+          {
+            class: 'btn-secondary btn-sm',
+            onclick: () => pasteSourceDialog(),
+          },
+          ['Paste source…'],
+        ),
+    ].filter(Boolean),
+  );
 
   if (fields.length === 0) {
     replaceChildren(fieldsHost, [
@@ -201,7 +242,8 @@ function renderFields() {
       // Enter walks the fields, and prints from the last one.
       const inputs = [...fieldsHost.querySelectorAll('input[type="text"]')];
       const next = inputs[inputs.indexOf(input) + 1];
-      if (next) next.focus(); else printFormatLabel();
+      if (next) next.focus();
+      else printFormatLabel();
     });
 
     return el('label', { class: 'block space-y-1 px-3 py-2' }, [
@@ -213,24 +255,36 @@ function renderFields() {
   replaceChildren(fieldsHost, [
     controls,
     el('div', { class: 'divide-y divide-ink-100' }, rows),
-    el('div', { class: 'flex items-center justify-between gap-3 border-t border-ink-200 px-3 py-2' }, [
-      el('button', {
-        class: 'btn-secondary btn-sm',
-        onclick: () => {
-          for (const field of formatState.fields) {
-            formatState.values.set(field.key, field.initial || '');
-          }
-          renderFields();
-          scheduleFormatPreview();
-        },
-      }, ['Reset to defaults']),
-      lang.previewable
-        ? el('button', {
-          class: 'btn-secondary btn-sm',
-          onclick: () => formatPreview.update(recallZpl()),
-        }, ['Preview now'])
-        : el('span', { class: 'text-[11px] text-ink-400' }, [`no preview for ${lang.label}`]),
-    ]),
+    el(
+      'div',
+      { class: 'flex items-center justify-between gap-3 border-t border-ink-200 px-3 py-2' },
+      [
+        el(
+          'button',
+          {
+            class: 'btn-secondary btn-sm',
+            onclick: () => {
+              for (const field of formatState.fields) {
+                formatState.values.set(field.key, field.initial || '');
+              }
+              renderFields();
+              scheduleFormatPreview();
+            },
+          },
+          ['Reset to defaults'],
+        ),
+        lang.previewable
+          ? el(
+              'button',
+              {
+                class: 'btn-secondary btn-sm',
+                onclick: () => formatPreview.update(recallZpl()),
+              },
+              ['Preview now'],
+            )
+          : el('span', { class: 'text-[11px] text-ink-400' }, [`no preview for ${lang.label}`]),
+      ],
+    ),
   ]);
 }
 
@@ -242,9 +296,16 @@ function renderFields() {
 async function pasteSourceDialog() {
   const lang = formatState.lang;
   const pasted = await modal(`Paste ${lang.label} source`, (close) => {
-    const area = el('textarea', {
-      class: 'field field-mono w-full', rows: '10', spellcheck: 'false', placeholder: lang.help,
-    }, [formatState.source || '']);
+    const area = el(
+      'textarea',
+      {
+        class: 'field field-mono w-full',
+        rows: '10',
+        spellcheck: 'false',
+        placeholder: lang.help,
+      },
+      [formatState.source || ''],
+    );
     return el('div', { class: 'space-y-3' }, [
       el('p', { class: 'text-ink-600' }, [
         `The ${lang.fieldNoun}s will be read from this. Nothing is sent to the printer.`,
@@ -274,19 +335,32 @@ function applySource(source, fromPrinter) {
 }
 
 function renderSource() {
-  if (!formatState.current || !formatState.source) { replaceChildren(sourceHost, []); return; }
+  if (!formatState.current || !formatState.source) {
+    replaceChildren(sourceHost, []);
+    return;
+  }
   replaceChildren(sourceHost, [
     el('details', { class: 'border-t border-ink-200' }, [
-      el('summary', { class: 'cursor-pointer px-3 py-2 text-[12px] text-ink-600' }, ['Format source']),
-      el('pre', {
-        class: 'max-h-64 overflow-auto bg-ink-50 px-3 py-2 font-mono text-[11px] leading-snug text-ink-700',
-      }, [formatState.source]),
+      el('summary', { class: 'cursor-pointer px-3 py-2 text-[12px] text-ink-600' }, [
+        'Format source',
+      ]),
+      el(
+        'pre',
+        {
+          class:
+            'max-h-64 overflow-auto bg-ink-50 px-3 py-2 font-mono text-[11px] leading-snug text-ink-700',
+        },
+        [formatState.source],
+      ),
     ]),
   ]);
 }
 
 function renderSummary() {
-  if (!formatState.current) { summaryNode.textContent = ''; return; }
+  if (!formatState.current) {
+    summaryNode.textContent = '';
+    return;
+  }
   const count = formatState.fields.length;
   const noun = formatState.lang.fieldNoun;
   summaryNode.textContent = `${formatState.lang.label} · ${count} ${noun}${count === 1 ? '' : 's'}`;
@@ -305,9 +379,11 @@ function renderFormatOptions() {
   for (const file of formatState.formats) {
     const lang = languageOf(file.otype);
     const value = `${file.dev}:${file.oname}.${file.otype}`;
-    formatSelect.append(el('option', { value, selected: value === selected }, [
-      `${file.name}  — ${lang ? lang.label : '?'}${file.bytes ? `, ${formatBytes(file.bytes)}` : ''}`,
-    ]));
+    formatSelect.append(
+      el('option', { value, selected: value === selected }, [
+        `${file.name}  — ${lang ? lang.label : '?'}${file.bytes ? `, ${formatBytes(file.bytes)}` : ''}`,
+      ]),
+    );
   }
 }
 
@@ -323,7 +399,9 @@ async function refreshFormats() {
   }
 
   // Whatever a CPCL scan turned up keeps its place in the list.
-  const scanned = formatState.formats.filter((f) => f.fromScan && !found.some((x) => x.name === f.name));
+  const scanned = formatState.formats.filter(
+    (f) => f.fromScan && !found.some((x) => x.name === f.name),
+  );
   formatState.formats = [...found, ...scanned];
   renderFormatOptions();
 }
@@ -343,7 +421,9 @@ async function scanForCpcl() {
 
   scanBtn.disabled = true;
   scanBtn.textContent = 'Scanning…';
-  const busy = toast('Reading the full drive listing… this takes a few seconds', 'busy', { timeout: 0 });
+  const busy = toast('Reading the full drive listing… this takes a few seconds', 'busy', {
+    timeout: 0,
+  });
 
   try {
     const values = await readSlowSetting(stem, { timeout: 60000 });
@@ -356,17 +436,24 @@ async function scanForCpcl() {
       const oname = match[1].toUpperCase();
       const otype = match[2].toUpperCase();
       found.set(`E:${oname}.${otype}`, {
-        name: `E:${oname}.${otype}`, dev: 'E', oname, otype, bytes: 0, fromScan: true,
+        name: `E:${oname}.${otype}`,
+        dev: 'E',
+        oname,
+        otype,
+        bytes: 0,
+        fromScan: true,
       });
     }
 
-    const added = [...found.values()].filter((f) => !formatState.formats.some((x) => x.name === f.name));
+    const added = [...found.values()].filter(
+      (f) => !formatState.formats.some((x) => x.name === f.name),
+    );
     formatState.formats = [...formatState.formats, ...added];
     renderFormatOptions();
 
     busy.update(
       added.length ? `Found ${added.length} CPCL format(s).` : 'No CPCL formats on this printer.',
-      added.length ? 'success' : 'info'
+      added.length ? 'success' : 'info',
     );
   } catch (err) {
     busy.update(`Scan failed: ${err.message}`, 'error');
@@ -431,7 +518,10 @@ async function selectFormat(value, preloaded = null) {
   renderSummary();
 
   if (lang.previewable) formatPreview.update(recallZpl());
-  else formatPreview.idle(`The printer only renders ZPL previews, so there is none for ${lang.label}.`);
+  else
+    formatPreview.idle(
+      `The printer only renders ZPL previews, so there is none for ${lang.label}.`,
+    );
 
   const first = fieldsHost.querySelector('input[type="text"]');
   if (first) first.focus();
@@ -443,9 +533,9 @@ async function printFormatLabel() {
 
   const ok = await confirmDialog(
     'Print this label?',
-    `${copies > 1 ? `${copies} copies of` : 'One copy of'} ${current.oname}.${current.otype}`
-    + ` will be sent to the printer as ${lang.label}.`,
-    'Print'
+    `${copies > 1 ? `${copies} copies of` : 'One copy of'} ${current.oname}.${current.otype}` +
+      ` will be sent to the printer as ${lang.label}.`,
+    'Print',
   );
   if (!ok) return;
   formatPreview.print(recallZpl());
@@ -460,7 +550,11 @@ export function mountFormat(panel) {
   formatSelect.addEventListener('change', () => selectFormat(formatSelect.value));
 
   const copiesInput = el('input', {
-    class: 'field field-mono w-20', type: 'number', min: '1', max: '999', value: '1',
+    class: 'field field-mono w-20',
+    type: 'number',
+    min: '1',
+    max: '999',
+    value: '1',
   });
   copiesInput.addEventListener('change', () => {
     formatState.copies = Math.max(1, Math.round(Number(copiesInput.value) || 1));
@@ -468,15 +562,26 @@ export function mountFormat(panel) {
     scheduleFormatPreview();
   });
 
-  scanBtn = el('button', {
-    class: 'btn-secondary btn-sm',
-    title: 'CPCL formats are not listed under their real extension, so this reads the full drive listing to find them',
-    onclick: () => scanForCpcl(),
-  }, ['Scan for CPCL']);
+  scanBtn = el(
+    'button',
+    {
+      class: 'btn-secondary btn-sm',
+      title:
+        'CPCL formats are not listed under their real extension, so this reads the full drive listing to find them',
+      onclick: () => scanForCpcl(),
+    },
+    ['Scan for CPCL'],
+  );
 
-  printBtn = el('button', {
-    class: 'btn-primary btn-sm', onclick: () => printFormatLabel(), disabled: true,
-  }, ['Print']);
+  printBtn = el(
+    'button',
+    {
+      class: 'btn-primary btn-sm',
+      onclick: () => printFormatLabel(),
+      disabled: true,
+    },
+    ['Print'],
+  );
   summaryNode = el('span', { class: 'text-[11px] text-ink-500' });
 
   noticeHost = el('div');
@@ -484,20 +589,22 @@ export function mountFormat(panel) {
   sourceHost = el('div');
   formatPreview = createPreview();
 
-  panel.append(el('div', { class: 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]' }, [
-    el('div', { class: 'card min-w-0 overflow-hidden' }, [
-      el('div', { class: 'toolbar' }, [
-        formatSelect,
-        scanBtn,
-        el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, ['Copies', copiesInput]),
-        el('div', { class: 'ml-auto flex items-center gap-3' }, [summaryNode, printBtn]),
+  panel.append(
+    el('div', { class: 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]' }, [
+      el('div', { class: 'card min-w-0 overflow-hidden' }, [
+        el('div', { class: 'toolbar' }, [
+          formatSelect,
+          scanBtn,
+          el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, ['Copies', copiesInput]),
+          el('div', { class: 'ml-auto flex items-center gap-3' }, [summaryNode, printBtn]),
+        ]),
+        noticeHost,
+        fieldsHost,
+        sourceHost,
       ]),
-      noticeHost,
-      fieldsHost,
-      sourceHost,
+      el('div', { class: 'min-w-0' }, [formatPreview.node]),
     ]),
-    el('div', { class: 'min-w-0' }, [formatPreview.node]),
-  ]));
+  );
 
   renderFields();
   formatPreview.idle('Choose a format to see it rendered.');
@@ -530,9 +637,16 @@ function drainPendingFormat() {
   const { file, source } = pending;
   const value = `${file.dev}:${file.oname}.${file.otype}`;
   if (!formatState.formats.some((f) => f.name === value)) {
-    formatState.formats = [...formatState.formats, {
-      name: value, dev: file.dev, oname: file.oname, otype: file.otype, bytes: file.bytes || 0,
-    }];
+    formatState.formats = [
+      ...formatState.formats,
+      {
+        name: value,
+        dev: file.dev,
+        oname: file.oname,
+        otype: file.otype,
+        bytes: file.bytes || 0,
+      },
+    ];
   }
   formatState.current = { dev: file.dev, oname: file.oname, otype: file.otype };
   renderFormatOptions();

@@ -73,11 +73,12 @@ export function getvarRaw(ip, name, { timeout = 20000, quiet = 2 } = {}) {
  */
 export function unwrapBmp(reply) {
   if (reply.length < 3) throw new Error(`Printer sent ${reply.length} bytes, not a bitmap`);
-  const body = reply[0] === 0x22 && reply[reply.length - 1] === 0x22
-    ? reply.subarray(1, -1)
-    : reply;
+  const body =
+    reply[0] === 0x22 && reply[reply.length - 1] === 0x22 ? reply.subarray(1, -1) : reply;
   if (body[0] !== 0x42 || body[1] !== 0x4d) {
-    throw new Error(`Expected a BMP, got ${JSON.stringify(body.subarray(0, 8).toString('latin1'))}`);
+    throw new Error(
+      `Expected a BMP, got ${JSON.stringify(body.subarray(0, 8).toString('latin1'))}`,
+    );
   }
   return body;
 }
@@ -140,8 +141,8 @@ export function bmpToPng(bmp) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8;  // bit depth
-  ihdr[9] = 0;  // greyscale
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 0; // greyscale
 
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),

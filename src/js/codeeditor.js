@@ -41,15 +41,27 @@ function loadAce() {
   if (acePromise) return acePromise;
 
   acePromise = new Promise((resolve) => {
-    if (window.ace) { resolve(window.ace); return; }
+    if (window.ace) {
+      resolve(window.ace);
+      return;
+    }
 
     const script = document.createElement('script');
     script.src = ACE_URL;
     script.async = true;
 
-    const timer = setTimeout(() => { script.remove(); resolve(null); }, ACE_TIMEOUT);
-    script.onload = () => { clearTimeout(timer); resolve(window.ace || null); };
-    script.onerror = () => { clearTimeout(timer); resolve(null); };
+    const timer = setTimeout(() => {
+      script.remove();
+      resolve(null);
+    }, ACE_TIMEOUT);
+    script.onload = () => {
+      clearTimeout(timer);
+      resolve(window.ace || null);
+    };
+    script.onerror = () => {
+      clearTimeout(timer);
+      resolve(null);
+    };
     document.head.append(script);
   });
   return acePromise;
@@ -65,7 +77,8 @@ function loadAce() {
  */
 function highlightTokens(line) {
   const tokens = [];
-  const re = /(\^FX[^\^~]*)|(\^FD|\^FV)([^\^~]*)|(\^FN\d+)|([\^~][A-Za-z][A-Za-z0-9]?)|([-+]?\d+(?:\.\d+)?)|([^\^~\d]+)/g;
+  const re =
+    /(\^FX[^\^~]*)|(\^FD|\^FV)([^\^~]*)|(\^FN\d+)|([\^~][A-Za-z][A-Za-z0-9]?)|([-+]?\d+(?:\.\d+)?)|([^\^~\d]+)/g;
   let match;
   while ((match = re.exec(line)) !== null) {
     if (match[1]) tokens.push(['comment', match[1]]);
@@ -90,11 +103,14 @@ const TOKEN_CLASS = {
 };
 
 function highlightToHtml(text) {
-  return text.split('\n').map((line) => (
-    highlightTokens(line)
-      .map(([kind, value]) => `<span class="${TOKEN_CLASS[kind]}">${escapeHtml(value)}</span>`)
-      .join('')
-  )).join('\n');
+  return text
+    .split('\n')
+    .map((line) =>
+      highlightTokens(line)
+        .map(([kind, value]) => `<span class="${TOKEN_CLASS[kind]}">${escapeHtml(value)}</span>`)
+        .join(''),
+    )
+    .join('\n');
 }
 
 /** Register a ZPL mode with a loaded Ace instance. Idempotent. */
@@ -102,46 +118,54 @@ function defineAceZplMode(ace) {
   if (ace.__zplModeDefined) return 'ace/mode/zpl';
   ace.__zplModeDefined = true;
 
-  ace.define('ace/mode/zpl_highlight_rules', ['require', 'exports', 'ace/lib/oop', 'ace/mode/text_highlight_rules'], (require, exports) => {
-    const oop = require('ace/lib/oop');
-    const TextHighlightRules = require('ace/mode/text_highlight_rules').TextHighlightRules;
+  ace.define(
+    'ace/mode/zpl_highlight_rules',
+    ['require', 'exports', 'ace/lib/oop', 'ace/mode/text_highlight_rules'],
+    (require, exports) => {
+      const oop = require('ace/lib/oop');
+      const TextHighlightRules = require('ace/mode/text_highlight_rules').TextHighlightRules;
 
-    const ZplHighlightRules = function () {
-      // One flat state. Field data is captured in the same rule as the
-      // command that introduces it rather than through a second state:
-      // the obvious "stop at the next command" rule is a zero-width
-      // lookahead, and Ace's tokenizer does not handle those reliably.
-      this.$rules = {
-        start: [
-          // ^FX is ZPL's comment: everything up to the next command.
-          { token: 'comment', regex: '\\^FX[^\\^~]*' },
-          { token: 'keyword.control', regex: '\\^X[AZ]\\b' },
-          { token: 'variable.parameter', regex: '\\^FN\\d+' },
-          { token: ['support.function', 'string'], regex: '(\\^F[DV])([^\\^~]*)' },
-          { token: 'support.function', regex: '[\\^~][A-Za-z][A-Za-z0-9]?' },
-          { token: 'constant.numeric', regex: '[-+]?\\d+(?:\\.\\d+)?' },
-          { token: 'punctuation.operator', regex: ',' },
-          { token: 'text', regex: '.' },
-        ],
+      const ZplHighlightRules = function () {
+        // One flat state. Field data is captured in the same rule as the
+        // command that introduces it rather than through a second state:
+        // the obvious "stop at the next command" rule is a zero-width
+        // lookahead, and Ace's tokenizer does not handle those reliably.
+        this.$rules = {
+          start: [
+            // ^FX is ZPL's comment: everything up to the next command.
+            { token: 'comment', regex: '\\^FX[^\\^~]*' },
+            { token: 'keyword.control', regex: '\\^X[AZ]\\b' },
+            { token: 'variable.parameter', regex: '\\^FN\\d+' },
+            { token: ['support.function', 'string'], regex: '(\\^F[DV])([^\\^~]*)' },
+            { token: 'support.function', regex: '[\\^~][A-Za-z][A-Za-z0-9]?' },
+            { token: 'constant.numeric', regex: '[-+]?\\d+(?:\\.\\d+)?' },
+            { token: 'punctuation.operator', regex: ',' },
+            { token: 'text', regex: '.' },
+          ],
+        };
       };
-    };
-    oop.inherits(ZplHighlightRules, TextHighlightRules);
-    exports.ZplHighlightRules = ZplHighlightRules;
-  });
+      oop.inherits(ZplHighlightRules, TextHighlightRules);
+      exports.ZplHighlightRules = ZplHighlightRules;
+    },
+  );
 
-  ace.define('ace/mode/zpl', ['require', 'exports', 'ace/lib/oop', 'ace/mode/text', 'ace/mode/zpl_highlight_rules'], (require, exports) => {
-    const oop = require('ace/lib/oop');
-    const TextMode = require('ace/mode/text').Mode;
-    const ZplHighlightRules = require('ace/mode/zpl_highlight_rules').ZplHighlightRules;
+  ace.define(
+    'ace/mode/zpl',
+    ['require', 'exports', 'ace/lib/oop', 'ace/mode/text', 'ace/mode/zpl_highlight_rules'],
+    (require, exports) => {
+      const oop = require('ace/lib/oop');
+      const TextMode = require('ace/mode/text').Mode;
+      const ZplHighlightRules = require('ace/mode/zpl_highlight_rules').ZplHighlightRules;
 
-    const Mode = function () {
-      this.HighlightRules = ZplHighlightRules;
-      this.lineCommentStart = '^FX';
-    };
-    oop.inherits(Mode, TextMode);
-    Mode.prototype.$id = 'ace/mode/zpl';
-    exports.Mode = Mode;
-  });
+      const Mode = function () {
+        this.HighlightRules = ZplHighlightRules;
+        this.lineCommentStart = '^FX';
+      };
+      oop.inherits(Mode, TextMode);
+      Mode.prototype.$id = 'ace/mode/zpl';
+      exports.Mode = Mode;
+    },
+  );
 
   return 'ace/mode/zpl';
 }
@@ -156,7 +180,8 @@ function defineAceZplMode(ace) {
  * (transparent) glyphs; scroll is mirrored on input and scroll.
  */
 function createFallbackEditor(container, { value, onChange }) {
-  const shared = 'm-0 border-0 p-3 font-mono text-[12px] leading-[1.5] whitespace-pre-wrap break-words';
+  const shared =
+    'm-0 border-0 p-3 font-mono text-[12px] leading-[1.5] whitespace-pre-wrap break-words';
 
   const highlight = document.createElement('pre');
   highlight.className = `${shared} pointer-events-none absolute inset-0 overflow-hidden`;
@@ -182,7 +207,10 @@ function createFallbackEditor(container, { value, onChange }) {
   };
   paint();
 
-  textarea.addEventListener('input', () => { paint(); onChange(textarea.value); });
+  textarea.addEventListener('input', () => {
+    paint();
+    onChange(textarea.value);
+  });
   textarea.addEventListener('scroll', () => {
     highlight.scrollTop = textarea.scrollTop;
     highlight.scrollLeft = textarea.scrollLeft;
@@ -208,7 +236,9 @@ function createFallbackEditor(container, { value, onChange }) {
     },
     focus: () => textarea.focus(),
     resize() {},
-    destroy() { wrap.remove(); },
+    destroy() {
+      wrap.remove();
+    },
   };
 }
 
@@ -266,6 +296,9 @@ export async function createCodeEditor(container, { value = '', onChange = () =>
     },
     focus: () => editor.focus(),
     resize: () => editor.resize(),
-    destroy() { editor.destroy(); host.remove(); },
+    destroy() {
+      editor.destroy();
+      host.remove();
+    },
   };
 }

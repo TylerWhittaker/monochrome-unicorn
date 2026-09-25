@@ -54,13 +54,30 @@
  */
 
 import {
-  el, toast, confirmDialog, modal, debounce, formatBytes, replaceChildren, withPrinterPassword,
+  el,
+  toast,
+  confirmDialog,
+  modal,
+  debounce,
+  formatBytes,
+  replaceChildren,
+  withPrinterPassword,
 } from './ui.js';
 import { printer, loadUnitPreference } from './state.js';
 import {
-  listFiles, readDriveListing, fetchStoredFile, detokenizeZpl, readScript, saveScript,
-  loadStoredImage, forgetStoredImage, printStoredFile, runStoredFile, deleteStoredFile,
-  deleteFile, parseObjectName,
+  listFiles,
+  readDriveListing,
+  fetchStoredFile,
+  detokenizeZpl,
+  readScript,
+  saveScript,
+  loadStoredImage,
+  forgetStoredImage,
+  printStoredFile,
+  runStoredFile,
+  deleteStoredFile,
+  deleteFile,
+  parseObjectName,
 } from './printer.js';
 import { languageOf, parseFields } from './formats.js';
 import { formatZpl } from './zpl.js';
@@ -193,12 +210,18 @@ const FS_TYPE_BADGE = {
  */
 async function fsRefresh({ force = false } = {}) {
   if (fsState.loading) return;
-  if (fsState.loaded && !force) { fsRenderList(); return; }
+  if (fsState.loaded && !force) {
+    fsRenderList();
+    return;
+  }
 
   const stem = (printer.schema.slowFiles || {})['file.drive_listing'];
   if (!stem) {
-    fsSetNotice('This build has no helper file for file.drive_listing, so the filesystem cannot '
-      + 'be listed. Re-deploy against this printer.', 'warn');
+    fsSetNotice(
+      'This build has no helper file for file.drive_listing, so the filesystem cannot ' +
+        'be listed. Re-deploy against this printer.',
+      'warn',
+    );
     return;
   }
 
@@ -223,10 +246,14 @@ async function fsRefresh({ force = false } = {}) {
 /** The spinner and its word, while the listing is on its way. */
 function fsRenderLoading() {
   if (fsRefreshBtn) fsRefreshBtn.disabled = fsState.loading;
-  if (!fsState.loading) { replaceChildren(fsLoadingNode, []); return; }
+  if (!fsState.loading) {
+    replaceChildren(fsLoadingNode, []);
+    return;
+  }
   replaceChildren(fsLoadingNode, [
     el('span', {
-      class: 'inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-300 border-t-ink-700',
+      class:
+        'inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-300 border-t-ink-700',
       role: 'status',
       'aria-label': 'Loading',
     }),
@@ -242,18 +269,31 @@ function fsRenderLoading() {
  */
 function fsPrinterBusy() {
   if (!fsState.loading) return false;
-  toast('The drive listing is still being read — the printer answers one request at a time. '
-    + 'Try again in a moment.', 'info');
+  toast(
+    'The drive listing is still being read — the printer answers one request at a time. ' +
+      'Try again in a moment.',
+    'info',
+  );
   return true;
 }
 
 function fsSetNotice(text, kind = 'info') {
-  if (!text) { replaceChildren(fsNoticeNode, []); return; }
-  replaceChildren(fsNoticeNode, [el('p', {
-    class: kind === 'warn'
-      ? 'border-b border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900'
-      : 'border-b border-ink-200 bg-ink-50 px-3 py-2 text-[12px] text-ink-600',
-  }, [text])]);
+  if (!text) {
+    replaceChildren(fsNoticeNode, []);
+    return;
+  }
+  replaceChildren(fsNoticeNode, [
+    el(
+      'p',
+      {
+        class:
+          kind === 'warn'
+            ? 'border-b border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900'
+            : 'border-b border-ink-200 bg-ink-50 px-3 py-2 text-[12px] text-ink-600',
+      },
+      [text],
+    ),
+  ]);
 }
 
 function fsVisibleFiles() {
@@ -267,7 +307,8 @@ function fsVisibleFiles() {
 function fsRenderList() {
   const files = fsVisibleFiles();
   const total = fsState.files.length;
-  fsCountNode.textContent = !fsState.loaded ? ''
+  fsCountNode.textContent = !fsState.loaded
+    ? ''
     : files.length === total
       ? `${total} file${total === 1 ? '' : 's'}`
       : `${files.length} of ${total} files`;
@@ -276,11 +317,16 @@ function fsRenderList() {
     // "No files" is a fact about a drive, not about a listing that has
     // not arrived yet -- nine seconds of the wrong answer reads as a
     // broken tab.
-    const empty = fsState.loading ? 'Reading the drive listing…'
-      : !fsState.loaded ? 'The drive listing has not been read yet.'
-        : total ? 'No files match this filter.'
+    const empty = fsState.loading
+      ? 'Reading the drive listing…'
+      : !fsState.loaded
+        ? 'The drive listing has not been read yet.'
+        : total
+          ? 'No files match this filter.'
           : 'This drive holds no files.';
-    replaceChildren(fsListNode, [el('p', { class: 'px-3 py-6 text-center text-ink-400' }, [empty])]);
+    replaceChildren(fsListNode, [
+      el('p', { class: 'px-3 py-6 text-center text-ink-400' }, [empty]),
+    ]);
     return;
   }
 
@@ -293,23 +339,31 @@ function fsBuildRow(file) {
   const caps = fsCapabilities(file);
   const typeText = fsTypeLabel(file);
 
-  const button = (label, reason, onClick, extraClass = 'btn-secondary btn-sm') => el('button', {
-    class: extraClass,
-    disabled: Boolean(reason),
-    title: reason || undefined,
-    onclick: onClick,
-  }, [label]);
+  const button = (label, reason, onClick, extraClass = 'btn-secondary btn-sm') =>
+    el(
+      'button',
+      {
+        class: extraClass,
+        disabled: Boolean(reason),
+        title: reason || undefined,
+        onclick: onClick,
+      },
+      [label],
+    );
 
-  const meta = [
-    file.bytes ? formatBytes(file.bytes) : null,
-    file.date || null,
-  ].filter(Boolean).join('  ·  ');
+  const meta = [file.bytes ? formatBytes(file.bytes) : null, file.date || null]
+    .filter(Boolean)
+    .join('  ·  ');
 
   return el('div', { class: 'flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2' }, [
     el('div', { class: 'min-w-0 flex-1' }, [
       el('div', { class: 'flex items-center gap-2' }, [
         el('span', { class: 'truncate font-mono text-[12px] text-ink-900' }, [file.name]),
-        el('span', { class: `pill shrink-0 ${FS_TYPE_BADGE[typeText] || 'bg-ink-100 text-ink-600'}` }, [typeText]),
+        el(
+          'span',
+          { class: `pill shrink-0 ${FS_TYPE_BADGE[typeText] || 'bg-ink-100 text-ink-600'}` },
+          [typeText],
+        ),
       ]),
       meta ? el('div', { class: 'text-[11px] text-ink-400' }, [meta]) : null,
     ]),
@@ -359,9 +413,10 @@ export function fsLooksBinary(bytes) {
  */
 export function fsToDisplayText(bytes) {
   const text = detokenizeZpl(new TextDecoder('windows-1252').decode(bytes));
-  return text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, (c) => (
-    '\\x' + c.charCodeAt(0).toString(16).padStart(2, '0')
-  ));
+  return text.replace(
+    /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,
+    (c) => '\\x' + c.charCodeAt(0).toString(16).padStart(2, '0'),
+  );
 }
 
 /** A hex dump, for the files that are not text. */
@@ -371,7 +426,9 @@ export function fsHexDump(bytes, limit = 1024) {
   for (let i = 0; i < end; i += 16) {
     const chunk = bytes.subarray(i, Math.min(i + 16, end));
     const hex = [...chunk].map((b) => b.toString(16).padStart(2, '0')).join(' ');
-    const text = [...chunk].map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '.')).join('');
+    const text = [...chunk]
+      .map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '.'))
+      .join('');
     lines.push(`${i.toString(16).padStart(8, '0')}  ${hex.padEnd(47)}  ${text}`);
   }
   if (bytes.length > end) lines.push(`… ${bytes.length - end} more bytes`);
@@ -410,26 +467,43 @@ async function fsViewFile(file) {
     if (FS_IMAGE_TYPES.includes(otype)) {
       forgetStoredImage(file.name);
       const url = await loadStoredImage({ dev: file.dev, oname: file.oname, otype });
-      body = el('div', { class: 'flex justify-center rounded border border-ink-200 bg-ink-50 p-2' }, [
-        el('img', {
-          class: 'max-h-[60vh] max-w-full bg-white ring-1 ring-ink-300',
-          style: 'image-rendering:pixelated;', src: url, alt: file.name,
-        }),
-      ]);
+      body = el(
+        'div',
+        { class: 'flex justify-center rounded border border-ink-200 bg-ink-50 p-2' },
+        [
+          el('img', {
+            class: 'max-h-[60vh] max-w-full bg-white ring-1 ring-ink-300',
+            style: 'image-rendering:pixelated;',
+            src: url,
+            alt: file.name,
+          }),
+        ],
+      );
     } else {
       const text = await fsReadText(file);
-      body = text && text.binary
-        ? el('div', { class: 'space-y-2' }, [
-          el('p', { class: 'text-[12px] text-ink-500' }, [
-            'This file is not text, so it is shown as bytes.',
-          ]),
-          el('pre', {
-            class: 'max-h-[55vh] overflow-auto rounded bg-ink-50 px-3 py-2 font-mono text-[11px] leading-snug text-ink-700',
-          }, [fsHexDump(text.binary)]),
-        ])
-        : el('pre', {
-          class: 'max-h-[60vh] overflow-auto rounded bg-ink-50 px-3 py-2 font-mono text-[11px] leading-snug text-ink-700',
-        }, [text || '(empty file)']);
+      body =
+        text && text.binary
+          ? el('div', { class: 'space-y-2' }, [
+              el('p', { class: 'text-[12px] text-ink-500' }, [
+                'This file is not text, so it is shown as bytes.',
+              ]),
+              el(
+                'pre',
+                {
+                  class:
+                    'max-h-[55vh] overflow-auto rounded bg-ink-50 px-3 py-2 font-mono text-[11px] leading-snug text-ink-700',
+                },
+                [fsHexDump(text.binary)],
+              ),
+            ])
+          : el(
+              'pre',
+              {
+                class:
+                  'max-h-[60vh] overflow-auto rounded bg-ink-50 px-3 py-2 font-mono text-[11px] leading-snug text-ink-700',
+              },
+              [text || '(empty file)'],
+            );
     }
     busy.close();
   } catch (err) {
@@ -437,12 +511,14 @@ async function fsViewFile(file) {
     return;
   }
 
-  await modal(file.name, (close) => el('div', { class: 'space-y-3' }, [
-    body,
-    el('div', { class: 'flex justify-end gap-2' }, [
-      el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Close']),
+  await modal(file.name, (close) =>
+    el('div', { class: 'space-y-3' }, [
+      body,
+      el('div', { class: 'flex justify-end gap-2' }, [
+        el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Close']),
+      ]),
     ]),
-  ]));
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -512,9 +588,10 @@ async function fsPrintFile(file) {
 
   let source = '';
   try {
-    source = file.otype === 'ZPL'
-      ? await readScript({ dev: file.dev, oname: file.oname, otype: 'ZPL' })
-      : await fsReadSourceText(file);
+    source =
+      file.otype === 'ZPL'
+        ? await readScript({ dev: file.dev, oname: file.oname, otype: 'ZPL' })
+        : await fsReadSourceText(file);
   } catch (err) {
     source = '';
   }
@@ -524,7 +601,7 @@ async function fsPrintFile(file) {
   if (fields.length) {
     toast(
       `${file.name} has ${fields.length} ${lang.fieldNoun}${fields.length === 1 ? '' : 's'} to fill in.`,
-      'info'
+      'info',
     );
     openInFormat(file, source);
     location.hash = '#format';
@@ -533,9 +610,9 @@ async function fsPrintFile(file) {
 
   const ok = await confirmDialog(
     'Print this file?',
-    `The printer will be told to print ${file.name}`
-    + (source ? ' as it stands; it has no fields to fill in.' : '.'),
-    'Print'
+    `The printer will be told to print ${file.name}` +
+      (source ? ' as it stands; it has no fields to fill in.' : '.'),
+    'Print',
   );
   if (!ok) return;
 
@@ -572,21 +649,28 @@ async function fsRunFile(file) {
     preview = '';
   }
 
-  const ok = await modal('Run this batch file?', (close) => el('div', { class: 'space-y-3' }, [
-    el('p', { class: 'text-ink-700' }, [
-      `${file.name} will be run by the printer. A batch file can change settings, print labels `
-      + 'or restart the printer, and reports nothing back.',
+  const ok = await modal('Run this batch file?', (close) =>
+    el('div', { class: 'space-y-3' }, [
+      el('p', { class: 'text-ink-700' }, [
+        `${file.name} will be run by the printer. A batch file can change settings, print labels ` +
+          'or restart the printer, and reports nothing back.',
+      ]),
+      preview
+        ? el(
+            'pre',
+            {
+              class:
+                'max-h-48 overflow-auto rounded bg-ink-50 px-3 py-2 font-mono text-[11px] leading-snug text-ink-700',
+            },
+            [preview],
+          )
+        : el('p', { class: 'text-[12px] text-ink-400' }, ['Its contents could not be read first.']),
+      el('div', { class: 'flex justify-end gap-2' }, [
+        el('button', { class: 'btn-secondary', onclick: () => close(false) }, ['Cancel']),
+        el('button', { class: 'btn-danger', onclick: () => close(true) }, ['Run']),
+      ]),
     ]),
-    preview
-      ? el('pre', {
-        class: 'max-h-48 overflow-auto rounded bg-ink-50 px-3 py-2 font-mono text-[11px] leading-snug text-ink-700',
-      }, [preview])
-      : el('p', { class: 'text-[12px] text-ink-400' }, ['Its contents could not be read first.']),
-    el('div', { class: 'flex justify-end gap-2' }, [
-      el('button', { class: 'btn-secondary', onclick: () => close(false) }, ['Cancel']),
-      el('button', { class: 'btn-danger', onclick: () => close(true) }, ['Run']),
-    ]),
-  ]));
+  );
   if (ok !== true) return;
 
   try {
@@ -610,7 +694,7 @@ async function fsDeleteFile(file) {
   const ok = await confirmDialog(
     'Delete this file?',
     `${file.name} will be removed from the printer. This cannot be undone.`,
-    'Delete'
+    'Delete',
   );
   if (!ok) return;
 
@@ -618,9 +702,14 @@ async function fsDeleteFile(file) {
   try {
     await deleteStoredFile(file.name);
     if (await fsStillThere(file)) {
-      await withPrinterPassword((password) => deleteFile({
-        dev: file.dev, oname: file.oname, otype: file.otype, password,
-      }));
+      await withPrinterPassword((password) =>
+        deleteFile({
+          dev: file.dev,
+          oname: file.oname,
+          otype: file.otype,
+          password,
+        }),
+      );
       if (await fsStillThere(file)) {
         busy.update(`The printer kept ${file.name}.`, 'error');
         return;
@@ -701,23 +790,29 @@ async function fsHandlePickedFile(file) {
     return;
   }
 
-  await modal('This file cannot be uploaded from a browser', (close) => el('div', { class: 'space-y-3' }, [
-    el('p', { class: 'text-ink-700' }, [
-      `The printer's web server has no way to store a${/^[AEIOU]/.test(ext) ? 'n' : ''} .${ext || '???'}. `
-      + 'It writes a .ZPL through its label form, and a graphic through ~DY (which the console sends '
-      + 'as a .GRF, one bit per pixel). Everything else needs the CISDFCRC16 download header on port '
-      + '9100, which a page served by the printer cannot open.',
+  await modal('This file cannot be uploaded from a browser', (close) =>
+    el('div', { class: 'space-y-3' }, [
+      el('p', { class: 'text-ink-700' }, [
+        `The printer's web server has no way to store a${/^[AEIOU]/.test(ext) ? 'n' : ''} .${ext || '???'}. ` +
+          'It writes a .ZPL through its label form, and a graphic through ~DY (which the console sends ' +
+          'as a .GRF, one bit per pixel). Everything else needs the CISDFCRC16 download header on port ' +
+          '9100, which a page served by the printer cannot open.',
+      ]),
+      el('p', { class: 'text-ink-600' }, ['From a computer on the same network:']),
+      el(
+        'pre',
+        {
+          class: 'overflow-auto rounded bg-ink-50 px-3 py-2 font-mono text-[11px] text-ink-700',
+        },
+        [
+          `node tools/upload.mjs ${printer.ip || '<printer-ip>'} ${file.name} E:${objectNameFrom(file.name)}.${ext || 'EXT'}`,
+        ],
+      ),
+      el('div', { class: 'flex justify-end gap-2' }, [
+        el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Close']),
+      ]),
     ]),
-    el('p', { class: 'text-ink-600' }, [
-      'From a computer on the same network:',
-    ]),
-    el('pre', {
-      class: 'overflow-auto rounded bg-ink-50 px-3 py-2 font-mono text-[11px] text-ink-700',
-    }, [`node tools/upload.mjs ${printer.ip || '<printer-ip>'} ${file.name} E:${objectNameFrom(file.name)}.${ext || 'EXT'}`]),
-    el('div', { class: 'flex justify-end gap-2' }, [
-      el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Close']),
-    ]),
-  ]));
+  );
 }
 
 /**
@@ -739,17 +834,29 @@ async function fsUploadTextFile(file, ext) {
   const suggested = `${objectNameFrom(file.name)}.ZPL`;
   const target = await modal('Upload to the printer', (close) => {
     const nameInput = el('input', {
-      class: 'field field-mono', type: 'text', maxlength: '16', value: suggested,
-      onkeydown: (event) => { if (event.key === 'Enter') close(nameInput.value); },
+      class: 'field field-mono',
+      type: 'text',
+      maxlength: '16',
+      value: suggested,
+      onkeydown: (event) => {
+        if (event.key === 'Enter') close(nameInput.value);
+      },
     });
     return el('div', { class: 'space-y-3' }, [
-      el('p', { class: 'text-ink-600' }, [
-        `${file.name} — ${formatBytes(file.size)}`,
-      ]),
-      ext !== 'ZPL' ? el('p', { class: 'text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded px-2 py-1.5' }, [
-        `The printer's form stores this as a .ZPL and runs it through the ZPL parser on the way in. `
-        + `A .${ext} that is not ZPL will not survive that; upload it over port 9100 instead.`,
-      ]) : null,
+      el('p', { class: 'text-ink-600' }, [`${file.name} — ${formatBytes(file.size)}`]),
+      ext !== 'ZPL'
+        ? el(
+            'p',
+            {
+              class:
+                'text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded px-2 py-1.5',
+            },
+            [
+              `The printer's form stores this as a .ZPL and runs it through the ZPL parser on the way in. ` +
+                `A .${ext} that is not ZPL will not survive that; upload it over port 9100 instead.`,
+            ],
+          )
+        : null,
       el('label', { class: 'block space-y-1' }, [
         el('span', { class: 'label-text' }, ['Object name']),
         nameInput,
@@ -766,13 +873,22 @@ async function fsUploadTextFile(file, ext) {
 
   if (!target) return;
   const { oname, otype } = parseObjectName(target, 'ZPL');
-  if (!oname) { toast('That name has no usable characters.', 'error'); return; }
+  if (!oname) {
+    toast('That name has no usable characters.', 'error');
+    return;
+  }
 
   const busy = toast(`Uploading ${oname}.${otype}…`, 'busy', { timeout: 0 });
   try {
-    await withPrinterPassword((password) => saveScript({
-      dev: 'E', oname, otype, data: text, password,
-    }));
+    await withPrinterPassword((password) =>
+      saveScript({
+        dev: 'E',
+        oname,
+        otype,
+        data: text,
+        password,
+      }),
+    );
     busy.update(`Stored E:${oname}.${otype}`, 'success');
     await fsRefresh({ force: true });
   } catch (err) {
@@ -787,16 +903,27 @@ async function fsUploadTextFile(file, ext) {
 
 export function mountFiles(panel) {
   const filterInput = el('input', {
-    class: 'field w-full sm:w-64', type: 'search', placeholder: 'Filter by name…',
-    autocomplete: 'off', spellcheck: 'false',
+    class: 'field w-full sm:w-64',
+    type: 'search',
+    placeholder: 'Filter by name…',
+    autocomplete: 'off',
+    spellcheck: 'false',
   });
-  filterInput.addEventListener('input', debounce(() => {
-    fsState.filter = filterInput.value.trim();
-    fsRenderList();
-  }, 120));
+  filterInput.addEventListener(
+    'input',
+    debounce(() => {
+      fsState.filter = filterInput.value.trim();
+      fsRenderList();
+    }, 120),
+  );
 
-  fsDriveSelect = el('select', { class: 'field w-auto' },
-    FS_DRIVES.map(([value, label]) => el('option', { value, selected: value === fsState.drive }, [label])));
+  fsDriveSelect = el(
+    'select',
+    { class: 'field w-auto' },
+    FS_DRIVES.map(([value, label]) =>
+      el('option', { value, selected: value === fsState.drive }, [label]),
+    ),
+  );
   fsDriveSelect.addEventListener('change', () => {
     fsState.drive = fsDriveSelect.value;
     // One listing covers every drive, so this is a filter, not a re-read.
@@ -804,30 +931,45 @@ export function mountFiles(panel) {
   });
 
   const picker = fsUploadPicker();
-  const uploadBtn = el('button', {
-    class: 'btn-primary btn-sm', onclick: () => picker.click(),
-  }, ['Upload…']);
+  const uploadBtn = el(
+    'button',
+    {
+      class: 'btn-primary btn-sm',
+      onclick: () => picker.click(),
+    },
+    ['Upload…'],
+  );
 
-  fsRefreshBtn = el('button', {
-    class: 'btn-secondary btn-sm', onclick: () => fsRefresh({ force: true }),
-  }, ['Refresh']);
+  fsRefreshBtn = el(
+    'button',
+    {
+      class: 'btn-secondary btn-sm',
+      onclick: () => fsRefresh({ force: true }),
+    },
+    ['Refresh'],
+  );
   fsCountNode = el('span', { class: 'text-[11px] text-ink-500' });
   fsLoadingNode = el('span', { class: 'flex items-center gap-1.5' });
   fsNoticeNode = el('div');
   fsListNode = el('div');
 
-  panel.append(el('div', { class: 'card overflow-hidden' }, [
-    el('div', { class: 'toolbar' }, [
-      fsDriveSelect,
-      filterInput,
-      picker,
-      el('div', { class: 'ml-auto flex items-center gap-3' }, [
-        fsLoadingNode, fsCountNode, uploadBtn, fsRefreshBtn,
+  panel.append(
+    el('div', { class: 'card overflow-hidden' }, [
+      el('div', { class: 'toolbar' }, [
+        fsDriveSelect,
+        filterInput,
+        picker,
+        el('div', { class: 'ml-auto flex items-center gap-3' }, [
+          fsLoadingNode,
+          fsCountNode,
+          uploadBtn,
+          fsRefreshBtn,
+        ]),
       ]),
+      fsNoticeNode,
+      fsListNode,
     ]),
-    fsNoticeNode,
-    fsListNode,
-  ]));
+  );
 
   fsRenderList();
   fsRefresh();

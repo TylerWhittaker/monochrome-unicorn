@@ -366,13 +366,17 @@ export function forgetStoredImage(name) {
  */
 export async function uploadGraphic({ oname, hex, totalBytes, bytesPerRow }) {
   const name = oname.toUpperCase();
-  const res = await postForm('/zpl', {
-    data: `~DYE:${name},A,G,${totalBytes},${bytesPerRow},${hex}`,
-    dev: 'R',
-    oname: 'UNKNOWN',
-    otype: 'ZPL',
-    prev: 'Preview Label',
-  }, { timeout: 120000 });
+  const res = await postForm(
+    '/zpl',
+    {
+      data: `~DYE:${name},A,G,${totalBytes},${bytesPerRow},${hex}`,
+      dev: 'R',
+      oname: 'UNKNOWN',
+      otype: 'ZPL',
+      prev: 'Preview Label',
+    },
+    { timeout: 120000 },
+  );
 
   const err = extractPrinterError(res.text);
   if (err) throw new Error(err);
@@ -394,7 +398,9 @@ export async function uploadGraphic({ oname, hex, totalBytes, bytesPerRow }) {
  * (0.14 s vs 3 s) because it does not walk the ROM drive.
  */
 export async function listFiles({ dev = 'E', otype = '*  ' } = {}) {
-  const html = await getText(`/dir?dev=${encodeURIComponent(dev)}&otype=${encodeURIComponent(otype)}`);
+  const html = await getText(
+    `/dir?dev=${encodeURIComponent(dev)}&otype=${encodeURIComponent(otype)}`,
+  );
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const files = [];
 
@@ -489,13 +495,16 @@ export async function fetchStoredFile({ oname, otype }, { timeout = 60000 } = {}
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
     const res = await fetch(`/${encodeURIComponent(`${oname}.${otype}`)}`, {
-      signal: ctrl.signal, cache: 'no-store',
+      signal: ctrl.signal,
+      cache: 'no-store',
     });
     if (res.status === 404) {
       throw new Error(`The printer does not serve ${oname}.${otype} (is that the real extension?)`);
     }
     if (!res.ok) {
-      throw new Error(`The printer's web server will not hand over a .${otype} (HTTP ${res.status})`);
+      throw new Error(
+        `The printer's web server will not hand over a .${otype} (HTTP ${res.status})`,
+      );
     }
     return new Uint8Array(await res.arrayBuffer());
   } finally {
@@ -578,7 +587,11 @@ export function parseObjectName(input, defaultType = 'ZPL') {
   const dot = raw.lastIndexOf('.');
   const hasExt = dot > 0 && dot < raw.length - 1;
 
-  const clean = (part, max) => part.toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, max);
+  const clean = (part, max) =>
+    part
+      .toUpperCase()
+      .replace(/[^A-Z0-9_]/g, '')
+      .slice(0, max);
   const oname = clean(hasExt ? raw.slice(0, dot) : raw, 16);
   const otype = (hasExt && clean(raw.slice(dot + 1), 8)) || String(defaultType).toUpperCase();
 
@@ -614,8 +627,9 @@ export async function saveScript({ dev = 'E', oname, otype = 'ZPL', data, passwo
 
 /** Delete a stored object. Requires the printer password. */
 export async function deleteFile({ dev, oname, otype, password }) {
-  const url = `/delete?dev=${dev}&oname=${encodeURIComponent(oname)}&otype=${encodeURIComponent(otype)}`
-    + `&pw=${encodeURIComponent(password || '')}&confirm=Delete`;
+  const url =
+    `/delete?dev=${dev}&oname=${encodeURIComponent(oname)}&otype=${encodeURIComponent(otype)}` +
+    `&pw=${encodeURIComponent(password || '')}&confirm=Delete`;
   const html = await getText(url);
   const err = extractPrinterError(html);
   if (err) throw new Error(err);

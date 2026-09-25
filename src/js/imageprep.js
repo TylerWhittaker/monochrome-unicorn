@@ -39,7 +39,10 @@ export function loadImageFile(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
     img.onerror = () => {
       URL.revokeObjectURL(url);
       reject(new Error('That file is not an image the browser can read'));
@@ -94,11 +97,11 @@ export function toBilevel(gray, width, height, { dither = true, threshold = 128 
       if (!dither) continue;
       // Push the rounding error onto the neighbours not yet visited.
       const error = old - (black ? 0 : 255);
-      if (x + 1 < width) buffer[i + 1] += error * 7 / 16;
+      if (x + 1 < width) buffer[i + 1] += (error * 7) / 16;
       if (y + 1 < height) {
-        if (x > 0) buffer[i + width - 1] += error * 3 / 16;
-        buffer[i + width] += error * 5 / 16;
-        if (x + 1 < width) buffer[i + width + 1] += error * 1 / 16;
+        if (x > 0) buffer[i + width - 1] += (error * 3) / 16;
+        buffer[i + width] += (error * 5) / 16;
+        if (x + 1 < width) buffer[i + width + 1] += (error * 1) / 16;
       }
     }
   }
@@ -171,6 +174,9 @@ function previewUrl(bits, width, height) {
  */
 export function objectNameFrom(filename) {
   const stem = String(filename).replace(/\.[^.]*$/, '');
-  const clean = stem.toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/^_+/, '');
+  const clean = stem
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]/g, '_')
+    .replace(/^_+/, '');
   return (clean || 'IMAGE').slice(0, 16);
 }

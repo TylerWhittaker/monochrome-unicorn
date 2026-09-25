@@ -86,24 +86,38 @@ const ROTATION_DEG = { N: 0, R: 90, I: 180, B: 270 };
  * ------------------------------------------------------------------ */
 
 function renderText(item, scale) {
-  const node = el('div', {
-    class: 'whitespace-pre leading-none text-black',
-    style: `font-size:${item.height * scale}px;`
-      + `font-family:${item.font === '0' ? 'Helvetica, Arial, sans-serif' : 'ui-monospace, monospace'};`
-      + (item.width && item.width !== item.height ? `transform-origin:left top;transform:scaleX(${item.width / item.height});` : '')
-      + (item.reverse ? 'background:#000;color:#fff;' : ''),
-  }, [item.text]);
+  const node = el(
+    'div',
+    {
+      class: 'whitespace-pre leading-none text-black',
+      style:
+        `font-size:${item.height * scale}px;` +
+        `font-family:${item.font === '0' ? 'Helvetica, Arial, sans-serif' : 'ui-monospace, monospace'};` +
+        (item.width && item.width !== item.height
+          ? `transform-origin:left top;transform:scaleX(${item.width / item.height});`
+          : '') +
+        (item.reverse ? 'background:#000;color:#fff;' : ''),
+    },
+    [item.text],
+  );
   return node;
 }
 
 /** A ^FN placeholder has no content yet, so show what will land there. */
 function renderField(item, scale) {
-  return el('div', {
-    class: 'flex h-full w-full items-center overflow-hidden border border-dashed border-violet-500 bg-violet-50/70 px-1',
-    style: `font-size:${Math.max(7, item.height * scale * 0.7)}px;`,
-  }, [
-    el('span', { class: 'truncate font-mono text-violet-700' }, [item.name || `FN${item.number}`]),
-  ]);
+  return el(
+    'div',
+    {
+      class:
+        'flex h-full w-full items-center overflow-hidden border border-dashed border-violet-500 bg-violet-50/70 px-1',
+      style: `font-size:${Math.max(7, item.height * scale * 0.7)}px;`,
+    },
+    [
+      el('span', { class: 'truncate font-mono text-violet-700' }, [
+        item.name || `FN${item.number}`,
+      ]),
+    ],
+  );
 }
 
 function renderBarcode(item, scale) {
@@ -113,25 +127,33 @@ function renderBarcode(item, scale) {
   if (spec.kind === '2d') {
     return el('div', {
       class: 'h-full w-full',
-      style: 'background-image:'
-        + 'linear-gradient(45deg,#000 25%,transparent 25%,transparent 75%,#000 75%),'
-        + 'linear-gradient(45deg,#000 25%,transparent 25%,transparent 75%,#000 75%);'
-        + `background-size:${Math.max(3, (item.magnification || 4) * scale * 2)}px ${Math.max(3, (item.magnification || 4) * scale * 2)}px;`
-        + `background-position:0 0,${Math.max(1.5, (item.magnification || 4) * scale)}px ${Math.max(1.5, (item.magnification || 4) * scale)}px;`,
+      style:
+        'background-image:' +
+        'linear-gradient(45deg,#000 25%,transparent 25%,transparent 75%,#000 75%),' +
+        'linear-gradient(45deg,#000 25%,transparent 25%,transparent 75%,#000 75%);' +
+        `background-size:${Math.max(3, (item.magnification || 4) * scale * 2)}px ${Math.max(3, (item.magnification || 4) * scale * 2)}px;` +
+        `background-position:0 0,${Math.max(1.5, (item.magnification || 4) * scale)}px ${Math.max(1.5, (item.magnification || 4) * scale)}px;`,
     });
   }
 
   const barsHeight = item.height * scale;
   const bars = el('div', {
-    style: `height:${barsHeight}px;`
-      + 'background-image:repeating-linear-gradient(90deg,#000 0,#000 2px,transparent 2px,transparent 3px,#000 3px,#000 6px,transparent 6px,transparent 8px);',
+    style:
+      `height:${barsHeight}px;` +
+      'background-image:repeating-linear-gradient(90deg,#000 0,#000 2px,transparent 2px,transparent 3px,#000 3px,#000 6px,transparent 6px,transparent 8px);',
   });
   const children = [bars];
   if (item.showText) {
-    children.push(el('div', {
-      class: 'text-center font-mono leading-none text-black',
-      style: `font-size:${Math.max(6, item.height * 0.25 * scale)}px;`,
-    }, [item.data]));
+    children.push(
+      el(
+        'div',
+        {
+          class: 'text-center font-mono leading-none text-black',
+          style: `font-size:${Math.max(6, item.height * 0.25 * scale)}px;`,
+        },
+        [item.data],
+      ),
+    );
   }
   return el('div', { class: 'h-full w-full', style: `width:${bounds.w * scale}px;` }, children);
 }
@@ -144,9 +166,14 @@ function renderBarcode(item, scale) {
 function renderImage(item, scale, onMeasured) {
   const match = /^([A-Z]):(.+)\.([A-Z]+)$/i.exec(item.source || '');
   if (!match) {
-    return el('div', {
-      class: 'flex h-full w-full items-center justify-center border border-dashed border-ink-400 text-[10px] text-ink-500',
-    }, ['no image selected']);
+    return el(
+      'div',
+      {
+        class:
+          'flex h-full w-full items-center justify-center border border-dashed border-ink-400 text-[10px] text-ink-500',
+      },
+      ['no image selected'],
+    );
   }
   const [, dev, oname, otype] = match;
 
@@ -166,12 +193,21 @@ function renderImage(item, scale, onMeasured) {
 
   const holder = el('div', { class: 'h-full w-full' }, [img]);
   loadStoredImage({ dev, oname, otype })
-    .then((url) => { img.src = url; })
+    .then((url) => {
+      img.src = url;
+    })
     .catch(() => {
-      holder.replaceChildren(el('div', {
-        class: 'flex h-full w-full items-center justify-center border border-dashed border-red-400 text-[10px] text-red-600',
-        title: `Could not read ${item.source} from the printer`,
-      }, [item.source]));
+      holder.replaceChildren(
+        el(
+          'div',
+          {
+            class:
+              'flex h-full w-full items-center justify-center border border-dashed border-red-400 text-[10px] text-red-600',
+            title: `Could not read ${item.source} from the printer`,
+          },
+          [item.source],
+        ),
+      );
     });
   return holder;
 }
@@ -181,8 +217,8 @@ function renderBox(item, scale) {
     class: 'h-full w-full',
     style: item.invert
       ? `border:${Math.max(1, item.thickness * scale)}px solid #fff;background:#fff;`
-      : `border:${Math.max(1, item.thickness * scale)}px solid #000;`
-        + (item.rounding ? `border-radius:${item.rounding * 2 * scale}px;` : ''),
+      : `border:${Math.max(1, item.thickness * scale)}px solid #000;` +
+        (item.rounding ? `border-radius:${item.rounding * 2 * scale}px;` : ''),
   });
 }
 
@@ -213,12 +249,16 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
   // The grey field hugs the label: the same 16px of it shows on all four
   // sides, and it only starts scrolling once a label (or a zoom) is
   // taller than the budget computeScale() fits to.
-  const scroller = el('div', {
-    class: 'min-h-0 min-w-0 max-h-[70vh] overflow-auto bg-ink-100 p-4',
-    onpointerdown: (event) => {
-      if (event.target === scroller || event.target === surface) select(null);
+  const scroller = el(
+    'div',
+    {
+      class: 'min-h-0 min-w-0 max-h-[70vh] overflow-auto bg-ink-100 p-4',
+      onpointerdown: (event) => {
+        if (event.target === scroller || event.target === surface) select(null);
+      },
     },
-  }, [surface]);
+    [surface],
+  );
   container.append(scroller);
 
   /**
@@ -226,7 +266,10 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
    * placing things; an explicit zoom takes over when you need detail.
    */
   function computeScale() {
-    if (zoom !== 'fit') { scale = zoom; return; }
+    if (zoom !== 'fit') {
+      scale = zoom;
+      return;
+    }
     const doc = getDoc();
     const availableW = Math.max(160, scroller.clientWidth - 32);
     // Height comes from the viewport rather than from the scroller,
@@ -251,7 +294,11 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
     for (const id of [previousId, selectedId]) {
       if (!id) continue;
       const node = nodes.get(id);
-      if (node) decorate(node, getDoc().elements.find((e) => e.id === id));
+      if (node)
+        decorate(
+          node,
+          getDoc().elements.find((e) => e.id === id),
+        );
     }
   }
 
@@ -274,20 +321,24 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
   function decorate(node, item) {
     if (!item) return;
     const selected = item.id === selectedId;
-    node.className = 'absolute touch-none'
-      + (selected
+    node.className =
+      'absolute touch-none' +
+      (selected
         ? ' outline outline-2 outline-offset-1 outline-sky-500'
         : ' hover:outline hover:outline-1 hover:outline-sky-300');
 
     const existing = node.querySelector('[data-handle]');
     if (selected && item.type !== 'image') {
       if (!existing) {
-        node.append(el('div', {
-          class: 'absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-se-resize rounded-sm border border-white bg-sky-500',
-          style: 'touch-action:none;',
-          dataset: { handle: '1' },
-          onpointerdown: (event) => beginDrag(event, item, 'resize'),
-        }));
+        node.append(
+          el('div', {
+            class:
+              'absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-se-resize rounded-sm border border-white bg-sky-500',
+            style: 'touch-action:none;',
+            dataset: { handle: '1' },
+            onpointerdown: (event) => beginDrag(event, item, 'resize'),
+          }),
+        );
       }
     } else if (existing) {
       existing.remove();
@@ -314,7 +365,11 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
     const startY = event.clientY;
     const origin = { ...item };
     const target = event.currentTarget;
-    try { target.setPointerCapture(event.pointerId); } catch (err) { /* mouse without capture support */ }
+    try {
+      target.setPointerCapture(event.pointerId);
+    } catch (err) {
+      /* mouse without capture support */
+    }
 
     const move = (moveEvent) => {
       const dx = Math.round((moveEvent.clientX - startX) / scale);
@@ -328,7 +383,11 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
       reposition(item);
     };
     const end = () => {
-      try { target.releasePointerCapture(event.pointerId); } catch (err) { /* already released */ }
+      try {
+        target.releasePointerCapture(event.pointerId);
+      } catch (err) {
+        /* already released */
+      }
       target.removeEventListener('pointermove', move);
       target.removeEventListener('pointerup', end);
       target.removeEventListener('pointercancel', end);
@@ -385,14 +444,22 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
       else if (item.type === 'box') body = renderBox(item, scale);
       else body = renderLine(item);
 
-      const node = el('div', {
-        style: `left:${item.x * scale}px;top:${item.y * scale}px;`
-          + `width:${Math.max(2, bounds.w * scale)}px;height:${Math.max(2, bounds.h * scale)}px;`
-          + `transform:rotate(${ROTATION_DEG[item.rotation] || 0}deg);transform-origin:left top;`
-          + 'cursor:move;',
-        dataset: { id: item.id },
-        onpointerdown: (event) => { select(item.id); beginDrag(event, item, 'move'); },
-      }, [body]);
+      const node = el(
+        'div',
+        {
+          style:
+            `left:${item.x * scale}px;top:${item.y * scale}px;` +
+            `width:${Math.max(2, bounds.w * scale)}px;height:${Math.max(2, bounds.h * scale)}px;` +
+            `transform:rotate(${ROTATION_DEG[item.rotation] || 0}deg);transform-origin:left top;` +
+            'cursor:move;',
+          dataset: { id: item.id },
+          onpointerdown: (event) => {
+            select(item.id);
+            beginDrag(event, item, 'move');
+          },
+        },
+        [body],
+      );
 
       nodes.set(item.id, node);
       surface.append(node);
@@ -413,7 +480,12 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
     if (!item) return;
 
     const step = event.shiftKey ? 10 : 1;
-    const nudge = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key];
+    const nudge = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    }[event.key];
     if (nudge) {
       event.preventDefault();
       item.x = Math.max(0, item.x + nudge[0]);

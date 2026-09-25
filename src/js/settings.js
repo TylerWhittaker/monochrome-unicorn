@@ -74,7 +74,10 @@ export function parseNumericRange(range) {
 /** Choice lists arrive comma separated; a single choice is still a list. */
 export function parseChoices(range) {
   if (!range || !range.includes(',')) return null;
-  const choices = range.split(',').map((s) => s.trim()).filter((s) => s !== '');
+  const choices = range
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
   return choices.length > 1 ? choices : null;
 }
 
@@ -141,10 +144,16 @@ function buildEditor(meta, current, commit) {
   }
 
   if (meta.type === 'json') {
-    const area = el('textarea', {
-      class: 'field field-mono w-full', rows: '3', spellcheck: 'false',
-      placeholder: known ? '' : UNKNOWN,
-    }, [current ?? '']);
+    const area = el(
+      'textarea',
+      {
+        class: 'field field-mono w-full',
+        rows: '3',
+        spellcheck: 'false',
+        placeholder: known ? '' : UNKNOWN,
+      },
+      [current ?? ''],
+    );
     wireTextCommit(area, current, commit);
     return area;
   }
@@ -154,10 +163,16 @@ function buildEditor(meta, current, commit) {
   // hold log dumps and the like, so they get a box you can actually read.
   const maxLen = numeric ? numeric.max : 0;
   if (maxLen > 512 || (current && current.includes('\n'))) {
-    const area = el('textarea', {
-      class: 'field field-mono w-full', rows: '3', spellcheck: 'false',
-      placeholder: known ? '' : UNKNOWN,
-    }, [current ?? '']);
+    const area = el(
+      'textarea',
+      {
+        class: 'field field-mono w-full',
+        rows: '3',
+        spellcheck: 'false',
+        placeholder: known ? '' : UNKNOWN,
+      },
+      [current ?? ''],
+    );
     wireTextCommit(area, current, commit);
     return area;
   }
@@ -203,13 +218,17 @@ function wireTextCommit(input, original, commit) {
  */
 function sourceNotice() {
   if (!printer.schema || printer.schema.source !== 'allcv') return null;
-  return el('p', {
-    class: 'border-b border-ink-200 bg-ink-50 px-3 py-2 text-[12px] text-ink-600',
-  }, [
-    'This printer\u2019s settings were read with allcv, which is all a pre-Link-OS printer '
-    + 'offers: no factory defaults, so nothing is marked as changed, and no access flags, '
-    + 'so anything without a list of choices is tagged read/write? and can be tried.',
-  ]);
+  return el(
+    'p',
+    {
+      class: 'border-b border-ink-200 bg-ink-50 px-3 py-2 text-[12px] text-ink-600',
+    },
+    [
+      'This printer\u2019s settings were read with allcv, which is all a pre-Link-OS printer ' +
+        'offers: no factory defaults, so nothing is marked as changed, and no access flags, ' +
+        'so anything without a list of choices is tagged read/write? and can be tried.',
+    ],
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -252,17 +271,16 @@ export function compareNames(a, b) {
  * order is expressed by appending everything once, in the order wanted.
  */
 function applySort() {
-  const branches = sortMode === 'default'
-    ? groups
-    : [...groups].sort((a, b) => compareNames(a.branch, b.branch));
+  const branches =
+    sortMode === 'default' ? groups : [...groups].sort((a, b) => compareNames(a.branch, b.branch));
 
   for (const group of branches) {
-    const entries = sortMode === 'default'
-      ? group.entries
-      : [...group.entries].sort((a, b) => compareNames(
-        sortKeyFor(a.meta.name, sortMode),
-        sortKeyFor(b.meta.name, sortMode)
-      ));
+    const entries =
+      sortMode === 'default'
+        ? group.entries
+        : [...group.entries].sort((a, b) =>
+            compareNames(sortKeyFor(a.meta.name, sortMode), sortKeyFor(b.meta.name, sortMode)),
+          );
     listNode.append(group.header, ...entries.map((entry) => entry.row));
   }
 }
@@ -301,9 +319,10 @@ const ACCESS_BADGE = {
 };
 
 const ACCESS_TITLE = {
-  'RW?': 'This printer\u2019s catalogue (allcv) does not say whether this setting can be '
-    + 'written. You can try: the value is read back afterwards, and the row reports what '
-    + 'the printer kept.',
+  'RW?':
+    'This printer\u2019s catalogue (allcv) does not say whether this setting can be ' +
+    'written. You can try: the value is read back afterwards, and the row reports what ' +
+    'the printer kept.',
 };
 
 /** Outlined, because unlike the others this tag is a button. */
@@ -343,7 +362,9 @@ function enableTag(meta) {
 function paintEnableTag(entry) {
   const node = entry.enableTag;
   if (!node) return;
-  const state = String(values[entry.meta.name] ?? '').trim().toLowerCase();
+  const state = String(values[entry.meta.name] ?? '')
+    .trim()
+    .toLowerCase();
   const badge = ENABLE_BADGE[state];
   node.hidden = !badge;
   if (!badge) return;
@@ -352,24 +373,42 @@ function paintEnableTag(entry) {
 }
 
 function buildRow(meta) {
-  const nameNode = el('code', {
-    class: 'break-all text-[12px] leading-tight text-ink-800',
-  }, [meta.name]);
+  const nameNode = el(
+    'code',
+    {
+      class: 'break-all text-[12px] leading-tight text-ink-800',
+    },
+    [meta.name],
+  );
 
   const noteNode = el('span', { class: 'text-[11px] text-ink-400' });
 
   const valueCell = el('div', { class: 'flex flex-wrap items-center gap-2' });
 
-  const row = el('div', {
-    class: 'grid grid-cols-1 gap-1 px-3 py-2 odd:bg-ink-50/40 hover:bg-ink-100/60'
-      + ' sm:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] sm:items-start sm:gap-3 sm:py-1.5',
-    dataset: { name: meta.name },
-  }, [
-    el('div', { class: 'min-w-0 sm:pt-1.5' }, [nameNode]),
-    el('div', { class: 'min-w-0' }, [valueCell, noteNode]),
-  ]);
+  const row = el(
+    'div',
+    {
+      class:
+        'grid grid-cols-1 gap-1 px-3 py-2 odd:bg-ink-50/40 hover:bg-ink-100/60' +
+        ' sm:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] sm:items-start sm:gap-3 sm:py-1.5',
+      dataset: { name: meta.name },
+    },
+    [
+      el('div', { class: 'min-w-0 sm:pt-1.5' }, [nameNode]),
+      el('div', { class: 'min-w-0' }, [valueCell, noteNode]),
+    ],
+  );
 
-  const entry = { meta, row, valueCell, noteNode, nameNode, editor: null, resetBtn: null, enableTag: null };
+  const entry = {
+    meta,
+    row,
+    valueCell,
+    noteNode,
+    nameNode,
+    editor: null,
+    resetBtn: null,
+    enableTag: null,
+  };
   renderValueCell(entry);
   rows.set(meta.name, entry);
   return row;
@@ -387,13 +426,18 @@ function buildTags(entry) {
   const { meta } = entry;
   const [accessText, accessClass] = ACCESS_BADGE[meta.access] || ACCESS_BADGE.R;
 
-  entry.resetBtn = meta.writable && meta.default !== null
-    ? el('button', {
-      class: `pill shrink-0 ${NOT_DEFAULT_BADGE} hover:bg-red-100`,
-      title: `Restore the factory default: ${meta.default}`,
-      onclick: () => applyChange(entry, meta.default),
-    }, ['not default'])
-    : el('span', { class: `pill shrink-0 ${NOT_DEFAULT_BADGE}` }, ['not default']);
+  entry.resetBtn =
+    meta.writable && meta.default !== null
+      ? el(
+          'button',
+          {
+            class: `pill shrink-0 ${NOT_DEFAULT_BADGE} hover:bg-red-100`,
+            title: `Restore the factory default: ${meta.default}`,
+            onclick: () => applyChange(entry, meta.default),
+          },
+          ['not default'],
+        )
+      : el('span', { class: `pill shrink-0 ${NOT_DEFAULT_BADGE}` }, ['not default']);
 
   // ml-auto pushes the group to the right edge of the row, away from the
   // value, so the tags line up into their own column down the table.
@@ -407,7 +451,9 @@ function buildTags(entry) {
     entry.resetBtn,
     entry.enableTag,
     el('span', { class: `pill ${TYPE_BADGE[meta.type] || TYPE_BADGE.string}` }, [meta.type]),
-    el('span', { class: `pill ${accessClass}`, title: ACCESS_TITLE[meta.access] || null }, [accessText]),
+    el('span', { class: `pill ${accessClass}`, title: ACCESS_TITLE[meta.access] || null }, [
+      accessText,
+    ]),
   ]);
 }
 
@@ -418,11 +464,17 @@ function renderValueCell(entry) {
   // Slow settings are skipped by the sweep, so they stay unknown until
   // asked for -- whether or not they are also writable.
   const isSlow = current === undefined && slowFileFor(meta.name) !== null;
-  const readNow = isSlow && el('button', {
-    class: 'btn-secondary btn-sm',
-    title: 'Reading this one takes a few seconds, so it is left out of the sweep',
-    onclick: (event) => loadSlowSetting(meta.name, event.currentTarget),
-  }, ['Read now']);
+  const readNow =
+    isSlow &&
+    el(
+      'button',
+      {
+        class: 'btn-secondary btn-sm',
+        title: 'Reading this one takes a few seconds, so it is left out of the sweep',
+        onclick: (event) => loadSlowSetting(meta.name, event.currentTarget),
+      },
+      ['Read now'],
+    );
 
   if (!meta.writable) {
     entry.editor = null;
@@ -464,9 +516,8 @@ function markModified(entry) {
 function markDefaultState(entry) {
   const { meta } = entry;
   const current = values[meta.name];
-  const differs = meta.default !== null
-    && current !== undefined
-    && !valuesMatch(current, meta.default);
+  const differs =
+    meta.default !== null && current !== undefined && !valuesMatch(current, meta.default);
   entry.nameNode.classList.toggle('font-semibold', differs);
   entry.nameNode.classList.toggle('text-ink-900', differs);
   entry.row.dataset.modified = String(differs);
@@ -522,7 +573,9 @@ async function applyChange(entry, value) {
     if (entry.editor && result.actual != null && entry.editor.value !== result.actual) {
       entry.editor.value = result.actual;
     }
-    setTimeout(() => { if (entry.noteNode.textContent === 'saved') note(entry, ''); }, 2500);
+    setTimeout(() => {
+      if (entry.noteNode.textContent === 'saved') note(entry, '');
+    }, 2500);
   } else {
     note(entry, result.reason || 'the printer rejected this value', 'error');
     if (entry.editor && result.actual != null) entry.editor.value = result.actual;
@@ -586,9 +639,8 @@ function applyFilter() {
     group.countNode.textContent = String(groupShown);
     shown += groupShown;
   }
-  countNode.textContent = shown === rows.size
-    ? `${rows.size} settings`
-    : `${shown} of ${rows.size} settings`;
+  countNode.textContent =
+    shown === rows.size ? `${rows.size} settings` : `${shown} of ${rows.size} settings`;
   qs('#settings-empty').hidden = shown !== 0;
 }
 
@@ -607,10 +659,15 @@ function buildGroups() {
   const nodes = [];
   for (const [branch, metas] of byBranch) {
     const groupCount = el('span', { class: 'text-ink-400' });
-    const header = el('div', {
-      class: 'sticky top-0 z-10 flex items-baseline gap-2 border-y border-ink-200 bg-ink-100/95 px-3 py-1.5'
-        + ' text-[11px] font-semibold uppercase tracking-wide text-ink-600 backdrop-blur',
-    }, [branch, groupCount]);
+    const header = el(
+      'div',
+      {
+        class:
+          'sticky top-0 z-10 flex items-baseline gap-2 border-y border-ink-200 bg-ink-100/95 px-3 py-1.5' +
+          ' text-[11px] font-semibold uppercase tracking-wide text-ink-600 backdrop-blur',
+      },
+      [branch, groupCount],
+    );
 
     const entries = [];
     nodes.push(header);
@@ -677,7 +734,8 @@ async function refresh() {
   if (failure) {
     progress.update(
       `Read ${read} of ${total} values before the read failed: ${failure.message}`,
-      'error', { timeout: 8000 }
+      'error',
+      { timeout: 8000 },
     );
   } else {
     progress.update(`Read ${read} SGD values`, 'success');
@@ -690,7 +748,9 @@ async function refresh() {
 
 export function mountSettings(panel) {
   if (!printer.schema) {
-    panel.append(el('p', { class: 'text-red-700' }, ['No settings catalogue was inlined into this page.']));
+    panel.append(
+      el('p', { class: 'text-red-700' }, ['No settings catalogue was inlined into this page.']),
+    );
     return;
   }
 
@@ -701,51 +761,73 @@ export function mountSettings(panel) {
     autocomplete: 'off',
     spellcheck: 'false',
   });
-  filterInput.addEventListener('input', debounce(() => {
-    filterText = filterInput.value.trim();
-    applyFilter();
-  }, 120));
+  filterInput.addEventListener(
+    'input',
+    debounce(() => {
+      filterText = filterInput.value.trim();
+      applyFilter();
+    }, 120),
+  );
 
   const toggle = (labelText, onChange) => {
     const box = el('input', { type: 'checkbox', class: 'h-3.5 w-3.5 accent-ink-900' });
-    box.addEventListener('change', () => { onChange(box.checked); applyFilter(); });
+    box.addEventListener('change', () => {
+      onChange(box.checked);
+      applyFilter();
+    });
     return el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [box, labelText]);
   };
 
-  const sortSelect = el('select', {
-    class: 'field w-auto',
-    title: 'How the settings are ordered within each branch',
-  }, SORT_MODES.map(([value, label]) => el('option', { value }, [label])));
+  const sortSelect = el(
+    'select',
+    {
+      class: 'field w-auto',
+      title: 'How the settings are ordered within each branch',
+    },
+    SORT_MODES.map(([value, label]) => el('option', { value }, [label])),
+  );
   sortSelect.addEventListener('change', () => {
     sortMode = sortSelect.value;
     applySort();
   });
 
-  refreshBtn = el('button', {
-    class: 'btn-secondary btn-sm',
-    onclick: () => refresh(),
-  }, ['Refresh values']);
+  refreshBtn = el(
+    'button',
+    {
+      class: 'btn-secondary btn-sm',
+      onclick: () => refresh(),
+    },
+    ['Refresh values'],
+  );
 
   countNode = el('span', { class: 'text-[11px] text-ink-500' });
 
   listNode = el('div');
   listNode.append(...buildGroups());
 
-  panel.append(el('div', { class: 'card overflow-hidden' }, [
-    sourceNotice(),
-    el('div', { class: 'toolbar' }, [
-      filterInput,
-      sortSelect,
-      toggle('Changed from default', (v) => { modifiedOnly = v; }),
-      el('div', { class: 'ml-auto flex items-center gap-3' }, [countNode, refreshBtn]),
+  panel.append(
+    el('div', { class: 'card overflow-hidden' }, [
+      sourceNotice(),
+      el('div', { class: 'toolbar' }, [
+        filterInput,
+        sortSelect,
+        toggle('Changed from default', (v) => {
+          modifiedOnly = v;
+        }),
+        el('div', { class: 'ml-auto flex items-center gap-3' }, [countNode, refreshBtn]),
+      ]),
+      el(
+        'p',
+        {
+          id: 'settings-empty',
+          class: 'px-3 py-6 text-center text-ink-400',
+          hidden: true,
+        },
+        ['No settings match this filter.'],
+      ),
+      listNode,
     ]),
-    el('p', {
-      id: 'settings-empty',
-      class: 'px-3 py-6 text-center text-ink-400',
-      hidden: true,
-    }, ['No settings match this filter.']),
-    listNode,
-  ]));
+  );
 
   applyFilter();
   refresh();

@@ -29,11 +29,28 @@
  * through untouched rather than discarded.
  */
 
-import { el, qs, toast, modal, confirmDialog, withPrinterPassword, debounce, formatBytes } from './ui.js';
+import {
+  el,
+  qs,
+  toast,
+  modal,
+  confirmDialog,
+  withPrinterPassword,
+  debounce,
+  formatBytes,
+} from './ui.js';
 import { printer, loadUnitPreference } from './state.js';
 import { listFiles, readScript, saveScript, deleteFile, parseObjectName } from './printer.js';
 import { uploadImageDialog } from './imagedialog.js';
-import { newLabel, newElement, toZpl, parseZpl, elementId, nextFieldNumber, formatZpl } from './zpl.js';
+import {
+  newLabel,
+  newElement,
+  toZpl,
+  parseZpl,
+  elementId,
+  nextFieldNumber,
+  formatZpl,
+} from './zpl.js';
 import { createCanvas } from './wysiwyg.js';
 import { renderLabelPanel, renderElementPanel, panelHeading } from './inspector.js';
 import { createCodeEditor } from './codeeditor.js';
@@ -74,13 +91,19 @@ const EDITOR_HOST_CLASS = {
  * ------------------------------------------------------------------ */
 
 function editorZpl() {
-  return editorState.view === 'source' && codeEditor ? codeEditor.getValue() : toZpl(editorState.doc);
+  return editorState.view === 'source' && codeEditor
+    ? codeEditor.getValue()
+    : toZpl(editorState.doc);
 }
 
 /** Ask the printer to render, unless there is demonstrably nothing to draw. */
 function refreshEditorPreview() {
   if (!editorPreview) return;
-  if (editorState.view === 'visual' && editorState.doc.elements.length === 0 && !(editorState.doc.passthrough || []).length) {
+  if (
+    editorState.view === 'visual' &&
+    editorState.doc.elements.length === 0 &&
+    !(editorState.doc.passthrough || []).length
+  ) {
     editorPreview.idle('Add an element to see the printed result.');
     return;
   }
@@ -115,9 +138,10 @@ function loadDocument(zpl, file) {
 
   if (unsupported.length) {
     toast(
-      `Opened with ${unsupported.length} command type(s) the visual editor does not model `
-      + `(${unsupported.slice(0, 5).join(' ')}). They are preserved but only editable in the source view.`,
-      'info', { timeout: 9000 }
+      `Opened with ${unsupported.length} command type(s) the visual editor does not model ` +
+        `(${unsupported.slice(0, 5).join(' ')}). They are preserved but only editable in the source view.`,
+      'info',
+      { timeout: 9000 },
     );
   }
 
@@ -141,9 +165,9 @@ async function setView(next) {
     if (unsupported.length) {
       const go = await confirmDialog(
         'Switch to the visual editor?',
-        `This label uses ${unsupported.join(', ')}, which the visual editor cannot place on the canvas. `
-        + 'They will be kept and re-emitted at the end of the label, but you will not see them until you switch back.',
-        'Switch anyway'
+        `This label uses ${unsupported.join(', ')}, which the visual editor cannot place on the canvas. ` +
+          'They will be kept and re-emitted at the end of the label, but you will not see them until you switch back.',
+        'Switch anyway',
       );
       if (!go) return;
     }
@@ -158,8 +182,14 @@ async function setView(next) {
 }
 
 function rebuildEditorView() {
-  if (canvas) { canvas.destroy(); canvas = null; }
-  if (codeEditor) { codeEditor.destroy(); codeEditor = null; }
+  if (canvas) {
+    canvas.destroy();
+    canvas = null;
+  }
+  if (codeEditor) {
+    codeEditor.destroy();
+    codeEditor = null;
+  }
   editorHost.replaceChildren();
 
   addBar.hidden = editorState.view !== 'visual';
@@ -170,26 +200,35 @@ function rebuildEditorView() {
   editorHost.className = EDITOR_HOST_CLASS[editorState.view] || EDITOR_HOST_CLASS.visual;
   for (const btn of qs('#view-toggle').querySelectorAll('button')) {
     btn.setAttribute('aria-selected', String(btn.dataset.view === editorState.view));
-    btn.className = btn.dataset.view === editorState.view
-      ? 'btn-primary btn-sm rounded-none'
-      : 'btn-secondary btn-sm rounded-none border-transparent bg-transparent';
+    btn.className =
+      btn.dataset.view === editorState.view
+        ? 'btn-primary btn-sm rounded-none'
+        : 'btn-secondary btn-sm rounded-none border-transparent bg-transparent';
   }
 
   if (editorState.view === 'visual') {
     canvas = createCanvas(editorHost, {
       getDoc: () => editorState.doc,
-      onChange: () => { renderEditorInspector(); markDirty(); },
+      onChange: () => {
+        renderEditorInspector();
+        markDirty();
+      },
       onSelect: () => renderEditorInspector(),
     });
     renderEditorInspector();
     return;
   }
 
-  const placeholder = el('div', { class: 'p-3 text-[12px] text-ink-400' }, ['Loading the source editor…']);
+  const placeholder = el('div', { class: 'p-3 text-[12px] text-ink-400' }, [
+    'Loading the source editor…',
+  ]);
   editorHost.append(placeholder);
   createCodeEditor(editorHost, {
     value: editorState.source,
-    onChange: (text) => { editorState.source = text; markDirty(); },
+    onChange: (text) => {
+      editorState.source = text;
+      markDirty();
+    },
   }).then((editor) => {
     placeholder.remove();
     codeEditor = editor;
@@ -206,9 +245,11 @@ function renderEditorInspector() {
   const item = selectedId ? editorState.doc.elements.find((e) => e.id === selectedId) : null;
 
   if (editorState.view === 'source') {
-    inspectorHost.replaceChildren(el('p', { class: 'px-3 py-4 text-[12px] text-ink-400' }, [
-      'Element properties are available in the visual editor.',
-    ]));
+    inspectorHost.replaceChildren(
+      el('p', { class: 'px-3 py-4 text-[12px] text-ink-400' }, [
+        'Element properties are available in the visual editor.',
+      ]),
+    );
     return;
   }
 
@@ -259,10 +300,19 @@ async function refreshFileList() {
 
   fileSelect.replaceChildren(el('option', { value: '' }, ['— stored labels —']));
   for (const file of editorState.scripts) {
-    fileSelect.append(el('option', {
-      value: `${file.dev}:${file.oname}`,
-      selected: editorState.file && editorState.file.oname === file.oname && editorState.file.dev === file.dev,
-    }, [`${file.name}  (${formatBytes(file.bytes)})`]));
+    fileSelect.append(
+      el(
+        'option',
+        {
+          value: `${file.dev}:${file.oname}`,
+          selected:
+            editorState.file &&
+            editorState.file.oname === file.oname &&
+            editorState.file.dev === file.dev,
+        },
+        [`${file.name}  (${formatBytes(file.bytes)})`],
+      ),
+    );
   }
 }
 
@@ -270,7 +320,10 @@ async function openFile(value) {
   if (!value) return;
   const [dev, oname] = value.split(':');
 
-  if (editorState.dirty && !await confirmDialog('Discard changes?', 'The current label has unsaved changes.', 'Discard')) {
+  if (
+    editorState.dirty &&
+    !(await confirmDialog('Discard changes?', 'The current label has unsaved changes.', 'Discard'))
+  ) {
     fileSelect.value = editorState.file ? `${editorState.file.dev}:${editorState.file.oname}` : '';
     return;
   }
@@ -293,14 +346,19 @@ async function saveFile({ saveAs }) {
   if (saveAs || !target) {
     const typed = await modal(saveAs ? 'Save label as' : 'Save label', (close) => {
       const input = el('input', {
-        class: 'field field-mono', type: 'text', maxlength: '25',
-        placeholder: 'LABELNAME.ZPL', value: target ? `${target.oname}.${target.otype || 'ZPL'}` : '',
-        onkeydown: (e) => { if (e.key === 'Enter') close(input.value); },
+        class: 'field field-mono',
+        type: 'text',
+        maxlength: '25',
+        placeholder: 'LABELNAME.ZPL',
+        value: target ? `${target.oname}.${target.otype || 'ZPL'}` : '',
+        onkeydown: (e) => {
+          if (e.key === 'Enter') close(input.value);
+        },
       });
       return el('div', { class: 'space-y-3' }, [
         el('p', { class: 'text-ink-600' }, [
-          'Object names are upper case, up to 16 characters. Give an extension and it is '
-          + 'used as it stands; leave it off and the label is saved as .ZPL.',
+          'Object names are upper case, up to 16 characters. Give an extension and it is ' +
+            'used as it stands; leave it off and the label is saved as .ZPL.',
         ]),
         input,
         el('div', { class: 'flex justify-end gap-2' }, [
@@ -312,7 +370,10 @@ async function saveFile({ saveAs }) {
     if (!typed) return;
 
     const { oname, otype } = parseObjectName(typed, 'ZPL');
-    if (!oname) { toast('That name has no usable characters.', 'error'); return; }
+    if (!oname) {
+      toast('That name has no usable characters.', 'error');
+      return;
+    }
     target = { dev: 'E', oname, otype };
   }
 
@@ -321,9 +382,15 @@ async function saveFile({ saveAs }) {
   const busy = toast(`Saving ${full}…`, 'busy', { timeout: 0 });
 
   try {
-    await withPrinterPassword((password) => saveScript({
-      dev: target.dev, oname: target.oname, otype, data: editorZpl(), password,
-    }));
+    await withPrinterPassword((password) =>
+      saveScript({
+        dev: target.dev,
+        oname: target.oname,
+        otype,
+        data: editorZpl(),
+        password,
+      }),
+    );
   } catch (err) {
     busy.close();
     if (!err.cancelled) toast(`Save failed: ${err.message}`, 'error');
@@ -339,12 +406,14 @@ async function saveFile({ saveAs }) {
   // The label form stores what it likes: asked for an extension it does
   // not write, it saves a .ZPL and says nothing. Say what actually
   // landed rather than repeating what was asked for.
-  const stored = editorState.scripts.find((f) => f.oname === target.oname && f.otype === otype)
-    || editorState.scripts.find((f) => f.oname === target.oname);
+  const stored =
+    editorState.scripts.find((f) => f.oname === target.oname && f.otype === otype) ||
+    editorState.scripts.find((f) => f.oname === target.oname);
   if (stored && stored.otype !== otype) {
     busy.update(
       `Saved as ${stored.name} — the printer's label form only writes .ZPL, whatever it is asked for.`,
-      'info', { timeout: 8000 }
+      'info',
+      { timeout: 8000 },
     );
     editorState.file = { dev: stored.dev, oname: stored.oname, otype: stored.otype };
     renderEditorTitle();
@@ -354,11 +423,21 @@ async function saveFile({ saveAs }) {
 }
 
 async function deleteCurrent() {
-  if (!editorState.file) { toast('This label has not been saved yet.', 'info'); return; }
+  if (!editorState.file) {
+    toast('This label has not been saved yet.', 'info');
+    return;
+  }
   const { dev, oname } = editorState.file;
 
   const otype = editorState.file.otype || 'ZPL';
-  if (!await confirmDialog('Delete label?', `${dev}:${oname}.${otype} will be removed from the printer.`, 'Delete')) return;
+  if (
+    !(await confirmDialog(
+      'Delete label?',
+      `${dev}:${oname}.${otype} will be removed from the printer.`,
+      'Delete',
+    ))
+  )
+    return;
 
   try {
     await withPrinterPassword((password) => deleteFile({ dev, oname, otype, password }));
@@ -372,7 +451,11 @@ async function deleteCurrent() {
 }
 
 async function newLabelDoc() {
-  if (editorState.dirty && !await confirmDialog('Discard changes?', 'The current label has unsaved changes.', 'Discard')) return;
+  if (
+    editorState.dirty &&
+    !(await confirmDialog('Discard changes?', 'The current label has unsaved changes.', 'Discard'))
+  )
+    return;
   const unit = editorState.doc ? editorState.doc.unit : loadUnitPreference();
   editorState.doc = newLabel(printer.dpi);
   editorState.doc.unit = unit;
@@ -426,7 +509,7 @@ async function printEditorLabel() {
   const ok = await confirmDialog(
     'Print this label?',
     `The printer will feed and print ${editorState.doc.copies > 1 ? `${editorState.doc.copies} copies` : 'one label'}.`,
-    'Print'
+    'Print',
   );
   if (!ok) return;
   editorPreview.print(editorZpl());
@@ -446,27 +529,53 @@ export function mountEditor(panel) {
   fileSelect = el('select', { class: 'field w-full min-w-0 sm:w-64' });
   fileSelect.addEventListener('change', () => openFile(fileSelect.value));
 
-  const viewToggle = el('div', {
-    id: 'view-toggle',
-    class: 'flex overflow-hidden rounded border border-ink-300',
-    role: 'tablist',
-  }, [
-    el('button', { class: 'btn-sm', dataset: { view: 'visual' }, onclick: () => setView('visual') }, ['Visual']),
-    el('button', { class: 'btn-sm', dataset: { view: 'source' }, onclick: () => setView('source') }, ['Source']),
-  ]);
+  const viewToggle = el(
+    'div',
+    {
+      id: 'view-toggle',
+      class: 'flex overflow-hidden rounded border border-ink-300',
+      role: 'tablist',
+    },
+    [
+      el(
+        'button',
+        { class: 'btn-sm', dataset: { view: 'visual' }, onclick: () => setView('visual') },
+        ['Visual'],
+      ),
+      el(
+        'button',
+        { class: 'btn-sm', dataset: { view: 'source' }, onclick: () => setView('source') },
+        ['Source'],
+      ),
+    ],
+  );
 
   const zoomSelect = el('select', { class: 'field w-24 py-1 text-[12px]' });
-  for (const [value, text] of [['fit', 'Fit'], ['0.25', '25%'], ['0.5', '50%'], ['0.75', '75%'], ['1', '100%']]) {
+  for (const [value, text] of [
+    ['fit', 'Fit'],
+    ['0.25', '25%'],
+    ['0.5', '50%'],
+    ['0.75', '75%'],
+    ['1', '100%'],
+  ]) {
     zoomSelect.append(el('option', { value }, [text]));
   }
-  zoomSelect.addEventListener('change', () => { if (canvas) canvas.setZoom(zoomSelect.value); });
+  zoomSelect.addEventListener('change', () => {
+    if (canvas) canvas.setZoom(zoomSelect.value);
+  });
 
   addBar = el('div', { class: 'toolbar' }, [
     el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, ['Add']),
-    ...['text', 'barcode', 'image', 'box', 'line', 'field'].map((type) => el('button', {
-      class: 'btn-secondary btn-sm capitalize',
-      onclick: () => addElement(type),
-    }, [type])),
+    ...['text', 'barcode', 'image', 'box', 'line', 'field'].map((type) =>
+      el(
+        'button',
+        {
+          class: 'btn-secondary btn-sm capitalize',
+          onclick: () => addElement(type),
+        },
+        [type],
+      ),
+    ),
   ]);
 
   // Which view you are in, and how big it is drawn: both are about
@@ -488,48 +597,72 @@ export function mountEditor(panel) {
   // and stack in that order when there is not. Every column is min-w-0:
   // a grid item defaults to min-width:auto, so a wide child (the canvas,
   // a long file name) would otherwise push the whole page sideways.
-  panel.append(el('div', {
-    class: 'grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_21rem_21rem]',
-  }, [
-    // self-start, or a grid item stretches to the tallest column and the
-    // card keeps a band of white below the canvas whenever the label is
-    // shorter than the rails beside it.
-    el('div', { class: 'card min-w-0 self-start overflow-hidden lg:col-span-2 xl:col-span-1' }, [
-      // Which label, and what to do with it when it is finished.
-      el('div', { class: 'toolbar' }, [
-        fileSelect,
-        el('div', { class: 'ml-auto flex items-center gap-2' }, [
-          titleNode,
-          el('button', { class: 'btn-primary btn-sm', onclick: () => printEditorLabel() }, ['Print']),
+  panel.append(
+    el(
+      'div',
+      {
+        class: 'grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_21rem_21rem]',
+      },
+      [
+        // self-start, or a grid item stretches to the tallest column and the
+        // card keeps a band of white below the canvas whenever the label is
+        // shorter than the rails beside it.
+        el(
+          'div',
+          { class: 'card min-w-0 self-start overflow-hidden lg:col-span-2 xl:col-span-1' },
+          [
+            // Which label, and what to do with it when it is finished.
+            el('div', { class: 'toolbar' }, [
+              fileSelect,
+              el('div', { class: 'ml-auto flex items-center gap-2' }, [
+                titleNode,
+                el('button', { class: 'btn-primary btn-sm', onclick: () => printEditorLabel() }, [
+                  'Print',
+                ]),
+              ]),
+            ]),
+            // What to do with the file itself, under the name of it.
+            el('div', { class: 'toolbar' }, [
+              el('button', { class: 'btn-secondary btn-sm', onclick: () => newLabelDoc() }, [
+                'New',
+              ]),
+              el(
+                'button',
+                { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: false }) },
+                ['Save'],
+              ),
+              el(
+                'button',
+                { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: true }) },
+                ['Save as…'],
+              ),
+              el('button', { class: 'btn-danger btn-sm', onclick: () => deleteCurrent() }, [
+                'Delete',
+              ]),
+            ]),
+            addBar,
+            viewBar,
+            editorHost,
+          ],
+        ),
+        // Object properties sit immediately right of the designer, since
+        // that is what you are looking at while you place things; the label
+        // as a whole is set up once, so it stays in the far rail under the
+        // preview. Two boxes, each saying what it governs.
+        el('div', { class: 'card min-w-0 self-start overflow-hidden' }, [
+          panelHeading('Object options', 'The selected element'),
+          inspectorHost,
         ]),
-      ]),
-      // What to do with the file itself, under the name of it.
-      el('div', { class: 'toolbar' }, [
-        el('button', { class: 'btn-secondary btn-sm', onclick: () => newLabelDoc() }, ['New']),
-        el('button', { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: false }) }, ['Save']),
-        el('button', { class: 'btn-secondary btn-sm', onclick: () => saveFile({ saveAs: true }) }, ['Save as…']),
-        el('button', { class: 'btn-danger btn-sm', onclick: () => deleteCurrent() }, ['Delete']),
-      ]),
-      addBar,
-      viewBar,
-      editorHost,
-    ]),
-    // Object properties sit immediately right of the designer, since
-    // that is what you are looking at while you place things; the label
-    // as a whole is set up once, so it stays in the far rail under the
-    // preview. Two boxes, each saying what it governs.
-    el('div', { class: 'card min-w-0 self-start overflow-hidden' }, [
-      panelHeading('Object options', 'The selected element'),
-      inspectorHost,
-    ]),
-    el('div', { class: 'min-w-0 space-y-3' }, [
-      editorPreview.node,
-      el('div', { class: 'card overflow-hidden' }, [
-        panelHeading('Label options', 'Applies to the whole label'),
-        labelPanelHost,
-      ]),
-    ]),
-  ]));
+        el('div', { class: 'min-w-0 space-y-3' }, [
+          editorPreview.node,
+          el('div', { class: 'card overflow-hidden' }, [
+            panelHeading('Label options', 'Applies to the whole label'),
+            labelPanelHost,
+          ]),
+        ]),
+      ],
+    ),
+  );
 
   renderEditorTitle();
   renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });

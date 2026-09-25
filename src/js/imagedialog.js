@@ -36,8 +36,10 @@ import { loadImageFile, prepareGraphic, objectNameFrom } from './imageprep.js';
 function describeCost(totalBytes) {
   const kb = (totalBytes * 2) / 1024;
   const seconds = kb / 56;
-  return `${(totalBytes / 1024).toFixed(1)} KB stored, ${kb.toFixed(0)} KB to send`
-    + (seconds > 2 ? ` (about ${seconds.toFixed(0)}s)` : '');
+  return (
+    `${(totalBytes / 1024).toFixed(1)} KB stored, ${kb.toFixed(0)} KB to send` +
+    (seconds > 2 ? ` (about ${seconds.toFixed(0)}s)` : '')
+  );
 }
 
 /**
@@ -54,15 +56,27 @@ export function uploadImageDialog({ doc }) {
     let ratio = 1;
 
     const fileInput = el('input', {
-      class: 'field', type: 'file', accept: 'image/*',
+      class: 'field',
+      type: 'file',
+      accept: 'image/*',
     });
     const nameInput = el('input', {
-      class: 'field field-mono', type: 'text', maxlength: '16', placeholder: 'IMAGE',
+      class: 'field field-mono',
+      type: 'text',
+      maxlength: '16',
+      placeholder: 'IMAGE',
     });
     const widthInput = el('input', {
-      class: 'field field-mono w-28', type: 'number', min: '0', step: String(unitStep(unit)),
+      class: 'field field-mono w-28',
+      type: 'number',
+      min: '0',
+      step: String(unitStep(unit)),
     });
-    const ditherBox = el('input', { type: 'checkbox', class: 'h-3.5 w-3.5 accent-ink-900', checked: true });
+    const ditherBox = el('input', {
+      type: 'checkbox',
+      class: 'h-3.5 w-3.5 accent-ink-900',
+      checked: true,
+    });
 
     const previewImg = el('img', {
       class: 'max-h-48 max-w-full bg-white ring-1 ring-ink-300',
@@ -149,11 +163,14 @@ export function uploadImageDialog({ doc }) {
         ]),
       ]),
       el('label', { class: 'flex items-center gap-2 text-ink-700' }, [
-        ditherBox, 'Dither (better for photographs, worse for line art)',
+        ditherBox,
+        'Dither (better for photographs, worse for line art)',
       ]),
-      el('div', { class: 'flex items-center justify-center rounded border border-ink-200 bg-ink-50 p-2' }, [
-        previewImg,
-      ]),
+      el(
+        'div',
+        { class: 'flex items-center justify-center rounded border border-ink-200 bg-ink-50 p-2' },
+        [previewImg],
+      ),
       costNode,
       el('div', { class: 'flex justify-end gap-2' }, [
         el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Cancel']),

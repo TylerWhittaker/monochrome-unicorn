@@ -39,8 +39,13 @@ const fs = await import('data:text/javascript;base64,' + Buffer.from(filesSrc).t
 
 let failures = 0;
 function check(name, fn) {
-  try { fn(); console.log(`  ok   ${name}`); }
-  catch (err) { failures++; console.log(`  FAIL ${name}\n       ${err.message}`); }
+  try {
+    fn();
+    console.log(`  ok   ${name}`);
+  } catch (err) {
+    failures++;
+    console.log(`  FAIL ${name}\n       ${err.message}`);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -88,10 +93,7 @@ check('a truncated listing is an error, not silently half a drive', () => {
 check('stored ZPL is turned back into ZPL', () => {
   // What GET /FORMAT3X1.ZPL actually returns: ^ as 0x1e, , as 0x1f.
   const stored = '\x1eXA\x1eCF0\x1f80\x1eFO10\x1f10\x1eFDHELLO\x1eXZ';
-  assert.equal(
-    p.detokenizeZpl(stored),
-    '^XA\n^CF0,80\n^FO10,10\n^FDHELLO\n^XZ'
-  );
+  assert.equal(p.detokenizeZpl(stored), '^XA\n^CF0,80\n^FO10,10\n^FDHELLO\n^XZ');
 });
 
 check('text that was never tokenized is left alone', () => {
@@ -166,7 +168,10 @@ check('Download goes wherever View goes', () => {
 check('the drive listing’s access flags are believed when present', () => {
   const locked = fs.fsCapabilities({ dev: 'E', oname: 'X', otype: 'ZPL', access: 'R' });
   assert.match(locked.delete, /read-only/);
-  assert.equal(fs.fsCapabilities({ dev: 'E', oname: 'X', otype: 'ZPL', access: 'RW' }).delete, null);
+  assert.equal(
+    fs.fsCapabilities({ dev: 'E', oname: 'X', otype: 'ZPL', access: 'RW' }).delete,
+    null,
+  );
 });
 
 /* ------------------------------------------------------------------ *
@@ -176,26 +181,40 @@ check('the drive listing’s access flags are believed when present', () => {
 check('text is told from bytes', () => {
   const text = new TextEncoder().encode('^XA^FDHELLO^FS^XZ\r\n');
   assert.equal(fs.fsLooksBinary(text), false);
-  assert.equal(fs.fsLooksBinary(new Uint8Array([0x1e, 0x46, 0x53, 0x1f, 0x31])), false,
-    'a tokenized ZPL is still text');
-  assert.equal(fs.fsLooksBinary(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x1a])), true,
-    'a PNG has a NUL in its signature');
+  assert.equal(
+    fs.fsLooksBinary(new Uint8Array([0x1e, 0x46, 0x53, 0x1f, 0x31])),
+    false,
+    'a tokenized ZPL is still text',
+  );
+  assert.equal(
+    fs.fsLooksBinary(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x1a])),
+    true,
+    'a PNG has a NUL in its signature',
+  );
 });
 
 check('a .BAT is text, escape sequences and all', () => {
   // E:FF.BAT on the bench printer, byte for byte.
-  const bat = new Uint8Array([0x1b, ...new TextEncoder().encode('JWaccNVMI40J132100037'), 0, 13, 10]);
+  const bat = new Uint8Array([
+    0x1b,
+    ...new TextEncoder().encode('JWaccNVMI40J132100037'),
+    0,
+    13,
+    10,
+  ]);
   assert.equal(fs.fsLooksBinary(bat), false, 'an ESC and a trailing NUL do not make it binary');
   assert.equal(
     fs.fsToDisplayText(bat),
     '\\x1bJWaccNVMI40J132100037\\x00\r\n',
-    'the control bytes are shown rather than swallowed by the markup'
+    'the control bytes are shown rather than swallowed by the markup',
   );
 });
 
 check('a stored ZPL displays as the ZPL it was', () => {
-  assert.equal(fs.fsToDisplayText(new Uint8Array([0x1e, 0x58, 0x41, 0x1e, 0x46, 0x53, 0x1f, 0x31])),
-    '^XA\n^FS,1');
+  assert.equal(
+    fs.fsToDisplayText(new Uint8Array([0x1e, 0x58, 0x41, 0x1e, 0x46, 0x53, 0x1f, 0x31])),
+    '^XA\n^FS,1',
+  );
 });
 
 check('the hex dump is offset, bytes and characters, and says what it left out', () => {
@@ -211,7 +230,11 @@ check('the hex dump is offset, bytes and characters, and says what it left out',
 
 check('a picture goes through the one-bit converter', () => {
   assert.equal(fs.fsUploadRoute('logo.png', 'image/png').route, 'image');
-  assert.equal(fs.fsUploadRoute('LOGO.JPG', '').route, 'image', 'by extension when the type is missing');
+  assert.equal(
+    fs.fsUploadRoute('LOGO.JPG', '').route,
+    'image',
+    'by extension when the type is missing',
+  );
   assert.equal(fs.fsUploadRoute('scan', 'image/tiff').route, 'image');
 });
 

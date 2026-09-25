@@ -66,30 +66,43 @@ function htmxPost(path, values, options) {
 export function createPreview({ onPrinted, onPrint } = {}) {
   const id = `preview-${++seq}`;
 
-  const imageHost = el('div', {
-    id: `${id}-host`,
-    class: 'preview-surface flex max-h-[60vh] min-h-[12rem] items-start justify-center overflow-auto p-3',
-  }, [
-    el('p', { class: 'text-[12px] text-ink-400' }, ['The rendered label will appear here.']),
-  ]);
+  const imageHost = el(
+    'div',
+    {
+      id: `${id}-host`,
+      class:
+        'preview-surface flex max-h-[60vh] min-h-[12rem] items-start justify-center overflow-auto p-3',
+    },
+    [el('p', { class: 'text-[12px] text-ink-400' }, ['The rendered label will appear here.'])],
+  );
 
   const status = el('span', { class: 'text-[11px] text-ink-400' });
 
-  const refreshBtn = el('button', {
-    class: 'btn-secondary btn-sm',
-    type: 'button',
-    onclick: () => run('preview'),
-  }, ['Refresh']);
+  const refreshBtn = el(
+    'button',
+    {
+      class: 'btn-secondary btn-sm',
+      type: 'button',
+      onclick: () => run('preview'),
+    },
+    ['Refresh'],
+  );
 
   // Printing is the thing you do after looking at the preview, so the
   // pane offers it where you are already looking. The caller supplies
   // the action rather than this pane calling print() itself: it is the
   // caller that knows what is being printed and asks before doing it.
-  const printBtn = onPrint && el('button', {
-    class: 'btn-primary btn-sm',
-    type: 'button',
-    onclick: () => onPrint(),
-  }, ['Print']);
+  const printBtn =
+    onPrint &&
+    el(
+      'button',
+      {
+        class: 'btn-primary btn-sm',
+        type: 'button',
+        onclick: () => onPrint(),
+      },
+      ['Print'],
+    );
 
   const node = el('div', { class: 'card flex flex-col self-start overflow-hidden' }, [
     el('div', { class: 'toolbar' }, [
@@ -123,9 +136,13 @@ export function createPreview({ onPrinted, onPrint } = {}) {
 
     let detail;
     try {
-      detail = await htmxPost('/zpl', values, mode === 'print'
-        ? { swap: 'none', source: node }
-        : { target: imageHost, select: 'img', swap: 'innerHTML', source: node });
+      detail = await htmxPost(
+        '/zpl',
+        values,
+        mode === 'print'
+          ? { swap: 'none', source: node }
+          : { target: imageHost, select: 'img', swap: 'innerHTML', source: node },
+      );
     } catch (err) {
       if (token === inFlight) status.textContent = 'request failed';
       toast(`Preview request failed: ${err.message || err}`, 'error');
@@ -174,21 +191,38 @@ export function createPreview({ onPrinted, onPrint } = {}) {
       img.alt = 'Rendered label';
       // The printer only writes the temp bitmap when the format draws
       // something, so an empty label leaves the promised URL 404.
-      img.addEventListener('error', () => {
-        if (token !== inFlight) return;
-        status.textContent = 'nothing to render';
-        showMessage('This label produces no printable output.');
-      }, { once: true });
+      img.addEventListener(
+        'error',
+        () => {
+          if (token !== inFlight) return;
+          status.textContent = 'nothing to render';
+          showMessage('This label produces no printable output.');
+        },
+        { once: true },
+      );
     }
     status.textContent = 'up to date';
   }
 
   return {
     node,
-    update(zpl) { lastZpl = zpl; run('preview'); },
+    update(zpl) {
+      lastZpl = zpl;
+      run('preview');
+    },
     /** Show a placeholder without asking the printer for anything. */
-    idle(text) { inFlight++; lastZpl = ''; status.textContent = ''; showMessage(text); },
-    print(zpl) { lastZpl = zpl; run('print'); },
-    setStatus(text) { status.textContent = text; },
+    idle(text) {
+      inFlight++;
+      lastZpl = '';
+      status.textContent = '';
+      showMessage(text);
+    },
+    print(zpl) {
+      lastZpl = zpl;
+      run('print');
+    },
+    setStatus(text) {
+      status.textContent = text;
+    },
   };
 }

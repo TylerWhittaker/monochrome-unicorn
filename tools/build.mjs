@@ -98,11 +98,15 @@ function parseModule(path) {
 
   const bare = source.match(BARE_IMPORT_RE);
   if (bare) {
-    throw new Error(`${path}: only "import { names } from './mod.js'" is supported, saw:\n  ${bare[0].trim()}`);
+    throw new Error(
+      `${path}: only "import { names } from './mod.js'" is supported, saw:\n  ${bare[0].trim()}`,
+    );
   }
   const other = source.match(EXPORT_OTHER_RE);
   if (other) {
-    throw new Error(`${path}: only "export function/const/class" is supported, saw:\n  ${other[0].trim()}`);
+    throw new Error(
+      `${path}: only "export function/const/class" is supported, saw:\n  ${other[0].trim()}`,
+    );
   }
 
   const deps = [];
@@ -116,7 +120,9 @@ function parseModule(path) {
   }
 
   const exported = [];
-  for (const match of source.matchAll(/^\s*export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z0-9_$]+)/gm)) {
+  for (const match of source.matchAll(
+    /^\s*export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z0-9_$]+)/gm,
+  )) {
     exported.push(match[1]);
   }
 
@@ -126,13 +132,13 @@ function parseModule(path) {
   // top-level declarations (column zero, by this codebase's style) so the
   // build can refuse instead.
   const declared = [];
-  for (const match of source.matchAll(/^(?:export\s+)?(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z0-9_$]+)/gm)) {
+  for (const match of source.matchAll(
+    /^(?:export\s+)?(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z0-9_$]+)/gm,
+  )) {
     declared.push(match[1]);
   }
 
-  const body = source
-    .replace(IMPORT_RE, '')
-    .replace(EXPORT_DECL_RE, '$1');
+  const body = source.replace(IMPORT_RE, '').replace(EXPORT_DECL_RE, '$1');
 
   return { path, deps, imported: names, exported, declared, body };
 }
@@ -150,7 +156,8 @@ function bundle(entryPath) {
 
     const mod = parseModule(path);
     for (const dep of mod.deps) {
-      if (!dep.startsWith('.')) throw new Error(`${path}: cannot inline non-relative import "${dep}"`);
+      if (!dep.startsWith('.'))
+        throw new Error(`${path}: cannot inline non-relative import "${dep}"`);
       visit(resolve(dirname(path), dep));
     }
     visiting.delete(path);
@@ -166,8 +173,8 @@ function bundle(entryPath) {
     for (const name of mod.declared) {
       if (declarers.has(name)) {
         throw new Error(
-          `Top-level name "${name}" is declared in both ${rel(mod.path)} and ${rel(declarers.get(name))}.\n`
-          + '       All modules share one scope after inlining, so these names must be unique.'
+          `Top-level name "${name}" is declared in both ${rel(mod.path)} and ${rel(declarers.get(name))}.\n` +
+            '       All modules share one scope after inlining, so these names must be unique.',
         );
       }
       declarers.set(name, mod.path);
@@ -196,29 +203,61 @@ function bundle(entryPath) {
 
 function buildCss(outDir) {
   const cssOut = join(outDir, 'app.css');
-  execFileSync('npx', [
-    'tailwindcss',
-    '-i', join(ROOT, 'src/css/app.css'),
-    '-o', cssOut,
-    '--minify',
-  ], { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] });
+  execFileSync(
+    'npx',
+    ['tailwindcss', '-i', join(ROOT, 'src/css/app.css'), '-o', cssOut, '--minify'],
+    { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] },
+  );
   return readFileSync(cssOut, 'utf8').trim();
 }
 
 /**
  * Minify our own JS just enough to matter: strip block/line comments and
  * collapse indentation. Deliberately conservative -- no renaming, no
- * statement rewriting -- so a build never changes behaviour.
+ * statement rewriting -- so a build never changes behaviour. prettify()
+ * then lays it out again.
  */
 function squeeze(js) {
-  return js
-    // Block comments, but not inside a string or regex literal. Our sources
-    // keep comments on their own lines, so anchoring to line starts is safe.
-    .replace(/^[ \t]*\/\*[\s\S]*?\*\/[ \t]*$/gm, '')
-    .replace(/^[ \t]*\/\/[^\n]*$/gm, '')
-    .replace(/^[ \t]+/gm, '')
-    .replace(/\n{2,}/g, '\n')
-    .trim();
+  return (
+    js
+      // Block comments, but not inside a string or regex literal. Our sources
+      // keep comments on their own lines, so anchoring to line starts is safe.
+      .replace(/^[ \t]*\/\*[\s\S]*?\*\/[ \t]*$/gm, '')
+      .replace(/^[ \t]*\/\/[^\n]*$/gm, '')
+      .replace(/^[ \t]+/gm, '')
+      .replace(/\n{2,}/g, '\n')
+      .trim()
+  );
+}
+
+const PRETTIER = join(ROOT, 'node_modules/.bin/prettier');
+
+/**
+ * Format JS that goes into the page with prettier, as all of this
+ * project's JS is.
+ *
+ * The page's copy uses tabs rather than the sources' two spaces: prettier's
+ * layout either way, but one byte per level of indent instead of two,
+ * which at ~56 KB/s is about 0.4 s of every page load.
+ */
+function prettify(js) {
+  if (!existsSync(PRETTIER)) {
+    throw new Error('prettier is not installed; run "npm install" first');
+  }
+  return execFileSync(PRETTIER, ['--stdin-filepath', 'page.js', '--use-tabs'], {
+    cwd: ROOT,
+    input: js,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+    maxBuffer: 16 * 1024 * 1024,
+  }).trim();
+}
+
+/** Run prettify() over every inline <script> the page shell carries itself. */
+function prettifyInlineScripts(html) {
+  return html.replace(/<script>(\n[\s\S]*?)<\/script>/g, (whole, body) =>
+    body.includes('{{') ? whole : `<script>\n${prettify(body)}\n</script>`,
+  );
 }
 
 /**
@@ -235,9 +274,9 @@ function buildStamp(now = new Date()) {
 
 /** The @name=value@ block the preprocessor fills in before serving. */
 function bootVarsBlock() {
-  return BOOT_VARS
-    .map((name) => `@${name}=<!--#exec cmd="/Zebra/cgi/getvar.cgi ${name}" -->@`)
-    .join('\n');
+  return BOOT_VARS.map(
+    (name) => `@${name}=<!--#exec cmd="/Zebra/cgi/getvar.cgi ${name}" -->@`,
+  ).join('\n');
 }
 
 /** One "@name=value@" line, for the preprocessor to fill in. */
@@ -319,10 +358,10 @@ export function build({ schemaPath, outDir }) {
   // repository, so a fresh clone has none until a deploy has run once.
   if (!existsSync(schemaPath)) {
     throw new Error(
-      `No settings catalogue at ${rel(schemaPath)}.\n`
-      + '       It is read from a printer rather than checked in:\n'
-      + '         node tools/fetch-schema.mjs <printer-ip>\n'
-      + '       or ./deploy.sh <printer-ip>, which does both.'
+      `No settings catalogue at ${rel(schemaPath)}.\n` +
+        '       It is read from a printer rather than checked in:\n' +
+        '         node tools/fetch-schema.mjs <printer-ip>\n' +
+        '       or ./deploy.sh <printer-ip>, which does both.',
     );
   }
   const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
@@ -337,10 +376,10 @@ export function build({ schemaPath, outDir }) {
   schema.slowFiles = slowFiles;
   schema.allFile = ALL_FILE;
 
-  const template = readFileSync(join(ROOT, 'src/index.html'), 'utf8');
+  const template = prettifyInlineScripts(readFileSync(join(ROOT, 'src/index.html'), 'utf8'));
   const css = buildCss(outDir);
   const htmx = readFileSync(join(ROOT, 'vendor/htmx.min.js'), 'utf8').trim();
-  const app = JS_BANNER + '\n' + squeeze(bundle(join(ROOT, 'src/js/app.js')));
+  const app = prettify(JS_BANNER + '\n' + squeeze(bundle(join(ROOT, 'src/js/app.js'))));
 
   const replacements = {
     '{{STYLES}}': css,
@@ -354,7 +393,8 @@ export function build({ schemaPath, outDir }) {
 
   let html = template;
   for (const [token, value] of Object.entries(replacements)) {
-    if (!html.includes(token)) throw new Error(`src/index.html is missing the ${token} placeholder`);
+    if (!html.includes(token))
+      throw new Error(`src/index.html is missing the ${token} placeholder`);
     html = html.split(token).join(value);
   }
 
@@ -407,7 +447,9 @@ function main() {
   console.log(`  app js       ${kb(result.parts.app)}`);
   console.log(`  sgd schema   ${kb(result.parts.schema)}`);
   console.log(`  ------------------------`);
-  console.log(`  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / 56320).toFixed(1)}s to serve at 56 KB/s)`);
+  console.log(
+    `  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / 56320).toFixed(1)}s to serve at 56 KB/s)`,
+  );
   console.log(`  ${result.helpers.length} helper files in dist/helpers/`);
 }
 

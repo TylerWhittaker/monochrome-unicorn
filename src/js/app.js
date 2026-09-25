@@ -59,11 +59,9 @@ function renderHeader() {
   status.textContent = printer.status;
   status.className = `pill ${STATUS_STYLES[printer.status] || STATUS_STYLES.unknown}`;
 
-  const meta = [
-    printer.serial && `S/N ${printer.serial}`,
-    printer.firmware,
-    `${printer.dpi} dpi`,
-  ].filter(Boolean).join('  ·  ');
+  const meta = [printer.serial && `S/N ${printer.serial}`, printer.firmware, `${printer.dpi} dpi`]
+    .filter(Boolean)
+    .join('  ·  ');
   qs('#hdr-meta').textContent = meta;
   document.title = `${printer.name} — Printer Console`;
 }
@@ -91,12 +89,14 @@ function showTab(id) {
       mode.mount(panel);
     } catch (err) {
       console.error(`Failed to mount ${id}`, err);
-      panel.replaceChildren(el('div', { class: 'card p-4 text-red-700' }, [
-        el('p', { class: 'font-semibold' }, ['This mode failed to start.']),
-        el('pre', { class: 'mt-2 overflow-auto whitespace-pre-wrap text-[11px]' }, [
-          `${err.name}: ${err.message}\n${err.stack || ''}`,
+      panel.replaceChildren(
+        el('div', { class: 'card p-4 text-red-700' }, [
+          el('p', { class: 'font-semibold' }, ['This mode failed to start.']),
+          el('pre', { class: 'mt-2 overflow-auto whitespace-pre-wrap text-[11px]' }, [
+            `${err.name}: ${err.message}\n${err.stack || ''}`,
+          ]),
         ]),
-      ]));
+      );
     }
   } else if (mode.onShow) {
     mode.onShow(panel);
@@ -109,7 +109,9 @@ function start() {
   initState(document);
 
   if (!printer.schema) {
-    toast('The settings catalogue did not load; the Settings tab will be empty.', 'error', { timeout: 0 });
+    toast('The settings catalogue did not load; the Settings tab will be empty.', 'error', {
+      timeout: 0,
+    });
   }
 
   renderHeader();

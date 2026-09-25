@@ -89,9 +89,11 @@ export const LINK_OS_FIRMWARE = 68;
  * A socket rather than nc: nc -C rewrites bare newlines, and a settings
  * value that contains one would come back altered.
  */
-export function readFromPrinter(ip, payload, {
-  idleMs = 3000, settleMs = 0, isComplete = null, timeout = 180000, port = 9100,
-} = {}) {
+export function readFromPrinter(
+  ip,
+  payload,
+  { idleMs = 3000, settleMs = 0, isComplete = null, timeout = 180000, port = 9100 } = {},
+) {
   return new Promise((resolvePromise, rejectPromise) => {
     const socket = net.createConnection({ host: ip, port });
     const chunks = [];
@@ -121,8 +123,14 @@ export function readFromPrinter(ip, payload, {
       idle = setTimeout(finish, done ? settleMs : idleMs);
     };
 
-    socket.on('connect', () => { socket.write(payload); arm(); });
-    socket.on('data', (chunk) => { chunks.push(chunk); arm(); });
+    socket.on('connect', () => {
+      socket.write(payload);
+      arm();
+    });
+    socket.on('data', (chunk) => {
+      chunks.push(chunk);
+      arm();
+    });
     socket.on('error', (err) => {
       if (settled) return;
       settled = true;
@@ -152,7 +160,9 @@ export function queryPrinter(ip, payload, { timeout = 60000, quiet = 3 } = {}) {
 
 /** Pull the firmware version out of a ~HI reply. */
 export function parseHostIdentification(reply) {
-  const text = String(reply).replace(/[\x02\x03]/g, '').trim();
+  const text = String(reply)
+    .replace(/[\x02\x03]/g, '')
+    .trim();
   const fields = text.split(',').map((f) => f.trim());
   const version = fields.find((f) => /^V\d+/.test(f)) || null;
   const major = version ? parseInt(version.slice(1), 10) : null;
@@ -247,7 +257,10 @@ export function typeFromEntry(entry) {
   if (/^-?[\d.]+\s*-\s*-?[\d.]+$/.test(choices)) {
     return choices.includes('.') ? 'double' : 'integer';
   }
-  const parts = choices.split(',').map((c) => c.trim().toLowerCase()).filter(Boolean);
+  const parts = choices
+    .split(',')
+    .map((c) => c.trim().toLowerCase())
+    .filter(Boolean);
   if (parts.length === 2 && parts.includes('on') && parts.includes('off')) return 'bool';
   return parts.length > 1 ? 'enum' : 'string';
 }
@@ -272,7 +285,10 @@ export function parseAllcv(text) {
 
     // The quote line that closes the listing, rather than a value.
     if (last && /^"+$/.test(line)) break;
-    if (ALLCV_CATEGORY.test(line)) { current = null; continue; }
+    if (ALLCV_CATEGORY.test(line)) {
+      current = null;
+      continue;
+    }
 
     const match = ALLCV_NAME.exec(line);
     if (match) {
@@ -358,13 +374,19 @@ async function main() {
   const args = process.argv.slice(2);
   const ip = args.find((a) => !a.startsWith('--'));
   if (!ip) {
-    console.error('usage: node tools/fetch-schema.mjs <printer-ip> [--out <path>] [--allcv|--allconfig]');
+    console.error(
+      'usage: node tools/fetch-schema.mjs <printer-ip> [--out <path>] [--allcv|--allconfig]',
+    );
     process.exit(2);
   }
   const outFlag = args.indexOf('--out');
   const outPath = resolve(outFlag !== -1 ? args[outFlag + 1] : 'data/sgd-schema.json');
 
-  let source = args.includes('--allcv') ? 'allcv' : args.includes('--allconfig') ? 'allconfig' : null;
+  let source = args.includes('--allcv')
+    ? 'allcv'
+    : args.includes('--allconfig')
+      ? 'allconfig'
+      : null;
 
   if (!source) {
     process.stderr.write(`Asking ${ip} what it is ... `);
@@ -372,12 +394,14 @@ async function main() {
     try {
       printer = await identifyPrinter(ip);
     } catch (err) {
-      throw new Error(`~HI got no answer (${err.message}). Force a format with --allcv or --allconfig.`);
+      throw new Error(
+        `~HI got no answer (${err.message}). Force a format with --allcv or --allconfig.`,
+      );
     }
     source = printer.preLinkOs ? 'allcv' : 'allconfig';
     process.stderr.write(
-      `${printer.model || 'printer'} ${printer.version || '(no version)'}`
-      + `${printer.preLinkOs ? ' -- pre-Link-OS' : ''}, using ${source}\n`
+      `${printer.model || 'printer'} ${printer.version || '(no version)'}` +
+        `${printer.preLinkOs ? ' -- pre-Link-OS' : ''}, using ${source}\n`,
     );
   }
 
@@ -387,7 +411,9 @@ async function main() {
   if (source === 'allcv') {
     const raw = await fetchAllcv(ip);
     if (!allcvLooksComplete(raw)) {
-      process.stderr.write('\n  warning: the listing did not end with allcv\'s quote line; it may be short\n  ');
+      process.stderr.write(
+        "\n  warning: the listing did not end with allcv's quote line; it may be short\n  ",
+      );
     }
     config = parseAllcv(raw);
     if (Object.keys(config).length === 0) {
@@ -400,8 +426,8 @@ async function main() {
       parsed = JSON.parse(raw);
     } catch (err) {
       throw new Error(
-        `Printer reply was not JSON (${raw.length} bytes). A pre-Link-OS printer cannot answer this; `
-        + `try --allcv. First 200 chars:\n${raw.slice(0, 200)}`
+        `Printer reply was not JSON (${raw.length} bytes). A pre-Link-OS printer cannot answer this; ` +
+          `try --allcv. First 200 chars:\n${raw.slice(0, 200)}`,
       );
     }
     if (!parsed.allconfig) throw new Error('Printer reply had no "allconfig" member');
@@ -413,11 +439,13 @@ async function main() {
   writeFileSync(outPath, JSON.stringify(schema, null, 1));
 
   const count = Object.keys(schema.settings).length;
-  const unverified = Object.values(schema.settings)
-    .filter((meta) => ACCESS[meta[2]] === 'RW?').length;
+  const unverified = Object.values(schema.settings).filter(
+    (meta) => ACCESS[meta[2]] === 'RW?',
+  ).length;
   process.stderr.write(
-    `${count} settings, ${schema.branches.length} branches`
-    + (unverified ? `, ${unverified} of unverified access` : '') + '\n'
+    `${count} settings, ${schema.branches.length} branches` +
+      (unverified ? `, ${unverified} of unverified access` : '') +
+      '\n',
   );
 }
 

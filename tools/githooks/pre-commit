@@ -18,7 +18,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 #
-# pre-commit -- every commit moves the version on.
+# pre-commit -- every commit moves the version on, and its JS is
+# formatted by prettier.
 #
 # A patch bump is the default because it is the safe answer when nobody
 # has said otherwise. A commit that adds a feature or breaks something
@@ -43,6 +44,27 @@ if [ -e "$git_dir/MERGE_HEAD" ] \
   || [ -d "$git_dir/rebase-merge" ] \
   || [ -d "$git_dir/rebase-apply" ]; then
   exit 0
+fi
+
+# All JS is laid out by prettier (see .prettierrc.json). Check what is
+# actually staged, not the working tree, so a half-staged file is judged
+# on the half that is going in.
+if [ -x node_modules/.bin/prettier ]; then
+  unformatted=()
+  while IFS= read -r -d '' file; do
+    if ! git show ":$file" \
+        | node_modules/.bin/prettier --stdin-filepath "$file" --check >/dev/null 2>&1; then
+      unformatted+=("$file")
+    fi
+  done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.js' '*.mjs')
+  if [ ${#unformatted[@]} -gt 0 ]; then
+    echo "pre-commit: not formatted by prettier:" >&2
+    printf '  %s\n' "${unformatted[@]}" >&2
+    echo "run: npm run format   (then git add them again)" >&2
+    exit 1
+  fi
+else
+  echo "pre-commit: prettier not installed (npm install); skipping format check" >&2
 fi
 
 version_in() {

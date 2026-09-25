@@ -87,10 +87,16 @@ function drawRow(row) {
     } else if (ICONS[code]) {
       cells.push(el('span', { title: `icon 0x${code.toString(16)}` }, [ICONS[code]]));
     } else {
-      cells.push(el('span', {
-        class: 'opacity-50',
-        title: `unmapped icon byte 0x${code.toString(16)}`,
-      }, ['▫']));
+      cells.push(
+        el(
+          'span',
+          {
+            class: 'opacity-50',
+            title: `unmapped icon byte 0x${code.toString(16)}`,
+          },
+          ['▫'],
+        ),
+      );
     }
   }
   return el('div', { class: 'whitespace-pre' }, cells);
@@ -125,9 +131,7 @@ function tick() {
 
   // Overdue by more than one whole interval means something is wrong.
   const overdue = state.running && age > (state.intervalMs / 1000) * 2 + 1;
-  ageNode.className = overdue
-    ? 'text-[11px] text-amber-600'
-    : 'text-[11px] text-ink-400';
+  ageNode.className = overdue ? 'text-[11px] text-amber-600' : 'text-[11px] text-ink-400';
 }
 
 /* ------------------------------------------------------------------ *
@@ -223,11 +227,15 @@ async function pressButton(button, node) {
 function buildKeypad() {
   const cells = LCD_BUTTONS.map((spec) => {
     if (!spec) return el('span');
-    const node = el('button', {
-      class: 'btn-secondary h-9 w-full font-mono text-[13px] leading-none',
-      title: spec.title,
-      'aria-label': spec.title,
-    }, [spec.label]);
+    const node = el(
+      'button',
+      {
+        class: 'btn-secondary h-9 w-full font-mono text-[13px] leading-none',
+        title: spec.title,
+        'aria-label': spec.title,
+      },
+      [spec.label],
+    );
     node.addEventListener('click', () => pressButton(spec.key, node));
     return node;
   });
@@ -242,8 +250,12 @@ function buildKeypad() {
 
 export function mountLcd(panel) {
   const intervalInput = el('input', {
-    class: 'field field-mono w-20', type: 'number',
-    min: '0.5', max: '60', step: '0.5', value: '2',
+    class: 'field field-mono w-20',
+    type: 'number',
+    min: '0.5',
+    max: '60',
+    step: '0.5',
+    value: '2',
   });
   intervalInput.addEventListener('change', () => {
     const seconds = Math.min(60, Math.max(0.5, Number(intervalInput.value) || 2));
@@ -273,27 +285,36 @@ export function mountLcd(panel) {
     'generated via display.text \u2014 not an exact screenshot',
   ]);
 
-  panel.append(el('div', { class: 'card w-fit max-w-full overflow-hidden' }, [
-    el('div', { class: 'toolbar' }, [
-      el('span', { class: 'text-[12px] font-medium text-ink-700' }, ['Front panel']),
-      el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [
-        'Every', intervalInput, 's',
+  panel.append(
+    el('div', { class: 'card w-fit max-w-full overflow-hidden' }, [
+      el('div', { class: 'toolbar' }, [
+        el('span', { class: 'text-[12px] font-medium text-ink-700' }, ['Front panel']),
+        el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [
+          'Every',
+          intervalInput,
+          's',
+        ]),
+        el('div', { class: 'ml-auto' }, [pauseBtn]),
       ]),
-      el('div', { class: 'ml-auto' }, [pauseBtn]),
+      el('div', { class: 'w-fit p-3' }, [
+        // A bezel, so the grid reads as a device rather than a code block.
+        el('div', { class: 'w-fit rounded-lg bg-ink-800 p-2 shadow-inner' }, [screenNode]),
+        // w-0 min-w-full keeps the caption out of the intrinsic width of
+        // the column -- otherwise this line, which is wider than the
+        // screen, would set the width and stretch the bezel to match --
+        // and then lets it fill and wrap inside whatever the screen needs.
+        el(
+          'div',
+          {
+            class:
+              'mt-1.5 flex w-0 min-w-full flex-wrap items-baseline justify-between gap-x-4 gap-y-1',
+          },
+          [ageNode, metaNode],
+        ),
+        buildKeypad(),
+      ]),
     ]),
-    el('div', { class: 'w-fit p-3' }, [
-      // A bezel, so the grid reads as a device rather than a code block.
-      el('div', { class: 'w-fit rounded-lg bg-ink-800 p-2 shadow-inner' }, [screenNode]),
-      // w-0 min-w-full keeps the caption out of the intrinsic width of
-      // the column -- otherwise this line, which is wider than the
-      // screen, would set the width and stretch the bezel to match --
-      // and then lets it fill and wrap inside whatever the screen needs.
-      el('div', {
-        class: 'mt-1.5 flex w-0 min-w-full flex-wrap items-baseline justify-between gap-x-4 gap-y-1',
-      }, [ageNode, metaNode]),
-      buildKeypad(),
-    ]),
-  ]));
+  );
 
   render(null);
   tick();

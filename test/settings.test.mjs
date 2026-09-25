@@ -23,14 +23,21 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 /* The sort is pure; the rest of the module wants a document. */
-const src = readFileSync(new URL('../src/js/settings.js', import.meta.url), 'utf8')
-  .replace(/^import\s*\{[^}]*\}\s*from\s*'\.\/[^']*';?$/gm, '');
+const src = readFileSync(new URL('../src/js/settings.js', import.meta.url), 'utf8').replace(
+  /^import\s*\{[^}]*\}\s*from\s*'\.\/[^']*';?$/gm,
+  '',
+);
 const s = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
 
 let failures = 0;
 function check(name, fn) {
-  try { fn(); console.log(`  ok   ${name}`); }
-  catch (err) { failures++; console.log(`  FAIL ${name}\n       ${err.message}`); }
+  try {
+    fn();
+    console.log(`  ok   ${name}`);
+  } catch (err) {
+    failures++;
+    console.log(`  FAIL ${name}\n       ${err.message}`);
+  }
 }
 
 /** Sort names the way the list does, in the given mode. */
@@ -50,7 +57,10 @@ const IP = [
 ];
 
 check('the three modes are offered, catalogue order first', () => {
-  assert.deepEqual(s.SORT_MODES.map(([value]) => value), ['default', 'alpha', 'alpha-enable']);
+  assert.deepEqual(
+    s.SORT_MODES.map(([value]) => value),
+    ['default', 'alpha', 'alpha-enable'],
+  );
 });
 
 check('alphabetical leaves .enable among its siblings', () => {
@@ -83,20 +93,26 @@ check('a .enable sorts ahead of a sibling that would otherwise precede it', () =
 });
 
 check('a .enable stays inside its own group, not ahead of the next one', () => {
-  assert.deepEqual(
-    order(['ip.gateway', 'ip.ftp.enable', 'ip.dhcp.enable'], 'alpha-enable'),
-    ['ip.dhcp.enable', 'ip.ftp.enable', 'ip.gateway']
-  );
+  assert.deepEqual(order(['ip.gateway', 'ip.ftp.enable', 'ip.dhcp.enable'], 'alpha-enable'), [
+    'ip.dhcp.enable',
+    'ip.ftp.enable',
+    'ip.gateway',
+  ]);
 });
 
 check('only a whole ".enable" suffix counts', () => {
   // ip.dhcp.auto_provision_enable is a setting on this printer, and is
   // not one of these.
-  assert.equal(s.sortKeyFor('ip.dhcp.auto_provision_enable', 'alpha-enable'),
-    'ip.dhcp.auto_provision_enable');
+  assert.equal(
+    s.sortKeyFor('ip.dhcp.auto_provision_enable', 'alpha-enable'),
+    'ip.dhcp.auto_provision_enable',
+  );
   assert.equal(s.sortKeyFor('ip.ftp.enable', 'alpha-enable'), 'ip.ftp.\u0000');
-  assert.equal(s.sortKeyFor('ip.ftp.enable', 'alpha'), 'ip.ftp.enable',
-    'the other modes are untouched');
+  assert.equal(
+    s.sortKeyFor('ip.ftp.enable', 'alpha'),
+    'ip.ftp.enable',
+    'the other modes are untouched',
+  );
 });
 
 console.log(failures ? `\n${failures} failure(s)` : '\nall passed');

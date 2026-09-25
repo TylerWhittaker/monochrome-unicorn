@@ -48,7 +48,7 @@ export const SYMBOLOGIES = {
 
 /** Reverse lookup from ZPL command to symbology key. */
 const CMD_TO_SYMBOLOGY = Object.fromEntries(
-  Object.entries(SYMBOLOGIES).map(([key, spec]) => [spec.cmd, key])
+  Object.entries(SYMBOLOGIES).map(([key, spec]) => [spec.cmd, key]),
 );
 
 export const ROTATIONS = [
@@ -107,26 +107,55 @@ export function newElement(type, doc, dpi = 203) {
     rotation: 'N',
   };
   if (type === 'text') {
-    return { ...base, font: '0', height: Math.round(dpi * 0.2), width: 0, text: 'Text', blockWidth: 0, reverse: false };
+    return {
+      ...base,
+      font: '0',
+      height: Math.round(dpi * 0.2),
+      width: 0,
+      text: 'Text',
+      blockWidth: 0,
+      reverse: false,
+    };
   }
   if (type === 'barcode') {
     return {
-      ...base, symbology: 'code128', data: '12345678',
-      height: Math.round(dpi * 0.4), moduleWidth: Math.max(2, Math.round(dpi / 100)),
-      ratio: 3, showText: true, magnification: 4, errorLevel: 'Q',
+      ...base,
+      symbology: 'code128',
+      data: '12345678',
+      height: Math.round(dpi * 0.4),
+      moduleWidth: Math.max(2, Math.round(dpi / 100)),
+      ratio: 3,
+      showText: true,
+      magnification: 4,
+      errorLevel: 'Q',
     };
   }
   if (type === 'image') {
     return { ...base, source: '', scaleX: 1, scaleY: 1 };
   }
   if (type === 'box') {
-    return { ...base, w: Math.round(dpi), h: Math.round(dpi * 0.5), thickness: 3, rounding: 0, invert: false };
+    return {
+      ...base,
+      w: Math.round(dpi),
+      h: Math.round(dpi * 0.5),
+      thickness: 3,
+      rounding: 0,
+      invert: false,
+    };
   }
   if (type === 'line') {
     return { ...base, length: Math.round(dpi * 1.5), thickness: 3, vertical: false };
   }
   if (type === 'field') {
-    return { ...base, font: '0', height: Math.round(dpi * 0.15), width: 0, number: 1, name: '', initial: '' };
+    return {
+      ...base,
+      font: '0',
+      height: Math.round(dpi * 0.15),
+      width: 0,
+      number: 1,
+      name: '',
+      initial: '',
+    };
   }
   throw new Error(`Unknown element type: ${type}`);
 }
@@ -141,7 +170,10 @@ export function newElement(type, doc, dpi = 203) {
  * escape character itself) are encoded.
  */
 export function escapeFieldData(text) {
-  return String(text).replace(/[\^~_\\]/g, (c) => '_' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
+  return String(text).replace(
+    /[\^~_\\]/g,
+    (c) => '_' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'),
+  );
 }
 
 function textZpl(item) {
@@ -231,13 +263,20 @@ function lineZpl(item) {
 
 export function elementZpl(item) {
   switch (item.type) {
-    case 'text': return textZpl(item);
-    case 'barcode': return barcodeZpl(item);
-    case 'image': return imageZpl(item);
-    case 'box': return boxZpl(item);
-    case 'line': return lineZpl(item);
-    case 'field': return fieldZpl(item);
-    default: return '';
+    case 'text':
+      return textZpl(item);
+    case 'barcode':
+      return barcodeZpl(item);
+    case 'image':
+      return imageZpl(item);
+    case 'box':
+      return boxZpl(item);
+    case 'line':
+      return lineZpl(item);
+    case 'field':
+      return fieldZpl(item);
+    default:
+      return '';
   }
 }
 
@@ -313,7 +352,10 @@ export function formatZpl(text) {
   if (!tokens.length) return src.trim();
 
   const lines = [];
-  let line = src.slice(0, tokens[0].start).replace(/[\r\n]+/g, ' ').trim();
+  let line = src
+    .slice(0, tokens[0].start)
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
   let fieldOpen = false;
 
   const flush = () => {
@@ -340,7 +382,10 @@ export function formatZpl(text) {
     }
 
     if (FIELD_OPENERS.has(token.cmd)) fieldOpen = true;
-    if (token.cmd === 'FS') { flush(); fieldOpen = false; }
+    if (token.cmd === 'FS') {
+      flush();
+      fieldOpen = false;
+    }
   }
 
   flush();
@@ -367,7 +412,10 @@ export function tokenizeZpl(text) {
   let i = 0;
 
   while (i < src.length) {
-    if (!isCommandStart(src, i)) { i++; continue; }
+    if (!isCommandStart(src, i)) {
+      i++;
+      continue;
+    }
     const ch = src[i];
 
     let cmd = src.slice(i + 1, i + 3).toUpperCase();
@@ -394,7 +442,9 @@ function num(value, fallback = 0) {
 /** Undo escapeFieldData. Only meaningful when ^FH was in effect. */
 export function unescapeFieldData(text, active) {
   if (!active) return text;
-  return String(text).replace(/_([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  return String(text).replace(/_([0-9a-fA-F]{2})/g, (_, hex) =>
+    String.fromCharCode(parseInt(hex, 16)),
+  );
 }
 
 /**
@@ -414,7 +464,9 @@ export function parseZpl(text, dpi = 203) {
 
   // Field-level state, reset by every ^FS.
   let field = null;
-  const resetField = () => { field = { x: 0, y: 0, hexEscape: false, reverse: false }; };
+  const resetField = () => {
+    field = { x: 0, y: 0, hexEscape: false, reverse: false };
+  };
   resetField();
 
   let lastBy = { moduleWidth: 2, ratio: 3, height: 10 };
@@ -440,30 +492,55 @@ export function parseZpl(text, dpi = 203) {
     const args = token.args.split(',');
 
     switch (token.cmd) {
-      case 'XA': case 'XZ': case 'CI': case 'FS':
+      case 'XA':
+      case 'XZ':
+      case 'CI':
+      case 'FS':
         if (token.cmd === 'FS') {
           if (field.passedThrough) doc.passthrough.push('^FS');
           resetField();
         }
         break;
 
-      case 'PW': doc.width = num(args[0], doc.width); break;
-      case 'LL': doc.height = num(args[0], doc.height); break;
-      case 'PO': doc.orientation = (token.args.trim().toUpperCase() || 'N')[0] === 'I' ? 'I' : 'N'; break;
-      case 'MD': doc.darkness = num(args[0], 0); break;
-      case 'PR': doc.speed = num(args[0], null); break;
-      case 'MN': doc.mediaType = (token.args.trim().toUpperCase() || 'N')[0]; break;
-      case 'PQ': doc.copies = num(args[0], 1); break;
-      case 'LH': doc.homeX = num(args[0], 0); doc.homeY = num(args[1], 0); break;
+      case 'PW':
+        doc.width = num(args[0], doc.width);
+        break;
+      case 'LL':
+        doc.height = num(args[0], doc.height);
+        break;
+      case 'PO':
+        doc.orientation = (token.args.trim().toUpperCase() || 'N')[0] === 'I' ? 'I' : 'N';
+        break;
+      case 'MD':
+        doc.darkness = num(args[0], 0);
+        break;
+      case 'PR':
+        doc.speed = num(args[0], null);
+        break;
+      case 'MN':
+        doc.mediaType = (token.args.trim().toUpperCase() || 'N')[0];
+        break;
+      case 'PQ':
+        doc.copies = num(args[0], 1);
+        break;
+      case 'LH':
+        doc.homeX = num(args[0], 0);
+        doc.homeY = num(args[1], 0);
+        break;
 
-      case 'FO': case 'FT':
+      case 'FO':
+      case 'FT':
         field.x = num(args[0], 0);
         field.y = num(args[1], 0);
         sawFieldOrigin = true;
         break;
 
-      case 'FH': field.hexEscape = true; break;
-      case 'FR': field.reverse = true; break;
+      case 'FH':
+        field.hexEscape = true;
+        break;
+      case 'FR':
+        field.reverse = true;
+        break;
 
       case 'FN': {
         const match = /^\s*(\d+)\s*(?:"([^"]*)")?/.exec(token.args);
@@ -521,13 +598,36 @@ export function parseZpl(text, dpi = 203) {
         const rounding = num(args[4], 0);
         // A rectangle whose width or height equals the stroke is a line.
         const isLine = (w <= thickness || h <= thickness) && rounding === 0 && !invert;
-        doc.elements.push(isLine
-          ? { id: elementId(), type: 'line', x: field.x, y: field.y, rotation: 'N', vertical: w <= thickness, length: Math.max(w, h), thickness }
-          : { id: elementId(), type: 'box', x: field.x, y: field.y, rotation: 'N', w, h, thickness, rounding, invert });
+        doc.elements.push(
+          isLine
+            ? {
+                id: elementId(),
+                type: 'line',
+                x: field.x,
+                y: field.y,
+                rotation: 'N',
+                vertical: w <= thickness,
+                length: Math.max(w, h),
+                thickness,
+              }
+            : {
+                id: elementId(),
+                type: 'box',
+                x: field.x,
+                y: field.y,
+                rotation: 'N',
+                w,
+                h,
+                thickness,
+                rounding,
+                invert,
+              },
+        );
         break;
       }
 
-      case 'IM': case 'XG': {
+      case 'IM':
+      case 'XG': {
         const parts = token.args.split(',');
         doc.elements.push({
           id: elementId(),
@@ -578,8 +678,17 @@ export function parseZpl(text, dpi = 203) {
           // Data with no preceding font or barcode command: the printer
           // would use whatever ^CF set, which we do not track.
           doc.elements.push({
-            id: elementId(), type: 'text', x: field.x, y: field.y, rotation: 'N',
-            font: '0', height: 30, width: 0, text: raw, reverse: false, blockWidth: 0,
+            id: elementId(),
+            type: 'text',
+            x: field.x,
+            y: field.y,
+            rotation: 'N',
+            font: '0',
+            height: 30,
+            width: 0,
+            text: raw,
+            reverse: false,
+            blockWidth: 0,
           });
         }
         break;
@@ -681,8 +790,14 @@ export function findFieldNumbers(zpl) {
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    if (token.cmd === 'FH') { hexEscape = true; continue; }
-    if (token.cmd === 'FS') { hexEscape = false; continue; }
+    if (token.cmd === 'FH') {
+      hexEscape = true;
+      continue;
+    }
+    if (token.cmd === 'FS') {
+      hexEscape = false;
+      continue;
+    }
     if (token.cmd !== 'FN') continue;
 
     const match = /^\s*(\d+)\s*(?:"([^"]*)")?/.exec(token.args);

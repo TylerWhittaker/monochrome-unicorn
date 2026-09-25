@@ -24,12 +24,24 @@ import assert from 'node:assert/strict';
 
 const src = readFileSync(new URL('../src/js/printer.js', import.meta.url), 'utf8');
 const mod = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
-const { parseVarFile, decodeEntities, valuesMatch, extractPrinterError, extractVarRecords, parseObjectName } = mod;
+const {
+  parseVarFile,
+  decodeEntities,
+  valuesMatch,
+  extractPrinterError,
+  extractVarRecords,
+  parseObjectName,
+} = mod;
 
 let failures = 0;
 function check(name, fn) {
-  try { fn(); console.log(`  ok   ${name}`); }
-  catch (err) { failures++; console.log(`  FAIL ${name}\n       ${err.message}`); }
+  try {
+    fn();
+    console.log(`  ok   ${name}`);
+  } catch (err) {
+    failures++;
+    console.log(`  FAIL ${name}\n       ${err.message}`);
+  }
 }
 
 check('reads framed name=value pairs', () => {
@@ -88,8 +100,10 @@ check('printer error pages are recognised', () => {
 
 /* ---- the LCD grid ---- */
 
-const lcdSrc = readFileSync(new URL('../src/js/lcd.js', import.meta.url), 'utf8')
-  .replace(/^import [^\n]*$/gm, '');
+const lcdSrc = readFileSync(new URL('../src/js/lcd.js', import.meta.url), 'utf8').replace(
+  /^import [^\n]*$/gm,
+  '',
+);
 const lcd = await import('data:text/javascript;base64,' + Buffer.from(lcdSrc).toString('base64'));
 
 check('display.text splits into a 20x6 grid', () => {
@@ -103,7 +117,10 @@ check('display.text splits into a 20x6 grid', () => {
     ' \u00c2            ABOUT ';
   const rows = lcd.gridRows(screen);
   assert.equal(rows.length, 6);
-  assert.ok(rows.every((r) => r.length === 20), 'every row is 20 columns');
+  assert.ok(
+    rows.every((r) => r.length === 20),
+    'every row is 20 columns',
+  );
   assert.equal(rows[0], '   PRINTER READY    ');
   assert.equal(rows[2], '    192.168.1.81    ');
   assert.ok(rows[5].endsWith('ABOUT '));
@@ -127,7 +144,9 @@ check('records are pulled out of a stream as they complete', () => {
 });
 
 check('a value spanning lines is one record, @ and all', () => {
-  const { values } = extractVarRecords('@device.syslog=one\ntwo@three\n@four@\n@ip.addr=1.2.3.4@\n');
+  const { values } = extractVarRecords(
+    '@device.syslog=one\ntwo@three\n@four@\n@ip.addr=1.2.3.4@\n',
+  );
   assert.equal(values['device.syslog'], 'one\ntwo@three\n@four');
   assert.equal(values['ip.addr'], '1.2.3.4', 'and the next record still parses');
 });
@@ -146,15 +165,24 @@ check('a typed name is split into an object name and a type', () => {
 
 check('a name with no extension gets the default', () => {
   assert.deepEqual(parseObjectName('test'), { oname: 'TEST', otype: 'ZPL' });
-  assert.deepEqual(parseObjectName('test.'), { oname: 'TEST', otype: 'ZPL' }, 'a bare dot is not a type');
+  assert.deepEqual(
+    parseObjectName('test.'),
+    { oname: 'TEST', otype: 'ZPL' },
+    'a bare dot is not a type',
+  );
   assert.deepEqual(parseObjectName('logo', 'GRF'), { oname: 'LOGO', otype: 'GRF' });
 });
 
 check('names are cut to what the printer will hold', () => {
-  assert.deepEqual(parseObjectName('verylongfilenamehere.zpl'),
-    { oname: 'VERYLONGFILENAME', otype: 'ZPL' });
-  assert.deepEqual(parseObjectName('a.b.zpl'), { oname: 'AB', otype: 'ZPL' },
-    'only the last dot separates the type');
+  assert.deepEqual(parseObjectName('verylongfilenamehere.zpl'), {
+    oname: 'VERYLONGFILENAME',
+    otype: 'ZPL',
+  });
+  assert.deepEqual(
+    parseObjectName('a.b.zpl'),
+    { oname: 'AB', otype: 'ZPL' },
+    'only the last dot separates the type',
+  );
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');
