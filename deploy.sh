@@ -32,8 +32,10 @@
 #                   would otherwise be asked for JSON
 #     --allconfig   force the JSON catalogue, skipping the ~HI check
 #     --no-upload   build only, leave the printer alone
-#     --clean       remove the helper files this tool installed (V_* and
-#                   S_*) before uploading the new set
+#     --no-clean    keep the helper files a previous deploy installed.
+#                   By default they (E:V_*, E:S_* and E:LCD .SHTML) are
+#                   removed before the new set goes up, so a build that
+#                   packs the settings differently leaves nothing stale
 #
 # The printer is reached two ways: port 9100 for raw file writes (nc -C,
 # CISDFCRC16 header) and port 80 to verify what it now serves.
@@ -45,14 +47,15 @@ cd "$(dirname "$0")"
 IP=""
 FETCH_SCHEMA=1
 UPLOAD=1
-CLEAN=0
+CLEAN=1
 SCHEMA_ARGS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-schema) FETCH_SCHEMA=0 ;;
     --no-upload) UPLOAD=0 ;;
-    --clean)     CLEAN=1 ;;
+    --clean)     CLEAN=1 ;;  # the default; kept so old command lines work
+    --no-clean)  CLEAN=0 ;;
     --allcv)     SCHEMA_ARGS+=(--allcv) ;;
     --allconfig) SCHEMA_ARGS+=(--allconfig) ;;
     # The usage block is the comment paragraph that names this script,
@@ -65,7 +68,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$IP" ] && { [ "$UPLOAD" = 1 ] || [ "$FETCH_SCHEMA" = 1 ]; }; then
-  echo "usage: ./deploy.sh <printer-ip> [--no-schema] [--no-upload] [--clean] [--allcv|--allconfig]" >&2
+  echo "usage: ./deploy.sh <printer-ip> [--no-schema] [--no-upload] [--no-clean] [--allcv|--allconfig]" >&2
   exit 2
 fi
 
@@ -88,12 +91,10 @@ fi
 
 if [ "$CLEAN" = 1 ]; then
   echo "Removing previously installed helper files..."
-  # ^ID takes one object per format block; send them in a single connection.
-  curl -s --max-time 20 "http://$IP/dir?dev=E" \
-    | grep -oE 'E:(V|S)_[A-Z0-9_]+\.' \
-    | sort -u \
-    | sed 's/\.$//' \
-    | while read -r obj; do printf '^XA^ID%s.SHTML^FS^XZ\r\n' "$obj"; done \
+  # ^ID takes a wildcard, and one object pattern per format; one
+  # connection carries all three. Only .SHTML goes, so a user's own
+  # V_ or S_ label or graphic is left alone.
+  printf '^XA^IDE:V_*.SHTML^FS^XZ\r\n^XA^IDE:S_*.SHTML^FS^XZ\r\n^XA^IDE:LCD.SHTML^FS^XZ\r\n' \
     | nc -C -q 3 "$IP" 9100 || true
 fi
 

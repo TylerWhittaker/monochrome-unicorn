@@ -26,7 +26,7 @@
  * preprocessor filled in when this page was served.
  */
 
-import { parseVarFile } from './printer.js';
+import { parseVarFile, setBranchFiles } from './printer.js';
 
 export const printer = {
   /** Compact SGD catalogue: {settings, ranges, types, access, branches, slow}. */
@@ -49,6 +49,7 @@ export function initState(document) {
   if (schemaNode) {
     try {
       printer.schema = JSON.parse(schemaNode.textContent);
+      setBranchFiles(printer.schema.branchFiles);
     } catch (err) {
       console.error('Inlined SGD schema is not valid JSON', err);
     }

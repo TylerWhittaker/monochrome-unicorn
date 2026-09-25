@@ -289,8 +289,42 @@ function varLine(name) {
   return `@${name}=<!--#exec cmd="/Zebra/cgi/getvar.cgi ${name}" -->@`;
 }
 
+/** Most settings one read-back file holds, unless a branch alone is bigger. */
+const HELPER_MAX_SETTINGS = 40;
+
 /**
- * One helper file per settings branch, plus one file per slow setting.
+ * Pack settings branches into as few read-back files as will stay quick.
+ *
+ * A branch file is only read to confirm a write -- the sweep uses the
+ * one file holding everything -- and it costs about 10 ms a setting on
+ * top of ~95 ms a request. One file per branch put 32 files on E:, most
+ * holding a handful of settings, so small branches share: first-fit,
+ * largest first, up to HELPER_MAX_SETTINGS. A branch bigger than that
+ * keeps a file to itself, since splitting one would gain nothing -- a
+ * write re-reads its whole branch either way.
+ *
+ * Returns an array of groups, each an array of branch names.
+ */
+export function packBranches(byBranch, max = HELPER_MAX_SETTINGS) {
+  const sizes = [...byBranch].map(([branch, names]) => [branch, names.length]);
+  // Largest first; ties by name, so a build is repeatable.
+  sizes.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const groups = [];
+  for (const [branch, size] of sizes) {
+    const home = size < max && groups.find((g) => g.size + size <= max);
+    if (home) {
+      home.branches.push(branch);
+      home.size += size;
+    } else {
+      groups.push({ branches: [branch], size });
+    }
+  }
+  return groups.map((g) => g.branches.sort());
+}
+
+/**
+ * The settings branches packed into a few read-back files (see
+ * packBranches()), plus one file per slow setting.
  *
  * Each line frames the value with @...@ so the client can parse it
  * unambiguously -- a bare getvar on a whole branch returns a
@@ -321,12 +355,20 @@ function helperFiles(schema) {
   }
 
   const files = [];
-  for (const [branch, names] of [...byBranch].sort()) {
+  const branchFiles = {};
+  packBranches(byBranch).forEach((group, i) => {
+    const stem = `V_${i + 1}`;
+    for (const branch of group) branchFiles[branch] = stem;
     files.push({
-      dest: `E:V_${branch.toUpperCase()}.SHTML`,
-      contents: names.map(varLine).join('\n') + '\n',
+      dest: `E:${stem}.SHTML`,
+      branches: group,
+      contents:
+        group
+          .flatMap((b) => byBranch.get(b))
+          .map(varLine)
+          .join('\n') + '\n',
     });
-  }
+  });
 
   const slowFiles = {};
   slow.forEach((name, i) => {
@@ -349,7 +391,7 @@ function helperFiles(schema) {
    */
   files.push({ dest: `E:${ALL_FILE}.SHTML`, contents: readable.map(varLine).join('\n') + '\n' });
 
-  return { files, slowFiles };
+  return { files, slowFiles, branchFiles };
 }
 
 /* ------------------------------------------------------------------ *
@@ -370,14 +412,12 @@ export function build({ schemaPath, outDir }) {
     );
   }
   const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
-  const { files: helpers, slowFiles } = helperFiles(schema);
+  const { files: helpers, slowFiles, branchFiles } = helperFiles(schema);
 
-  // Branches the client may actually fetch. Not every branch has a readable
-  // setting (some are write-only commands), so this is narrower than
-  // schema.branches and asking for the difference would just 404.
-  schema.helperBranches = helpers
-    .filter((f) => f.dest.startsWith('E:V_') && f.dest !== `E:${ALL_FILE}.SHTML`)
-    .map((f) => f.dest.slice(4, -6).toLowerCase());
+  // Which file to re-read after a write to each branch. Not every branch
+  // has a readable setting (some are write-only commands), so a branch
+  // missing here has nothing to read back.
+  schema.branchFiles = branchFiles;
   schema.slowFiles = slowFiles;
   schema.allFile = ALL_FILE;
 

@@ -58,7 +58,8 @@ than checked in: a fresh clone has none until a deploy -- or
 ```
 --no-schema   reuse data/sgd-schema.json instead of re-reading the printer
 --no-upload   build only
---clean       remove previously installed helper files first
+--no-clean    keep previously installed helper files (by default
+              they are removed before the new set is uploaded)
 ```
 
 Needs `node`, `nc` (OpenBSD netcat, for `-C`) and `curl`.
@@ -87,12 +88,15 @@ console still works on an isolated network.
 
 **Settings can only be read through the SSI preprocessor.** Reading all
 574 readable settings in one page takes 14 s, most of it in a single
-setting (`file.drive_listing`, which walks ROM). So the build emits one
-small `V_<BRANCH>.SHTML` per settings branch, each listing its settings
-as `@name=<!--#exec getvar.cgi name-->@`. The client reads a branch in
-about 0.1 s, re-reads one after a write, and fills the table in as each
-branch lands. The slow settings are left out of the sweep and get a file
-of their own, fetched only when you press Read now.
+setting (`file.drive_listing`, which walks ROM). So the build emits
+helper files listing settings as `@name=<!--#exec getvar.cgi name-->@`:
+`V_ALL.SHTML` with every one, which the client streams and paints as the
+values land, and a dozen `V_<n>.SHTML` holding whole branches -- the big
+ones alone, the small ones packed up to 40 settings a file -- one of which
+is re-read after each write (0.1-0.4 s). The slow settings are left out
+of the sweep and get a file of their own, fetched only when you press
+Read now. Every deploy removes the previous set before uploading, so a
+catalogue that packs differently leaves nothing stale on `E:`.
 
 The preprocessor HTML-escapes what it substitutes, so values come back
 with `&amp;`, `&quot;` and friends; `parseVarFile` decodes them. Skipping
@@ -159,6 +163,7 @@ reference/            the ZPL, CPCL and EPL2 programming manuals
 node test/zpl.test.mjs      # ZPL generation/parsing round-trips
 node test/printer.test.mjs  # helper-file parsing and entity decoding
 node test/state.test.mjs    # which interface's IP the header shows
+node test/build.test.mjs    # how settings branches pack into helper files
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier
 ```

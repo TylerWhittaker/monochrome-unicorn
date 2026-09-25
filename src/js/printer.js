@@ -27,7 +27,7 @@
  *   /Zebra/cgi/setvars.cgi   POST, form-encoded "sgd.name=value". Always
  *                            answers 200 with an empty body, success or not,
  *                            so a write is only confirmed by reading back.
- *   /V_<BRANCH>.SHTML        helper files written by the deploy script. Each
+ *   /V_<n>.SHTML             helper files written by the deploy script. Each
  *                            line is "@sgd.name=value@", produced by the
  *                            server-side #exec getvar.cgi preprocessor.
  *   /zpl                     GET  -> edit form containing the stored script
@@ -135,14 +135,31 @@ export function parseVarFile(text) {
   return out;
 }
 
-/** Helper-file name for a settings branch, matching tools/build.mjs. */
-export function branchFile(branch) {
-  return '/V_' + branch.toUpperCase() + '.SHTML';
+/**
+ * Which helper file holds each settings branch: the build packs small
+ * branches together, so this comes from the build (schema.branchFiles)
+ * rather than from the branch's name.
+ */
+let branchFiles = {};
+
+export function setBranchFiles(map) {
+  branchFiles = map || {};
 }
 
-/** Read every live value in one SGD branch (~0.1 s for most branches). */
+/** Helper-file path holding a settings branch, or null if none does. */
+export function branchFile(branch) {
+  const stem = branchFiles[branch];
+  return stem ? `/${stem}.SHTML` : null;
+}
+
+/**
+ * Read every live value in the helper file holding one SGD branch --
+ * which may carry a few small branches besides (~0.1-0.4 s).
+ */
 export async function readBranch(branch) {
-  return parseVarFile(await getText(branchFile(branch)));
+  const path = branchFile(branch);
+  if (!path) throw new Error(`No helper file holds the ${branch} branch`);
+  return parseVarFile(await getText(path));
 }
 
 /**
@@ -252,8 +269,9 @@ export async function writeSetting(name, value) {
 
   // A branch is the smallest thing that can be read: a value only comes
   // back through a helper file holding an #exec for it, and the build
-  // writes one per branch. So the read-back returns every setting in
-  // the branch whether we want them or not -- and we do want them. One
+  // writes a few, each holding whole branches. So the read-back returns
+  // every setting in the file whether we want them or not -- and we do
+  // want them. One
   // write often moves others (print.tone carries print.tone_zpl with
   // it; a mode changes what its neighbours are allowed to hold), and
   // those values have already been paid for.

@@ -23,7 +23,8 @@
  *
  * Modelled on about:config. The catalogue (name, type, range, access,
  * factory default) is inlined at build time; SGD values are read from the
- * V_*.SHTML helper files, one request per branch.
+ * V_*.SHTML helper files: all of them in one streamed request, and after
+ * a write the few-branch file holding that setting.
  *
  * setvars.cgi answers 200 with an empty body whether or not it liked the
  * value, so every write is followed by a read-back of that branch and the
