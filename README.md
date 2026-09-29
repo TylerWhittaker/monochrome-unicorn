@@ -38,7 +38,9 @@ Three modes:
   backlight is on. Its keypad presses the printer's own buttons through
   the undocumented `diag.simulate_event`, so the menus can be driven
   from here — and Up and Down change the value on screen, as they do on
-  the printer.
+  the printer. A printer whose catalogue has no `display.*` branch has
+  no display, so its build leaves this mode out: no tab, and no
+  `LCD.SHTML` uploaded.
 
 ## Deploying
 

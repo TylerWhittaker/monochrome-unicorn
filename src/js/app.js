@@ -108,6 +108,13 @@ function showTab(id) {
 function start() {
   initState(document);
 
+  // The build leaves out the tab of a mode this printer cannot support
+  // (the LCD Viewer, on a printer with no display); drop the mode too,
+  // so a bookmarked #lcd lands on Settings instead of an empty panel.
+  for (const id of Object.keys(MODES)) {
+    if (!qs(`.tab-btn[data-tab="${id}"]`)) delete MODES[id];
+  }
+
   if (!printer.schema) {
     toast('The settings catalogue did not load; the Settings tab will be empty.', 'error', {
       timeout: 0,

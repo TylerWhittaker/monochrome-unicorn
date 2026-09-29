@@ -47,6 +47,28 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  */
 const LCD_VARS = ['display.text', 'display.backlight', 'display.contrast'];
 
+/** A printer with no display.* branch has no front panel to mirror. */
+export function hasLcd(schema) {
+  return Object.keys(schema.settings).some((name) => name.startsWith('display.'));
+}
+
+/*
+ * Take the LCD Viewer's tab and panel out of the page, for a printer
+ * without a display. Each is one line of src/index.html; finding anything
+ * other than exactly one of each means the markup has moved on, and is
+ * an error rather than a page that half-offers the mode.
+ */
+export function withoutLcd(html) {
+  for (const attr of ['data-tab="lcd"', 'data-panel="lcd"']) {
+    const lines = html.split('\n');
+    const hits = lines.filter((line) => line.includes(attr));
+    if (hits.length !== 1)
+      throw new Error(`src/index.html: expected one line with ${attr}, found ${hits.length}`);
+    html = lines.filter((line) => !line.includes(attr)).join('\n');
+  }
+  return html;
+}
+
 /*
  * The one comment that survives squeeze(): the built page is a conveyed
  * copy of this program, so the script it carries says what it is and under
@@ -376,7 +398,9 @@ function helperFiles(schema) {
     files.push({ dest: `E:S_${i}.SHTML`, contents: varLine(name) + '\n' });
   });
 
-  files.push({ dest: 'E:LCD.SHTML', contents: LCD_VARS.map(varLine).join('\n') + '\n' });
+  if (hasLcd(schema)) {
+    files.push({ dest: 'E:LCD.SHTML', contents: LCD_VARS.map(varLine).join('\n') + '\n' });
+  }
 
   /*
    * Every readable setting in one file, for the sweep.
@@ -421,7 +445,8 @@ export function build({ schemaPath, outDir }) {
   schema.slowFiles = slowFiles;
   schema.allFile = ALL_FILE;
 
-  const template = prettifyInlineScripts(readFileSync(join(ROOT, 'src/index.html'), 'utf8'));
+  let template = prettifyInlineScripts(readFileSync(join(ROOT, 'src/index.html'), 'utf8'));
+  if (!hasLcd(schema)) template = withoutLcd(template);
   const css = buildCss(outDir);
   const htmx = readFileSync(join(ROOT, 'vendor/htmx.min.js'), 'utf8').trim();
   const app = prettify(JS_BANNER + '\n' + squeeze(bundle(join(ROOT, 'src/js/app.js'))));
@@ -464,6 +489,7 @@ export function build({ schemaPath, outDir }) {
     indexBytes: Buffer.byteLength(html),
     helperDir,
     helpers: helpers.map((f) => f.dest),
+    lcd: hasLcd(schema),
     parts: {
       css: css.length,
       htmx: htmx.length,
@@ -496,6 +522,7 @@ function main() {
     `  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / 56320).toFixed(1)}s to serve at 56 KB/s)`,
   );
   console.log(`  ${result.helpers.length} helper files in dist/helpers/`);
+  if (!result.lcd) console.log('  no display.* settings: LCD Viewer left out');
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

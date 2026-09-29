@@ -23,7 +23,8 @@
 // How the build packs settings branches into helper files.
 
 import assert from 'node:assert/strict';
-import { packBranches } from '../tools/build.mjs';
+import { readFileSync } from 'node:fs';
+import { packBranches, hasLcd, withoutLcd } from '../tools/build.mjs';
 
 let failures = 0;
 function check(name, fn) {
@@ -58,6 +59,20 @@ check('every branch lands in exactly one file', () => {
   const sizes = { a: 41, b: 40, c: 39, d: 20, e: 20, f: 1, g: 1 };
   const all = packBranches(branches(sizes), 40).flat().sort();
   assert.deepEqual(all, Object.keys(sizes).sort());
+});
+
+check('the LCD Viewer is offered only with a display.* branch', () => {
+  assert.ok(hasLcd({ settings: { 'display.text': [], 'media.type': [] } }));
+  assert.ok(!hasLcd({ settings: { 'media.type': [], 'displayish.x': [] } }));
+});
+
+check('without an LCD the page loses its tab and panel, and nothing else', () => {
+  const page = readFileSync(new URL('../src/index.html', import.meta.url), 'utf8');
+  const stripped = withoutLcd(page);
+  assert.ok(!/data-(tab|panel)="lcd"/.test(stripped));
+  assert.ok(!stripped.includes('LCD Viewer'));
+  assert.equal(page.split('\n').length - stripped.split('\n').length, 2);
+  assert.throws(() => withoutLcd(stripped), /expected one line/);
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');
