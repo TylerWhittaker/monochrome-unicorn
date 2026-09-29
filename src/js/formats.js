@@ -238,3 +238,17 @@ export function buildRecall(lang, file, fields, values, { copies = 1 } = {}) {
 export function escapeValue(lang, value) {
   return lang.id === 'zpl' ? escapeFieldData(value) : String(value);
 }
+
+/** ^PQ takes far more, but past this a typo is likelier than intent. */
+export const MAX_COPIES = 999;
+
+/**
+ * The copy count from what was typed: a whole number, held to 1 to
+ * MAX_COPIES. Anything else -- blank, a fraction, "2e1", a negative --
+ * is not guessed at: the count stays what it was.
+ */
+export function parseCopies(text, previous = 1) {
+  const trimmed = String(text).trim();
+  if (!/^\d+$/.test(trimmed)) return previous;
+  return Math.min(MAX_COPIES, Math.max(1, parseInt(trimmed, 10)));
+}

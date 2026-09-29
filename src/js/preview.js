@@ -35,12 +35,19 @@
  */
 
 import { el, toast } from './ui.js';
-import { extractPrinterError } from './printer.js';
+import { extractPrinterError, printerTurn } from './printer.js';
 
 let seq = 0;
 
-/** Issue one htmx request and resolve with its response detail. */
+/**
+ * Issue one htmx request and resolve with its response detail. It takes
+ * its turn with the printer like any other request (printer.js).
+ */
 function htmxPost(path, values, options) {
+  return printerTurn(() => htmxSend(path, values, options));
+}
+
+function htmxSend(path, values, options) {
   return new Promise((resolve, reject) => {
     const settle = (event) => {
       const info = event.detail.pathInfo;

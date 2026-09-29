@@ -34,6 +34,12 @@
 import { el, qs, replaceChildren, toast, debounce } from './ui.js';
 import { printer, allSettings } from './state.js';
 import { readAllSettings, readSlowSetting, writeSetting, valuesMatch } from './printer.js';
+import {
+  cachedDriveListing,
+  driveListingLoading,
+  onDriveListing,
+  refreshDriveListing,
+} from './drives.js';
 
 /** Shown wherever the live value has not been read yet. */
 const UNKNOWN = '\u2014';
@@ -484,6 +490,8 @@ function renderValueCell(entry) {
   // Slow settings are skipped by the sweep, so they stay unknown until
   // asked for -- whether or not they are also writable.
   const isSlow = current === undefined && slowFileFor(meta.name) !== null;
+  // The drive listing is also read in the background, for the other modes.
+  const inFlight = meta.name === DRIVE_LISTING && driveListingLoading();
   const readNow =
     isSlow &&
     el(
@@ -491,9 +499,10 @@ function renderValueCell(entry) {
       {
         class: 'btn-secondary btn-sm',
         title: 'Reading this one takes a few seconds, so it is left out of the sweep',
+        disabled: inFlight,
         onclick: (event) => loadSlowSetting(meta.name, event.currentTarget),
       },
-      ['Read now'],
+      [inFlight ? 'reading\u2026' : 'Read now'],
     );
 
   if (!meta.writable) {
@@ -619,6 +628,20 @@ async function applyChange(entry, value) {
  * A setting kept out of the branch sweep because reading it takes
  * seconds. It has a helper file of its own; fetch that on request.
  */
+const DRIVE_LISTING = 'file.drive_listing';
+
+/**
+ * Show the shared copy of the drive listing in its row. It is read after
+ * the sweep, or by another mode, rather than by the row's own button.
+ */
+function paintDriveListing() {
+  const cached = cachedDriveListing();
+  if (cached) values[DRIVE_LISTING] = cached.raw;
+  const entry = rows.get(DRIVE_LISTING);
+  if (entry) renderValueCell(entry);
+  applyFilter();
+}
+
 function slowFileFor(name) {
   return (printer.schema.slowFiles || {})[name] || null;
 }
@@ -633,6 +656,12 @@ async function loadSlowSetting(name, button) {
   button.disabled = true;
   button.textContent = 'reading\u2026';
   try {
+    if (name === DRIVE_LISTING) {
+      // Through the shared copy, so the other modes see this read too.
+      await refreshDriveListing({ force: true });
+      paintDriveListing();
+      return;
+    }
     Object.assign(values, await readSlowSetting(stem));
     const entry = rows.get(name);
     if (entry) renderValueCell(entry);
@@ -780,6 +809,13 @@ async function refresh() {
   } else {
     progress.update(`Read ${read} SGD values`, 'success');
   }
+
+  // Now the printer is free, read the drive listing for the modes that
+  // need it: nine seconds spent here is nine seconds they do not wait.
+  // A copy that is still recent is shown rather than re-read.
+  refreshDriveListing()
+    .then(paintDriveListing)
+    .catch(() => {});
 }
 
 /* ------------------------------------------------------------------ *
@@ -869,6 +905,7 @@ export function mountSettings(panel) {
     ]),
   );
 
+  onDriveListing(paintDriveListing);
   applyFilter();
   refresh();
 }

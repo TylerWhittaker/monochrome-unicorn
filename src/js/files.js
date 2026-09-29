@@ -65,8 +65,16 @@ import {
 } from './ui.js';
 import { printer, loadUnitPreference } from './state.js';
 import {
+  cachedDriveListing,
+  driveListingError,
+  driveListingLoading,
+  driveListingStem,
+  onDriveListing,
+  refreshDriveListing,
+  staleDriveListing,
+} from './drives.js';
+import {
   listFiles,
-  readDriveListing,
   fetchStoredFile,
   detokenizeZpl,
   readScript,
@@ -111,6 +119,8 @@ const fsState = {
   loading: false,
   /** Set once a listing has landed, so returning to the tab is instant. */
   loaded: false,
+  /** When the listing shown was read, so a copy already taken is not retaken. */
+  listedAt: 0,
 };
 
 let fsListNode = null;
@@ -202,21 +212,17 @@ const FS_TYPE_BADGE = {
  * ------------------------------------------------------------------ */
 
 /**
- * Read the whole filesystem.
+ * Show the drive listing, then ask for a fresh one.
  *
- * Nine seconds, during which the printer's web server answers nothing
- * else, so it happens once and the header says it is happening. The
- * Refresh button is how you ask for it again.
+ * The listing is read once, shared with the other modes (drives.js), and
+ * usually already there -- Settings reads it when its sweep is done. So
+ * this shows that copy at once, and re-reads in the background: nine
+ * seconds, during which the printer's web server answers nothing else,
+ * which is why a copy under a minute old is left alone unless Refresh
+ * forces it.
  */
 async function fsRefresh({ force = false } = {}) {
-  if (fsState.loading) return;
-  if (fsState.loaded && !force) {
-    fsRenderList();
-    return;
-  }
-
-  const stem = (printer.schema.slowFiles || {})['file.drive_listing'];
-  if (!stem) {
+  if (!driveListingStem()) {
     fsSetNotice(
       'This build has no helper file for file.drive_listing, so the filesystem cannot ' +
         'be listed. Re-deploy against this printer.',
@@ -224,23 +230,32 @@ async function fsRefresh({ force = false } = {}) {
     );
     return;
   }
+  fsSync();
+  // Failure is reported through fsSync, which every read calls back.
+  await refreshDriveListing({ force }).catch(() => {});
+}
 
-  fsState.loading = true;
+/** Bring the tab up to date with the shared listing. */
+function fsSync() {
+  if (!fsListNode) return;
+  const cached = cachedDriveListing();
+  // Only a new listing replaces the rows: a delete made here since the
+  // last read has already taken its row out, and must not bring it back.
+  if (cached && cached.at !== fsState.listedAt) {
+    fsState.files = [...cached.files].sort((a, b) => a.name.localeCompare(b.name));
+    fsState.listedAt = cached.at;
+    fsState.loaded = true;
+  }
+  fsState.loading = driveListingLoading();
+
+  const err = driveListingError();
+  if (err && !fsState.loading) {
+    fsSetNotice(`The drive listing could not be read: ${err.message}`, 'warn');
+  } else {
+    fsSetNotice('');
+  }
   fsRenderLoading();
   fsRenderList();
-
-  try {
-    const files = await readDriveListing({ fileStem: stem });
-    fsState.files = files.sort((a, b) => a.name.localeCompare(b.name));
-    fsState.loaded = true;
-    fsSetNotice('');
-  } catch (err) {
-    fsSetNotice(`The drive listing could not be read: ${err.message}`, 'warn');
-  } finally {
-    fsState.loading = false;
-    fsRenderLoading();
-    fsRenderList();
-  }
 }
 
 /** The spinner and its word, while the listing is on its way. */
@@ -257,24 +272,24 @@ function fsRenderLoading() {
       role: 'status',
       'aria-label': 'Loading',
     }),
-    el('span', { class: 'text-[11px] text-ink-500' }, ['reading the drive listing…']),
+    el('span', { class: 'text-[11px] text-ink-500' }, [
+      fsState.loaded ? 'refreshing the drive listing…' : 'reading the drive listing…',
+    ]),
   ]);
 }
 
 /**
  * The printer's web server answers one request at a time, and the drive
- * listing holds it for about nine seconds. A row's button pressed in
- * that window would otherwise come back as the printer's own misleading
- * "busy processing another request", so say what is really happening.
+ * listing holds it for about nine seconds. A row's button pressed in that
+ * window waits its turn (printer.js holds it back), so say why nothing
+ * seems to happen.
  */
-function fsPrinterBusy() {
-  if (!fsState.loading) return false;
+function fsNoteWait() {
+  if (!driveListingLoading()) return;
   toast(
-    'The drive listing is still being read — the printer answers one request at a time. ' +
-      'Try again in a moment.',
+    'Waiting for the drive listing to finish — the printer answers one request at a time.',
     'info',
   );
-  return true;
 }
 
 function fsSetNotice(text, kind = 'info') {
@@ -458,7 +473,7 @@ async function fsReadText(file) {
 }
 
 async function fsViewFile(file) {
-  if (fsPrinterBusy()) return;
+  fsNoteWait();
   const otype = String(file.otype).toUpperCase();
   const busy = toast(`Reading ${file.name}…`, 'busy', { timeout: 0 });
 
@@ -535,7 +550,7 @@ async function fsViewFile(file) {
  * line -- the form's own output runs most of a label together on one.
  */
 async function fsDownloadFile(file) {
-  if (fsPrinterBusy()) return;
+  fsNoteWait();
   const busy = toast(`Fetching ${file.name}…`, 'busy', { timeout: 0 });
 
   let blob;
@@ -582,7 +597,7 @@ function fsEditFile(file) {
  * the confirmation says what is about to happen.
  */
 async function fsPrintFile(file) {
-  if (fsPrinterBusy()) return;
+  fsNoteWait();
   const lang = languageOf(file.otype);
   const busy = toast(`Looking at ${file.name}…`, 'busy', { timeout: 0 });
 
@@ -640,7 +655,7 @@ async function fsReadSourceText(file) {
  * contents while it does.
  */
 async function fsRunFile(file) {
-  if (fsPrinterBusy()) return;
+  fsNoteWait();
   let preview = '';
   try {
     const text = await fsReadSourceText(file);
@@ -690,7 +705,7 @@ async function fsRunFile(file) {
  * is still there, the CGI gets a turn with the password.
  */
 async function fsDeleteFile(file) {
-  if (fsPrinterBusy()) return;
+  fsNoteWait();
   const ok = await confirmDialog(
     'Delete this file?',
     `${file.name} will be removed from the printer. This cannot be undone.`,
@@ -728,7 +743,10 @@ async function fsDeleteFile(file) {
 async function fsStillThere(file) {
   const files = await listFiles({ dev: file.dev, otype: '*  ' });
   const survived = files.some((f) => f.dev === file.dev && f.oname === file.oname);
-  if (!survived) fsState.files = fsState.files.filter((f) => f !== file);
+  if (!survived) {
+    fsState.files = fsState.files.filter((f) => f !== file);
+    staleDriveListing();
+  }
   return survived;
 }
 
@@ -971,16 +989,15 @@ export function mountFiles(panel) {
     ]),
   );
 
-  fsRenderList();
+  onDriveListing(fsSync);
   fsRefresh();
 }
 
 /**
- * Coming back to the tab shows what was already read.
- *
- * The listing is nine seconds of the printer answering nothing else, so
- * it is not something to spend on a tab switch; Refresh asks for a new
- * one, and the actions that change the filesystem re-read it themselves.
+ * Coming back to the tab shows what was already read, and re-reads it
+ * in the background if that copy is more than a minute old. Refresh
+ * forces a read, and the actions that change the filesystem re-read it
+ * themselves.
  */
 export function onFilesShown() {
   fsRefresh();

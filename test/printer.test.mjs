@@ -185,5 +185,53 @@ check('names are cut to what the printer will hold', () => {
   );
 });
 
+/*
+ * The request gate. fetch is replaced by one whose answers the test
+ * releases by hand, to see which requests reach the printer when.
+ */
+async function checkAsync(name, fn) {
+  try {
+    await fn();
+    console.log(`  ok   ${name}`);
+  } catch (err) {
+    failures++;
+    console.log(`  FAIL ${name}\n       ${err.message}`);
+  }
+}
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function fakePrinter() {
+  const sent = [];
+  const answers = new Map();
+  globalThis.fetch = (url) =>
+    new Promise((resolve) => {
+      sent.push(url);
+      answers.set(url, () => resolve(new Response(`@x=${url}@\n`)));
+    });
+  return { sent, answer: (url) => answers.get(url)() };
+}
+
+await checkAsync('a slow read waits for requests in flight, and holds back the rest', async () => {
+  const printer = fakePrinter();
+  const first = mod.fetchStoredFile({ oname: 'A', otype: 'ZPL' });
+  const slow = mod.readSlowSetting('S_0');
+  await tick();
+  assert.deepEqual(printer.sent, ['/A.ZPL'], 'the slow read waits for /A.ZPL');
+
+  const later = mod.fetchStoredFile({ oname: 'B', otype: 'ZPL' });
+  printer.answer('/A.ZPL');
+  await first;
+  await tick();
+  assert.deepEqual(printer.sent, ['/A.ZPL', '/S_0.SHTML']);
+
+  printer.answer('/S_0.SHTML');
+  assert.deepEqual(await slow, { x: '/S_0.SHTML' });
+  await tick();
+  assert.deepEqual(printer.sent, ['/A.ZPL', '/S_0.SHTML', '/B.ZPL'], 'B went after the slow read');
+  printer.answer('/B.ZPL');
+  await later;
+});
+
 console.log(failures ? `\n${failures} failing` : '\nall passing');
 process.exit(failures ? 1 : 0);

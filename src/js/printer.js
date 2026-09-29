@@ -53,6 +53,53 @@
  * object and decide how loud to be about it.
  */
 
+/*
+ * The web server answers one request at a time, and a slow setting
+ * (file.drive_listing, nine seconds) holds it for the whole read: a
+ * request sent meanwhile comes back as "The printer is busy processing
+ * another request". So a slow read waits for the requests in flight to
+ * finish, and every request made after it waits for the slow read,
+ * rather than failing.
+ */
+let slowRead = null;
+let inFlight = 0;
+let idleWaiters = [];
+
+/** Run one ordinary request, held back while a slow read has the printer. */
+export async function printerTurn(request) {
+  // The check and the count happen in the same tick, so a slow read
+  // cannot start between them.
+  while (slowRead) await slowRead.catch(() => {});
+  inFlight++;
+  try {
+    return await request();
+  } finally {
+    if (--inFlight === 0) {
+      const waiters = idleWaiters;
+      idleWaiters = [];
+      for (const wake of waiters) wake();
+    }
+  }
+}
+
+/**
+ * Run a slow read with the printer to itself. It claims the printer at
+ * once, so nothing new starts while it waits for what is in flight.
+ */
+async function slowTurn(request) {
+  while (slowRead) await slowRead.catch(() => {});
+  const turn = (async () => {
+    while (inFlight > 0) await new Promise((wake) => idleWaiters.push(wake));
+    return request();
+  })();
+  slowRead = turn;
+  try {
+    return await turn;
+  } finally {
+    if (slowRead === turn) slowRead = null;
+  }
+}
+
 /** Serialize a flat object as application/x-www-form-urlencoded. */
 function formEncode(fields) {
   return Object.entries(fields)
@@ -60,7 +107,11 @@ function formEncode(fields) {
     .join('&');
 }
 
-async function postForm(url, fields, { timeout = 30000 } = {}) {
+function postForm(url, fields, options) {
+  return printerTurn(() => sendForm(url, fields, options));
+}
+
+async function sendForm(url, fields, { timeout = 30000 } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
@@ -76,7 +127,11 @@ async function postForm(url, fields, { timeout = 30000 } = {}) {
   }
 }
 
-async function getText(url, { timeout = 30000, charset = null } = {}) {
+function getText(url, options) {
+  return printerTurn(() => fetchText(url, options));
+}
+
+async function fetchText(url, { timeout = 30000, charset = null } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
@@ -168,7 +223,7 @@ export async function readBranch(branch) {
  * are not required, but seconds are.
  */
 export async function readSlowSetting(fileStem, { timeout = 60000 } = {}) {
-  return parseVarFile(await getText(`/${fileStem}.SHTML`, { timeout }));
+  return parseVarFile(await slowTurn(() => fetchText(`/${fileStem}.SHTML`, { timeout })));
 }
 
 /**
@@ -212,7 +267,11 @@ export function extractVarRecords(buffer) {
  *
  * `onValues` is called with each batch as it is decoded.
  */
-export async function readAllSettings(fileStem, onValues, { timeout = 120000 } = {}) {
+export function readAllSettings(fileStem, onValues, options) {
+  return printerTurn(() => streamAllSettings(fileStem, onValues, options));
+}
+
+async function streamAllSettings(fileStem, onValues, { timeout = 120000 } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
@@ -353,9 +412,11 @@ export function loadStoredImage({ dev, oname, otype }) {
 
   const pending = (async () => {
     const url = `/png?dev=${dev}&oname=${encodeURIComponent(oname)}&otype=${otype}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status} for ${key}`);
-    const bytes = repairPng(new Uint8Array(await res.arrayBuffer()));
+    const bytes = await printerTurn(async () => {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${key}`);
+      return repairPng(new Uint8Array(await res.arrayBuffer()));
+    });
     return URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
   })();
 
@@ -508,7 +569,11 @@ export function parseDriveListing(raw) {
  * FAILED for every write-only setting, file.delete included, so it is
  * no evidence either way -- but nothing arrives.)
  */
-export async function fetchStoredFile({ oname, otype }, { timeout = 60000 } = {}) {
+export function fetchStoredFile(file, options) {
+  return printerTurn(() => fetchStoredBytes(file, options));
+}
+
+async function fetchStoredBytes({ oname, otype }, { timeout = 60000 } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {

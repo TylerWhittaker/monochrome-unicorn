@@ -22,7 +22,9 @@ Three modes:
   label languages (ZPL, EPL, CPCL), fill in one box per field, preview
   and print. What is possible varies by language, because the printer's
   web server will only hand back the contents of a `.ZPL`; the mode says
-  so rather than pretending otherwise.
+  so rather than pretending otherwise. CPCL formats only show up in the
+  drive listing (below), so they join the list when it lands, with a
+  note beside the list while it is being read.
 - **File System** — every stored object on every drive, with what can
   be done to each: view it (a label as its ZPL, a graphic as a picture,
   a batch file as its escape sequences), download it to your computer,
@@ -31,7 +33,11 @@ Three modes:
   type, because the printer's web server treats types very differently;
   a button that is off says why. The listing is one read of
   `file.drive_listing` — about nine seconds, with the header saying so
-  — which is the only place the real extensions live.
+  — which is the only place the real extensions live. Settings reads it
+  once its own sweep is done and keeps one copy for the whole console,
+  so this mode and Format Printer open on that copy and re-read it in
+  the background (unless it is under a minute old; Refresh always
+  re-reads).
 - **LCD Viewer** — mirror the printer's front panel on an adjustable
   timer (2 s by default), with a note of how long ago it last refreshed.
   Drawn as a classic green LCD, which brightens when the printer's
@@ -135,6 +141,7 @@ src/js/
   app.js              entry point: header, tab bar, mode mounting
   state.js            printer facts and unit conversion
   printer.js          every call to the printer's web server
+  drives.js           the shared copy of file.drive_listing
   settings.js         mode 1
   editor.js           mode 2
   format.js           mode 3
@@ -218,7 +225,9 @@ a 500).
   a file, and it covers one drive per request. The File System mode
   therefore reads `file.drive_listing` instead: one nine-second read
   with the real names, sizes, dates and all three drives, during which
-  the printer answers nothing else.
+  the printer answers nothing else. Any other request the console makes
+  meanwhile waits for it to finish instead of failing with the printer's
+  "busy processing another request".
 - What the console can put **on** the printer is what its web server
   accepts: a `.ZPL` through the label form, and a picture as a `.GRF`
   (reduced to one bit here in the browser). A `.PNG` cannot be stored

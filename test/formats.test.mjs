@@ -142,5 +142,15 @@ check('a format the printer cannot parse is flagged', () => {
   assert.equal(f.printerSpeaks(f.LANGUAGES.cpcl, 'hybrid_xml_zpl'), false);
 });
 
+check('copies must be a whole number from 1 to the limit', () => {
+  assert.equal(f.parseCopies('3'), 3);
+  assert.equal(f.parseCopies(' 12 '), 12);
+  assert.equal(f.parseCopies('0'), 1);
+  assert.equal(f.parseCopies('5000'), f.MAX_COPIES);
+  for (const bad of ['', '2.5', '2e1', '-3', 'abc']) {
+    assert.equal(f.parseCopies(bad, 7), 7, `${JSON.stringify(bad)} keeps the last count`);
+  }
+});
+
 console.log(failures ? `\n${failures} failing` : '\nall passing');
 process.exit(failures ? 1 : 0);

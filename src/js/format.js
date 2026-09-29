@@ -30,12 +30,20 @@
  *   EPL   the web server will not hand over the file, so the fields are
  *         described by hand (or by pasting the source); print only.
  *   CPCL  same, and /dir does not even report the real extension, so
- *         finding these is a separate and slower scan.
+ *         these come from the shared drive listing (drives.js), read in
+ *         the background.
  */
 
 import { el, toast, confirmDialog, debounce, formatBytes, replaceChildren, modal } from './ui.js';
 import { printer } from './state.js';
-import { listFiles, readScript, readSlowSetting } from './printer.js';
+import { listFiles, readScript } from './printer.js';
+import {
+  cachedDriveListing,
+  driveListingError,
+  driveListingLoading,
+  onDriveListing,
+  refreshDriveListing,
+} from './drives.js';
 import {
   LANGUAGES,
   FORMAT_OTYPES,
@@ -44,11 +52,15 @@ import {
   parseFields,
   blankFields,
   buildRecall,
+  parseCopies,
+  MAX_COPIES,
 } from './formats.js';
 import { createPreview } from './preview.js';
 
 const formatState = {
   formats: [],
+  /** What /dir last listed; the CPCL formats are added from the drive listing. */
+  dirFormats: [],
   current: null,
   lang: null,
   source: '',
@@ -68,7 +80,7 @@ let noticeHost = null;
 let formatPreview = null;
 let printBtn = null;
 let summaryNode = null;
-let scanBtn = null;
+let scanNode = null;
 
 /* ------------------------------------------------------------------ *
  * The command stream for the current state
@@ -389,78 +401,74 @@ function renderFormatOptions() {
 
 /** Formats /dir will admit to, which is everything except CPCL. */
 async function refreshFormats() {
-  let found = [];
   try {
     const files = await listFiles({ dev: 'E', otype: '*  ' });
-    found = files.filter((f) => FORMAT_OTYPES.includes(f.otype));
+    formatState.dirFormats = files.filter((f) => FORMAT_OTYPES.includes(f.otype));
   } catch (err) {
     toast(`Could not list stored formats: ${err.message}`, 'error');
     return;
   }
-
-  // Whatever a CPCL scan turned up keeps its place in the list.
-  const scanned = formatState.formats.filter(
-    (f) => f.fromScan && !found.some((x) => x.name === f.name),
-  );
-  formatState.formats = [...found, ...scanned];
-  renderFormatOptions();
+  mergeFormats();
 }
 
 /**
  * CPCL formats are invisible to /dir: it reports E:SHELF.FMT as type
  * "---", losing the extension. file.drive_listing is the one place the
- * real name survives, and reading it takes about nine seconds, so this
- * is a button rather than something done on every visit.
+ * real name survives. Reading it takes about nine seconds, so the list
+ * is built from the shared copy (drives.js) and grows or shrinks when a
+ * fresh one lands.
  */
-async function scanForCpcl() {
-  const stem = (printer.schema.slowFiles || {})['file.drive_listing'];
-  if (!stem) {
-    toast('This build has no helper for file.drive_listing.', 'error');
+function mergeFormats() {
+  const cpclTypes = LANGUAGES.cpcl.otypes.map((t) => t.toUpperCase());
+  const cached = cachedDriveListing();
+  const cpcl = (cached ? cached.files : []).filter(
+    (f) =>
+      f.dev === 'E' &&
+      cpclTypes.includes(f.otype) &&
+      !formatState.dirFormats.some((x) => x.name === f.name),
+  );
+  formatState.formats = [...formatState.dirFormats, ...cpcl];
+  renderFormatOptions();
+}
+
+/** The word beside the list while the drive listing is being read. */
+function renderScanState() {
+  if (!scanNode) return;
+  if (driveListingLoading()) {
+    replaceChildren(scanNode, [
+      el('span', {
+        class:
+          'inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-300 border-t-ink-700',
+        role: 'status',
+        'aria-label': 'Loading',
+      }),
+      el('span', { class: 'text-[11px] text-ink-500' }, ['looking for CPCL formats…']),
+    ]);
+    scanNode.title =
+      'CPCL formats are not listed under their real extension, so the full drive listing ' +
+      'is being read to find them. This takes a few seconds.';
     return;
   }
+  const err = driveListingError();
+  replaceChildren(
+    scanNode,
+    err ? [el('span', { class: 'text-[11px] text-amber-700' }, ['CPCL formats not checked'])] : [],
+  );
+  scanNode.title = err ? `The drive listing could not be read: ${err.message}` : '';
+}
 
-  scanBtn.disabled = true;
-  scanBtn.textContent = 'Scanning…';
-  const busy = toast('Reading the full drive listing… this takes a few seconds', 'busy', {
-    timeout: 0,
-  });
+function syncDriveListing() {
+  mergeFormats();
+  renderScanState();
+}
 
-  try {
-    const values = await readSlowSetting(stem, { timeout: 60000 });
-    const listing = values['file.drive_listing'] || '';
-    const re = new RegExp(`"([A-Z0-9_~]+)\\.(${LANGUAGES.cpcl.otypes.join('|')})"`, 'gi');
-
-    const found = new Map();
-    let match;
-    while ((match = re.exec(listing)) !== null) {
-      const oname = match[1].toUpperCase();
-      const otype = match[2].toUpperCase();
-      found.set(`E:${oname}.${otype}`, {
-        name: `E:${oname}.${otype}`,
-        dev: 'E',
-        oname,
-        otype,
-        bytes: 0,
-        fromScan: true,
-      });
-    }
-
-    const added = [...found.values()].filter(
-      (f) => !formatState.formats.some((x) => x.name === f.name),
-    );
-    formatState.formats = [...formatState.formats, ...added];
-    renderFormatOptions();
-
-    busy.update(
-      added.length ? `Found ${added.length} CPCL format(s).` : 'No CPCL formats on this printer.',
-      added.length ? 'success' : 'info',
-    );
-  } catch (err) {
-    busy.update(`Scan failed: ${err.message}`, 'error');
-  } finally {
-    scanBtn.disabled = false;
-    scanBtn.textContent = 'Scan for CPCL';
-  }
+/** List the formats, then read the drive listing for the CPCL ones. */
+async function loadFormats() {
+  await refreshFormats();
+  drainPendingFormat();
+  // After /dir, not beside it: the listing holds the printer for nine
+  // seconds. Failure shows in renderScanState.
+  refreshDriveListing().catch(() => {});
 }
 
 /* ------------------------------------------------------------------ *
@@ -550,28 +558,21 @@ export function mountFormat(panel) {
   formatSelect.addEventListener('change', () => selectFormat(formatSelect.value));
 
   const copiesInput = el('input', {
-    class: 'field field-mono w-20',
+    class: 'field field-mono w-14',
     type: 'number',
     min: '1',
-    max: '999',
+    max: String(MAX_COPIES),
+    step: '1',
     value: '1',
+    inputmode: 'numeric',
   });
   copiesInput.addEventListener('change', () => {
-    formatState.copies = Math.max(1, Math.round(Number(copiesInput.value) || 1));
+    formatState.copies = parseCopies(copiesInput.value, formatState.copies);
     copiesInput.value = String(formatState.copies);
     scheduleFormatPreview();
   });
 
-  scanBtn = el(
-    'button',
-    {
-      class: 'btn-secondary btn-sm',
-      title:
-        'CPCL formats are not listed under their real extension, so this reads the full drive listing to find them',
-      onclick: () => scanForCpcl(),
-    },
-    ['Scan for CPCL'],
-  );
+  scanNode = el('span', { class: 'flex items-center gap-1.5' });
 
   printBtn = el(
     'button',
@@ -594,9 +595,15 @@ export function mountFormat(panel) {
       el('div', { class: 'card min-w-0 overflow-hidden' }, [
         el('div', { class: 'toolbar' }, [
           formatSelect,
-          scanBtn,
-          el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, ['Copies', copiesInput]),
-          el('div', { class: 'ml-auto flex items-center gap-3' }, [summaryNode, printBtn]),
+          scanNode,
+          el('div', { class: 'ml-auto flex items-center gap-3' }, [
+            summaryNode,
+            el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [
+              'Copies',
+              copiesInput,
+            ]),
+            printBtn,
+          ]),
         ]),
         noticeHost,
         fieldsHost,
@@ -608,12 +615,17 @@ export function mountFormat(panel) {
 
   renderFields();
   formatPreview.idle('Choose a format to see it rendered.');
-  refreshFormats().then(drainPendingFormat);
+  onDriveListing(syncDriveListing);
+  renderScanState();
+  loadFormats();
 }
 
-/** Stored formats can change from the Label Editor, so re-read the list. */
+/**
+ * Stored formats can change from the Label Editor, so re-read the list.
+ * The drive listing is re-read too, unless the shared copy is recent.
+ */
 export function onFormatShown() {
-  refreshFormats().then(drainPendingFormat);
+  loadFormats();
 }
 
 /**
