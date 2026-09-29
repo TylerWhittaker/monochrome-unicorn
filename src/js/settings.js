@@ -260,9 +260,9 @@ function sourceNotice() {
  * ------------------------------------------------------------------ */
 
 export const SORT_MODES = [
-  ['default', 'Catalogue order'],
-  ['alpha', 'Alphabetical'],
-  ['alpha-enable', 'Alphabetical, .enable first'],
+  ['default', 'default order'],
+  ['alpha', 'alphabetical'],
+  ['alpha-enable', 'alphabetical, .enable first'],
 ];
 
 /**
@@ -851,7 +851,7 @@ export function mountSettings(panel) {
       el('div', { class: 'toolbar' }, [
         filterInput,
         sortSelect,
-        toggle('Changed from default', (v) => {
+        toggle('changed from default', (v) => {
           modifiedOnly = v;
         }),
         el('div', { class: 'ml-auto flex items-center gap-3' }, [countNode, refreshBtn]),
