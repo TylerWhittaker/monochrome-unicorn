@@ -115,5 +115,30 @@ check('only a whole ".enable" suffix counts', () => {
   );
 });
 
+check('every filter word must match, in any order', () => {
+  const names = [
+    'weblink.ip.conn1.location',
+    'weblink.ip.conn1.proxy',
+    'weblink.ip.conn2.proxy',
+    'weblink.enable',
+    'ip.proxy',
+  ];
+  const hits = (filter) => names.filter((n) => s.matchesFilter(filter, n, undefined));
+  assert.deepEqual(hits('weblink conn1'), ['weblink.ip.conn1.location', 'weblink.ip.conn1.proxy']);
+  assert.deepEqual(hits('conn1 weblink'), hits('weblink conn1'));
+  assert.deepEqual(hits('weblink conn proxy'), [
+    'weblink.ip.conn1.proxy',
+    'weblink.ip.conn2.proxy',
+  ]);
+  assert.deepEqual(hits('  WebLink   CONN2 '), ['weblink.ip.conn2.proxy']);
+  assert.deepEqual(hits(''), names, 'an empty filter shows everything');
+});
+
+check('a word may match the name and another the value', () => {
+  assert.ok(s.matchesFilter('media 203', 'media.darkness', '203 dpi'));
+  assert.ok(!s.matchesFilter('media 300', 'media.darkness', '203 dpi'));
+  assert.ok(!s.matchesFilter('media 203', 'media.darkness', undefined));
+});
+
 console.log(failures ? `\n${failures} failure(s)` : '\nall passed');
 process.exit(failures ? 1 : 0);

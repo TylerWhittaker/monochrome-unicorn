@@ -647,13 +647,23 @@ async function loadSlowSetting(name, button) {
  * Filtering and rendering
  * ------------------------------------------------------------------ */
 
+/**
+ * Whether a setting passes the filter: every whitespace-separated word
+ * must appear, in any order, in its name or its value.
+ */
+export function matchesFilter(filter, name, value) {
+  const haystacks = [name.toLowerCase()];
+  if (value !== undefined) haystacks.push(String(value).toLowerCase());
+  return filter
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word !== '')
+    .every((word) => haystacks.some((h) => h.includes(word)));
+}
+
 function matches(meta) {
   if (modifiedOnly && rows.get(meta.name)?.row.dataset.modified !== 'true') return false;
-  if (!filterText) return true;
-  const needle = filterText.toLowerCase();
-  if (meta.name.toLowerCase().includes(needle)) return true;
-  const value = values[meta.name];
-  return value !== undefined && String(value).toLowerCase().includes(needle);
+  return matchesFilter(filterText, meta.name, values[meta.name]);
 }
 
 function applyFilter() {
