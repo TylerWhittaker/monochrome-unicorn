@@ -591,7 +591,7 @@ function fsEditFile(file) {
  * Print a stored format.
  *
  * A format with fields in it prints blanks if it is simply recalled, so
- * anything that turns out to have fields is handed to Format Printer
+ * anything that turns out to have fields is handed to Stored Formats
  * with its source, rather than sent straight to the platen. Source we
  * could not read is not a reason to refuse: file.print still works, and
  * the confirmation says what is about to happen.

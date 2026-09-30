@@ -22,7 +22,7 @@ Three modes:
   printer's own render, not a simulation. Every length is shown in
   inches, millimetres or dots, switched by one radio group and
   remembered between visits.
-- **Format Printer** — pick a stored format in any of the printer's
+- **Stored Formats** — pick a stored format in any of the printer's
   label languages (ZPL, EPL, CPCL), fill in one box per field, preview
   and print. What is possible varies by language, because the printer's
   web server will only hand back the contents of a `.ZPL`; the mode says
@@ -39,7 +39,7 @@ Three modes:
   `file.drive_listing` — about nine seconds, with the header saying so
   — which is the only place the real extensions live. Settings reads it
   once its own sweep is done and keeps one copy for the whole console,
-  so this mode and Format Printer open on that copy and re-read it in
+  so this mode and Stored Formats open on that copy and re-read it in
   the background (unless it is under a minute old; Refresh always
   re-reads).
 - **LCD Viewer** — mirror the printer's front panel on an adjustable

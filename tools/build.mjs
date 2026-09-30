@@ -97,7 +97,7 @@ const BOOT_VARS = [
   'device.friendly_name',
   'device.unique_id',
   'device.host_status',
-  // Which label language the printer will parse, so Format Printer can
+  // Which label language the printer will parse, so Stored Formats can
   // warn before sending it something it will silently ignore.
   'device.languages',
   'appl.name',

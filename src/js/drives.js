@@ -23,7 +23,7 @@
  *
  * The listing is the only place the real file extensions live, and it
  * takes about nine seconds to read. Settings reads it once the sweep is
- * done; after that, the File System and Format Printer modes start from
+ * done; after that, the File System and Stored Formats modes start from
  * the copy held here and ask for a fresh one in the background. Unless
  * something outside this console has changed the printer's files, the
  * fresh one says the same thing.

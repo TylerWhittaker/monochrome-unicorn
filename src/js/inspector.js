@@ -787,7 +787,7 @@ export function renderElementPanel(
           ),
         ),
         el('p', { class: 'text-[11px] text-ink-400' }, [
-          'Saved as ^FN. Fill it in from the Format Printer tab, or from a host that recalls this format.',
+          'Saved as ^FN. Fill it in from the Stored Formats tab, or from a host that recalls this format.',
         ]),
       ]),
     );

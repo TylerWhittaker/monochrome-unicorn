@@ -598,7 +598,7 @@ function barcodeZpl(item) {
 /**
  * A ^FN placeholder: the variable part of a stored format. The position
  * and font live here; the data is supplied later, either by the printer's
- * host or by the Format Printer mode.
+ * host or by the Stored Formats mode.
  */
 function fieldZpl(item) {
   const parts = [`^FO${item.x},${item.y}`];
@@ -1281,7 +1281,7 @@ function barcodeFromArgs(symbology, args, by) {
 }
 
 /* ------------------------------------------------------------------ *
- * ^FN fields (used by Format Printer)
+ * ^FN fields (used by Stored Formats)
  * ------------------------------------------------------------------ */
 
 /**
