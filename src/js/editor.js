@@ -223,6 +223,9 @@ async function setView(next) {
     }
     adoptDocument(doc);
     editorState.source = text;
+    // The panel edits the document it was drawn for, so it follows the
+    // new one -- otherwise its size boxes would change the old one.
+    renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
   } else {
     editorState.source = toZpl(editorState.doc);
   }
