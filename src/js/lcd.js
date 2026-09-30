@@ -30,11 +30,15 @@
  * from a machine that can.
  *
  * What does come through intact is `display.text`: the same screen as a
- * 20x6 character grid, padding and all, which is what this mode draws.
+ * 20x6 character grid, padding and all, which is what this mode draws
+ * -- unless lcd_display_helper.sh is running on a machine that can reach
+ * port 9100. That copies the real bitmap into the printer's RAM each
+ * second, as R:LCD.GRF, and /png hands it back; then this mode draws the
+ * actual pixels instead.
  */
 
 import { el, replaceChildren } from './ui.js';
-import { readLcd, pressPanelButton } from './printer.js';
+import { readLcd, readPanelFrame, pressPanelButton } from './printer.js';
 
 /** The front panel is twenty characters across and six rows down. */
 const COLS = 20;
@@ -48,6 +52,20 @@ const ROWS = 6;
  */
 const ICONS = { 0xc2: '⌂' };
 
+/*
+ * The helper's frames. With none on the printer, look again now and
+ * then rather than on every poll; a frame whose counter has stood still
+ * this long means the helper has stopped without cleaning up.
+ */
+const HELPER_RECHECK_MS = 10000;
+const FRAME_STALE_MS = 5000;
+
+/** The panel's colours, lit and unlit, as in .lcd-screen. */
+const LCD_COLOURS = {
+  lit: { glass: [0xb3, 0xe2, 0x63], ink: [0x1a, 0x24, 0x11] },
+  unlit: { glass: [0xc6, 0xcd, 0xba], ink: [0x46, 0x4f, 0x3c] },
+};
+
 const state = {
   intervalMs: 2000,
   running: true,
@@ -55,11 +73,19 @@ const state = {
   lastError: null,
   inFlight: false,
   visible: false,
+  /** 'image' while drawing the helper's frames, 'text' otherwise. */
+  mode: 'text',
+  /** What became of the last look for a frame: absent, stale or live. */
+  helper: 'absent',
+  helperCheckedAt: 0,
+  frameSeq: null,
+  frameChangedAt: 0,
 };
 
 let screenNode = null;
 let ageNode = null;
 let metaNode = null;
+let helpNode = null;
 let pauseBtn = null;
 let pollTimer = null;
 let tickTimer = null;
@@ -109,6 +135,146 @@ function render(values) {
   replaceChildren(screenNode, gridRows(text).map(drawRow));
   // Lit glass while the backlight is on, dull grey-green when it is not.
   screenNode.classList.toggle('lcd-lit', backlight !== 'off');
+  renderMeta();
+}
+
+/**
+ * Read one of the helper's frames from the pixels of the PNG /png made
+ * of it. The last row is not screen but a stamp the helper adds: "LCD",
+ * a version byte, a 32-bit frame counter and the backlight. Returns null
+ * for a picture without one.
+ */
+export function decodeFrame(rgba, width, height) {
+  const dark = (x, y) => rgba[(y * width + x) * 4] < 128;
+  const stampRow = height - 1;
+  const byte = (k) => {
+    let value = 0;
+    for (let bit = 0; bit < 8; bit++) value = (value << 1) | (dark(k * 8 + bit, stampRow) ? 1 : 0);
+    return value;
+  };
+  if (height < 2 || byte(0) !== 0x4c || byte(1) !== 0x43 || byte(2) !== 0x44) return null;
+
+  const pixels = new Uint8Array(width * stampRow);
+  for (let y = 0; y < stampRow; y++) {
+    for (let x = 0; x < width; x++) pixels[y * width + x] = dark(x, y) ? 1 : 0;
+  }
+  return {
+    width,
+    height: stampRow,
+    pixels,
+    seq: byte(4) * 0x1000000 + (byte(5) << 16) + (byte(6) << 8) + byte(7),
+    backlight: byte(8) === 1,
+  };
+}
+
+/** The PNG's pixels, by way of a canvas. */
+async function frameFromBlob(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0);
+  const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+  return decodeFrame(data, bitmap.width, bitmap.height);
+}
+
+/** The real screen, pixel for pixel, in the panel's own green. */
+function drawFrame(frame) {
+  let canvas = screenNode.querySelector('canvas');
+  if (!canvas || canvas.width !== frame.width || canvas.height !== frame.height) {
+    canvas = el('canvas', {
+      width: String(frame.width),
+      height: String(frame.height),
+      class: 'block',
+      style: `width:${frame.width * 2}px;max-width:100%;image-rendering:pixelated;`,
+      role: 'img',
+      'aria-label': 'The printer\u2019s front panel',
+    });
+    replaceChildren(screenNode, [canvas]);
+  }
+
+  const { glass, ink } = frame.backlight ? LCD_COLOURS.lit : LCD_COLOURS.unlit;
+  const ctx = canvas.getContext('2d');
+  const image = ctx.createImageData(frame.width, frame.height);
+  for (let i = 0; i < frame.pixels.length; i++) {
+    const [r, g, b] = frame.pixels[i] ? ink : glass;
+    image.data.set([r, g, b, 255], i * 4);
+  }
+  ctx.putImageData(image, 0, 0);
+  screenNode.classList.toggle('lcd-lit', frame.backlight);
+  renderMeta();
+}
+
+/**
+ * Draw the helper's latest frame, if it is running. False means there
+ * is none to draw -- no helper, or one that has stopped -- and the
+ * caller falls back to display.text.
+ */
+async function pollFrame() {
+  const now = Date.now();
+  if (state.helper !== 'live' && now - state.helperCheckedAt < HELPER_RECHECK_MS) return false;
+  state.helperCheckedAt = now;
+
+  const blob = await readPanelFrame();
+  const frame = blob ? await frameFromBlob(blob) : null;
+  if (!frame) {
+    state.helper = 'absent';
+    state.mode = 'text';
+    return false;
+  }
+
+  if (frame.seq !== state.frameSeq) {
+    state.frameSeq = frame.seq;
+    state.frameChangedAt = now;
+  }
+  if (now - state.frameChangedAt > FRAME_STALE_MS + state.intervalMs) {
+    state.helper = 'stale';
+    state.mode = 'text';
+    return false;
+  }
+
+  state.helper = 'live';
+  state.mode = 'image';
+  drawFrame(frame);
+  return true;
+}
+
+/** The line under the panel saying what it shows, and the way to more. */
+function renderMeta() {
+  const text =
+    state.mode === 'image'
+      ? 'the printer\u2019s own screen, via lcd_display_helper.sh'
+      : state.helper === 'stale'
+        ? 'lcd_display_helper.sh has stopped updating \u2014 showing display.text'
+        : 'generated via display.text \u2014 not an exact screenshot';
+  if (metaNode.textContent !== text) metaNode.textContent = text;
+  helpNode.hidden = state.mode === 'image';
+}
+
+/** How to get the real screen: the helper, with this printer's address in. */
+function buildHelperHelp() {
+  const command = `./lcd_display_helper.sh ${location.hostname}`;
+  return el('details', { class: 'mt-3 w-0 min-w-full text-[12px] text-ink-600' }, [
+    el('summary', { class: 'cursor-pointer text-ink-700' }, ['Show the real screen']),
+    el('div', { class: 'mt-2 space-y-2' }, [
+      el('p', {}, [
+        'The printer\u2019s web server cannot pass on the screen\u2019s bitmap, but a ' +
+          'computer that can reach its port 9100 can. From a copy of this project, run:',
+      ]),
+      el(
+        'pre',
+        { class: 'overflow-auto rounded bg-ink-50 px-2 py-1.5 font-mono text-[11px] text-ink-800' },
+        [command],
+      ),
+      el('p', {}, [
+        'It copies the screen into the printer\u2019s RAM every second, where this page ' +
+          'picks it up \u2014 there is nothing to set here, and it switches over on its own. ' +
+          'It also saves each frame as lcd.bmp. Ctrl-C stops it and takes the copy away. ' +
+          'Needs bash, nc, od and awk.',
+      ]),
+    ]),
+  ]);
 }
 
 /** Small grey line under the panel, so a stalled poll is obvious. */
@@ -144,8 +310,7 @@ async function poll() {
   if (state.inFlight) return;
   state.inFlight = true;
   try {
-    const values = await readLcd();
-    render(values);
+    if (!(await pollFrame())) render(await readLcd());
     state.lastOk = Date.now();
     state.lastError = null;
   } catch (err) {
@@ -215,6 +380,11 @@ async function pressButton(button, node) {
     await pressPanelButton(button);
     await new Promise((resolve) => setTimeout(resolve, 350));
     await poll();
+    // The helper takes a frame a second, so look again once it has.
+    if (state.mode === 'image') {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await poll();
+    }
   } catch (err) {
     state.lastError = `button press failed: ${err.message}`;
     tick();
@@ -281,9 +451,8 @@ export function mountLcd(panel) {
   });
 
   ageNode = el('p', { class: 'text-[11px] text-ink-400' });
-  metaNode = el('span', { class: 'text-[11px] text-ink-400' }, [
-    'generated via display.text \u2014 not an exact screenshot',
-  ]);
+  metaNode = el('span', { class: 'text-[11px] text-ink-400' });
+  helpNode = buildHelperHelp();
 
   panel.append(
     el('div', { class: 'card w-fit max-w-full overflow-hidden' }, [
@@ -312,6 +481,7 @@ export function mountLcd(panel) {
           [ageNode, metaNode],
         ),
         buildKeypad(),
+        helpNode,
       ]),
     ]),
   );

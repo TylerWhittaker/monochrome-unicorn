@@ -236,6 +236,33 @@ export async function readLcd({ timeout = 15000 } = {}) {
 }
 
 /**
+ * The front panel's real bitmap, if lcd_display_helper.sh is running.
+ *
+ * The helper reads display.image over port 9100, which a page cannot,
+ * and stores it on the printer's RAM drive as R:LCD.GRF; /png hands a
+ * stored graphic back as a PNG. Resolves with the PNG as a Blob, or null
+ * when there is no such graphic -- the helper is not running, or has
+ * been stopped and removed it.
+ */
+export function readPanelFrame({ timeout = 10000 } = {}) {
+  return printerTurn(async () => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    try {
+      const res = await fetch('/png?dev=R&oname=LCD&otype=GRF', {
+        signal: ctrl.signal,
+        cache: 'no-store',
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`HTTP ${res.status} for R:LCD.GRF`);
+      return await res.blob();
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+}
+
+/**
  * Pull whole "@name=value@" records out of a buffer that is still growing.
  *
  * A record is only complete once its closing @ has a line ending after

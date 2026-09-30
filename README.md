@@ -44,9 +44,12 @@ Three modes:
   backlight is on. Its keypad presses the printer's own buttons through
   the undocumented `diag.simulate_event`, so the menus can be driven
   from here — and Up and Down change the value on screen, as they do on
-  the printer. A printer whose catalogue has no `display.*` branch has
-  no display, so its build leaves this mode out: no tab, and no
-  `LCD.SHTML` uploaded.
+  the printer. It draws the screen from `display.text` — unless
+  `./lcd_display_helper.sh <printer-ip>` is running on a computer that
+  can reach the printer, and then it draws the printer's own pixels
+  (below). The mode tells you how to start it. A printer whose
+  catalogue has no `display.*` branch has no display, so its build
+  leaves this mode out: no tab, and no `LCD.SHTML` uploaded.
 
 ## Deploying
 
@@ -124,8 +127,20 @@ in, so the page gets `BM\xfd\x0d` and nothing more. The raw port that
 returns it whole is not something a browser can speak to, and the
 detours (`file.capture_response`, ZBI) are respectively unimplemented
 here and unlicensed. So the LCD Viewer draws `display.text`, the same
-screen as a 20x6 character grid, which survives intact; `tools/lcd-shot.mjs`
-fetches the actual bitmap from a machine that can reach port 9100.
+screen as a 20x6 character grid, which survives intact.
+
+For the real pixels, `lcd_display_helper.sh` runs on a computer that can
+reach port 9100. Each second it reads the bitmap, saves it as `lcd.bmp`,
+and stores it on the printer's RAM drive as `R:LCD.GRF` (plain-ASCII
+`~DG`, so no flash wear and nothing binary on the wire). The page reads
+that back through `/png`, 60 ms, and draws it. The helper cannot simply
+serve `lcd.bmp` to the page: a page cannot read local files, and Chrome
+will not let an `http://` page on the LAN fetch from `localhost` or
+another machine (Local Network Access). The printer is the one place both
+can reach. An extra row under the picture carries a frame counter and
+the backlight, so the page can tell a live helper from a frame left
+behind; Ctrl-C removes the frame, and a printer restart would too.
+`tools/lcd-shot.mjs` takes a single screenshot the same way.
 
 **The printer is the renderer.** Only it knows how its fonts and
 symbologies rasterize, and its `/zpl` endpoint will draw a label to a
@@ -155,6 +170,8 @@ src/js/
   codeeditor.js       Ace loader, ZPL syntax mode, offline fallback
   preview.js          the preview pane (htmx round-trip to /zpl)
   ui.js               DOM helpers, toasts, modals, password prompt
+lcd_display_helper.sh copy the real LCD bitmap to the printer for the
+                      LCD Viewer, each second (needs port 9100)
 tools/
   fetch-schema.mjs    read the SGD catalogue over port 9100
   build.mjs           bundle and inline everything
@@ -173,6 +190,7 @@ node test/zpl.test.mjs      # ZPL generation/parsing round-trips
 node test/printer.test.mjs  # helper-file parsing and entity decoding
 node test/state.test.mjs    # which interface's IP the header shows
 node test/build.test.mjs    # how settings branches pack into helper files
+node test/lcd.test.mjs      # reading lcd_display_helper.sh's frames
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier
 ```
@@ -216,7 +234,9 @@ a 500).
 - Uploaded images are reduced to one bit per pixel, because that is all
   a thermal printer stores. The dialog shows the result before sending,
   with a dither option that helps photographs and hurts line art.
-- The LCD Viewer shows characters, not pixels, for the reason above. It
+- Without `lcd_display_helper.sh` running, the LCD Viewer shows
+  characters, not pixels, for the reason above. With it, the screen can
+  be up to a second or two behind the printer. The viewer
   polls only while its tab is on screen and the browser tab is visible,
   so it does not compete with the rest of the console for the printer's
   single-request-at-a-time web server.

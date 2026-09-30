@@ -99,6 +99,29 @@ but `zbi.key` reads `DISABLED`.
 What *does* survive is `display.text`: the same screen as a flat 120
 character string, which is a 20x6 grid.
 
+### Getting the real screen to the page
+
+Two ways that do not work, measured from Chrome 154 on another machine:
+
+- **A helper serving the bitmap itself.** From the console's page
+  (`http://192.168.1.81`), a fetch or an `<img>` of
+  `http://localhost:8765/lcd.bmp`, or of the same server at its LAN
+  address, fails outright; opened in a tab of its own, the same URL
+  loads. `navigator.permissions.query({name: 'local-network-access'})`
+  reads `denied`: Chrome's Local Network Access will not let an
+  insecure page reach other hosts on the network, and cannot even ask.
+- **Uploading a BMP as a file** would need binary over `CISDFCRC16`,
+  which is what hung the printer once already (below).
+
+What does: store the picture as a ZPL graphic. `~DGR:LCD.GRF,<total>,
+<bytes per row>,<hex>` over port 9100 is plain ASCII, lands on the RAM
+drive, and `/png?dev=R&oname=LCD&otype=GRF` hands it back as a 1-bit
+PNG in 60 ms (1.4 KB), pixel for pixel what `lcd-shot.mjs` gets. A GRF
+bit is a dark dot, top row first; the BMP is bottom-up with a 32-bit
+row stride and a palette whose entry 1 is black. A missing graphic is a
+404, and `^XA^IDR:LCD.GRF^FS^XZ` removes it. `lcd_display_helper.sh`
+does this every second.
+
 ```
    PRINTER READY    
                     
