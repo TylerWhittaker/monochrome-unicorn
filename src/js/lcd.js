@@ -67,7 +67,7 @@ const LCD_COLOURS = {
 };
 
 const state = {
-  intervalMs: 2000,
+  intervalMs: 1000,
   running: true,
   lastOk: 0,
   lastError: null,
@@ -425,10 +425,10 @@ export function mountLcd(panel) {
     min: '0.5',
     max: '60',
     step: '0.5',
-    value: '2',
+    value: '1',
   });
   intervalInput.addEventListener('change', () => {
-    const seconds = Math.min(60, Math.max(0.5, Number(intervalInput.value) || 2));
+    const seconds = Math.min(60, Math.max(0.5, Number(intervalInput.value) || 1));
     intervalInput.value = String(seconds);
     state.intervalMs = seconds * 1000;
     schedule();
