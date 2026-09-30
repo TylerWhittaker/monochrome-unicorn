@@ -318,43 +318,29 @@ function renderLine(item) {
 
 const RULER = 20;
 
-/** Dots in one of the unit, and the steps a ruler may label it in. */
-const RULER_UNITS = {
-  in: { dots: (dpi) => dpi, steps: [0.125, 0.25, 0.5, 1, 2, 5], minor: 4 },
-  mm: { dots: (dpi) => dpi / 25.4, steps: [1, 2, 5, 10, 20, 50, 100], minor: 5 },
-  dots: { dots: () => 1, steps: [10, 20, 50, 100, 200, 500, 1000], minor: 5 },
-};
+/** A mark every this many dots, whatever unit the label is shown in. */
+const RULER_STEP = 100;
 
 /**
- * Where a ruler's ticks go: the smallest labelled step at least `gap`
- * pixels apart, and the minor ticks between, for a length in dots.
+ * Where a ruler's marks go for a length in dots: one every 100 dots,
+ * numbered at the smallest multiple of that at least `gap` pixels apart
+ * so the numbers never run into each other when zoomed out.
  */
-export function rulerTicks(lengthDots, unit, scale, dpi, gap = 48) {
-  const spec = RULER_UNITS[unit] || RULER_UNITS.in;
-  const perUnit = spec.dots(dpi);
-  const step = spec.steps.find((s) => s * perUnit * scale >= gap) || spec.steps.at(-1);
-  // Minor ticks only as close as 5px: fewer of them when zoomed out.
-  const majorPx = step * perUnit * scale;
-  let minor = spec.minor;
-  if (majorPx / minor < 5) minor = majorPx / 2 >= 5 ? 2 : 1;
+export function rulerTicks(lengthDots, scale, gap = 32) {
+  const every = [1, 2, 5, 10, 20, 50].find((n) => n * RULER_STEP * scale >= gap) || 100;
   const ticks = [];
-  const count = Math.floor((lengthDots / perUnit / step) * minor + 1e-9);
-  for (let i = 0; i <= count; i++) {
-    const value = (i * step) / minor;
-    ticks.push({
-      at: value * perUnit,
-      major: i % minor === 0,
-      label: i % minor === 0 ? value : null,
-    });
+  for (let i = 0; i * RULER_STEP <= lengthDots; i++) {
+    const labelled = i % every === 0;
+    ticks.push({ at: i * RULER_STEP, major: labelled, label: labelled ? i * RULER_STEP : null });
   }
   return ticks;
 }
 
 /** One ruler, drawn crisp at the device's pixel ratio. */
-function drawRuler(canvas, { lengthDots, unit, scale, vertical }) {
+function drawRuler(canvas, { lengthDots, scale, vertical }) {
   const length = Math.max(1, Math.round(lengthDots * scale));
   const ratio = window.devicePixelRatio || 1;
-  const ticks = rulerTicks(lengthDots, unit, scale, printer.dpi);
+  const ticks = rulerTicks(lengthDots, scale);
   const ctx = canvas.getContext('2d');
   const font = '9px ui-sans-serif, system-ui, sans-serif';
 
@@ -381,12 +367,13 @@ function drawRuler(canvas, { lengthDots, unit, scale, vertical }) {
     const at = Math.round(tick.at * scale) + 0.5;
     const size = tick.major ? 8 : 4;
     if (vertical) {
-      // Against the label's right edge, numbers outside the ticks.
-      ctx.moveTo(0, at);
-      ctx.lineTo(size, at);
+      // Against the label's left edge, numbers outside the ticks.
+      ctx.moveTo(w, at);
+      ctx.lineTo(w - size, at);
       if (tick.label !== null && tick.at > 0) {
         ctx.textBaseline = 'middle';
-        ctx.fillText(String(tick.label), 10, Math.min(h - 5, Math.max(5, at)));
+        ctx.textAlign = 'right';
+        ctx.fillText(String(tick.label), w - 10, Math.min(h - 5, Math.max(5, at)));
       }
     } else {
       // Along the label's top edge, numbers above the ticks.
@@ -412,7 +399,10 @@ function drawRuler(canvas, { lengthDots, unit, scale, vertical }) {
  * `onChange(reason)` fires after any edit the user made by direct
  * manipulation; `onSelect(id)` after the selection changes.
  */
-export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = () => 0 }) {
+export function createCanvas(
+  container,
+  { getDoc, onChange, onSelect, getGrid = () => 0, getRulers = () => false },
+) {
   let selectedId = null;
   let scale = 1;
   let zoom = 'fit';
@@ -475,14 +465,15 @@ export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = 
   const surface = el('div', {
     class: 'preview-surface relative shrink-0 border border-ink-300 shadow-sm',
   });
-  // Rulers along the top and down the right, in the label's unit.
+  // Rulers along the top and down the left, in dots, when asked for.
   const topRuler = el('canvas', { class: 'block' });
   const sideRuler = el('canvas', { class: 'block' });
+  const corner = el('span');
   const frame = el('div', { class: 'grid w-fit', style: 'grid-template-columns:auto auto;' }, [
+    corner,
     topRuler,
-    el('span'),
-    surface,
     sideRuler,
+    surface,
   ]);
   // The grey field hugs the label: the same 16px of it shows on all four
   // sides, and it only starts scrolling once a label (or a zoom) is
@@ -519,11 +510,12 @@ export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = 
       return;
     }
     const doc = getDoc();
-    const availableW = Math.max(160, scroller.clientWidth - 32 - RULER - 16);
+    const ruler = getRulers() ? RULER : 0;
+    const availableW = Math.max(160, scroller.clientWidth - 32 - ruler - 16);
     // Height comes from the viewport rather than from the scroller,
     // which now takes its height from the label: measuring the box we
     // are about to resize would feed its own last answer back in.
-    const availableH = Math.max(160, Math.round(window.innerHeight * 0.7) - 20 - RULER);
+    const availableH = Math.max(160, Math.round(window.innerHeight * 0.7) - 20 - ruler);
     scale = Math.min(1, availableW / Math.max(1, doc.width), availableH / Math.max(1, doc.height));
   }
 
@@ -755,8 +747,15 @@ export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = 
       );
     }
 
-    drawRuler(topRuler, { lengthDots: doc.width, unit: doc.unit, scale, vertical: false });
-    drawRuler(sideRuler, { lengthDots: doc.height, unit: doc.unit, scale, vertical: true });
+    const rulers = getRulers();
+    // By style, not `hidden`: the canvases' `block` class would win over it.
+    for (const node of [corner, topRuler, sideRuler]) node.style.display = rulers ? '' : 'none';
+    // The top ruler stands in for most of the field above the label.
+    scroller.classList.toggle('pt-1', rulers);
+    if (rulers) {
+      drawRuler(topRuler, { lengthDots: doc.width, scale, vertical: false });
+      drawRuler(sideRuler, { lengthDots: doc.height, scale, vertical: true });
+    }
   }
 
   /* -- keyboard ---------------------------------------------------- */

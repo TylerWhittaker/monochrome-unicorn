@@ -42,33 +42,24 @@ function check(name, fn) {
 
 const labels = (ticks) => ticks.filter((t) => t.major).map((t) => t.label);
 
-check('a 4in label at 300dpi, drawn at a quarter size, is labelled every inch', () => {
-  // 300 dots/in x 0.25 = 75px an inch: the half inch would be 37px, too close.
-  const ticks = w.rulerTicks(1200, 'in', 0.25, 300);
-  assert.deepEqual(labels(ticks), [0, 1, 2, 3, 4]);
-  assert.equal(ticks.length, 17, 'quarter-inch ticks between');
-});
-
-check('zoomed in, the labels come closer together', () => {
+check('a mark every 100 dots, whatever the length', () => {
+  const ticks = w.rulerTicks(1218, 1);
   assert.deepEqual(
-    labels(w.rulerTicks(600, 'in', 1, 300)),
-    [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+    ticks.map((t) => t.at),
+    [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200],
   );
 });
 
-check('millimetres and dots have steps of their own', () => {
-  assert.deepEqual(labels(w.rulerTicks(300, 'mm', 1, 300)).slice(0, 3), [0, 5, 10]);
-  assert.deepEqual(
-    labels(w.rulerTicks(1000, 'dots', 0.5, 300)),
-    [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000],
-  );
+check('at full size every mark is numbered', () => {
+  assert.deepEqual(labels(w.rulerTicks(400, 1)), [0, 100, 200, 300, 400]);
 });
 
-check('minor ticks thin out rather than crowd', () => {
-  const ticks = w.rulerTicks(1200, 'dots', 0.05, 300);
-  const px = ticks.map((t) => t.at * 0.05);
-  const gaps = px.slice(1).map((p, i) => p - px[i]);
-  assert.ok(Math.min(...gaps) >= 5, `ticks ${Math.min(...gaps)}px apart`);
+check('zoomed out, the marks stay but the numbers thin out', () => {
+  // 100 dots at 0.25 is 25px: too close to number, so every other one.
+  const ticks = w.rulerTicks(1200, 0.25);
+  assert.equal(ticks.length, 13);
+  assert.deepEqual(labels(ticks), [0, 200, 400, 600, 800, 1000, 1200]);
+  assert.deepEqual(labels(w.rulerTicks(1200, 0.05)), [0, 1000]);
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

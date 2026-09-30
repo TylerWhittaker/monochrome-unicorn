@@ -78,22 +78,24 @@ let labelPanelHost = null;
 let fileSelect = null;
 let addBar = null;
 let viewBar = null;
-let zoomGroup = null;
 let editorCountInput = null;
 let gridSizeInput = null;
 
 /*
- * The canvas grid: on or off, and its pitch in dots. A preference of the
- * person, like the units, so it is remembered in this browser.
+ * The canvas grid: on or off, and its pitch in dots; and whether the
+ * rulers are drawn. Preferences of the person, like the units, so they
+ * are remembered in this browser.
  */
 const GRID_KEY = 'zebra.grid';
-const editorGrid = { on: false, dots: 0 };
+const editorGrid = { on: false, dots: 0, rulers: false };
 
 function loadGridPreference() {
   editorGrid.dots = Math.round(printer.dpi / 4);
   try {
     const saved = JSON.parse(localStorage.getItem(GRID_KEY) || 'null');
-    if (saved && saved.dots > 0) Object.assign(editorGrid, { on: !!saved.on, dots: saved.dots });
+    if (saved && saved.dots > 0) {
+      Object.assign(editorGrid, { on: !!saved.on, dots: saved.dots, rulers: !!saved.rulers });
+    }
   } catch (err) {
     /* nothing saved, or storage blocked */
   }
@@ -261,8 +263,9 @@ function rebuildEditorView() {
   editorHost.replaceChildren();
 
   addBar.hidden = editorState.view !== 'visual';
-  // The toggle stays put in both views -- it is how you get back.
-  if (zoomGroup) zoomGroup.hidden = editorState.view !== 'visual';
+  // The Visual/Source toggle sits by the file picker, so it stays put
+  // in both views -- it is how you get back.
+  viewBar.hidden = editorState.view !== 'visual';
   // The canvas takes its height from the label it is showing; the source
   // editor has no natural height of its own and has to be given one.
   editorHost.className = EDITOR_HOST_CLASS[editorState.view] || EDITOR_HOST_CLASS.visual;
@@ -283,6 +286,7 @@ function rebuildEditorView() {
       },
       onSelect: () => renderEditorInspector(),
       getGrid: () => (editorGrid.on ? editorGrid.dots : 0),
+      getRulers: () => editorGrid.rulers,
     });
     renderEditorInspector();
     return;
@@ -626,10 +630,19 @@ export function mountEditor(panel) {
     ),
   ]);
 
-  // Which view you are in, and how big it is drawn: both are about
-  // looking at the label rather than about the file, so they share a
-  // row under the elements you can add to it.
+  // How the label is drawn -- rulers, grid, zoom -- shares a row under
+  // the elements you can add to it.
   loadGridPreference();
+  const rulerToggle = el('input', {
+    type: 'checkbox',
+    class: 'h-3.5 w-3.5 accent-ink-900',
+    checked: editorGrid.rulers,
+  });
+  rulerToggle.addEventListener('change', () => {
+    editorGrid.rulers = rulerToggle.checked;
+    saveGridPreference();
+    if (canvas) canvas.render();
+  });
   const gridToggle = el('input', {
     type: 'checkbox',
     class: 'h-3.5 w-3.5 accent-ink-900',
@@ -657,14 +670,15 @@ export function mountEditor(panel) {
     syncGridInput();
   });
 
-  zoomGroup = el('div', { class: 'ml-auto flex items-center gap-2' }, [
-    el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [gridToggle, 'Grid']),
+  const zoomGroup = el('div', { class: 'ml-auto flex items-center gap-2' }, [
+    el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [rulerToggle, 'Rulers']),
+    el('label', { class: 'ml-2 flex items-center gap-1.5 text-ink-600' }, [gridToggle, 'Grid']),
     gridSizeInput,
     el('span', { class: 'text-[11px] text-ink-400' }),
     el('span', { class: 'ml-2 text-[11px] uppercase tracking-wide text-ink-500' }, ['Zoom']),
     zoomSelect,
   ]);
-  viewBar = el('div', { class: 'toolbar' }, [viewToggle, zoomGroup]);
+  viewBar = el('div', { class: 'toolbar' }, [zoomGroup]);
 
   editorHost = el('div', { class: EDITOR_HOST_CLASS.visual });
   inspectorHost = el('div');
@@ -714,8 +728,8 @@ export function mountEditor(panel) {
           'div',
           { class: 'card min-w-0 self-start overflow-hidden lg:col-span-2 xl:col-span-1' },
           [
-            // Which label.
-            el('div', { class: 'toolbar' }, [fileSelect]),
+            // Which label, and which view of it.
+            el('div', { class: 'toolbar' }, [fileSelect, viewToggle]),
             // What to do with it: the file operations, then Print at the far end.
             el('div', { class: 'toolbar' }, [
               el('button', { class: 'btn-secondary btn-sm', onclick: () => newLabelDoc() }, [
