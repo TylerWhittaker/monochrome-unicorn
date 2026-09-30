@@ -99,6 +99,35 @@ but `zbi.key` reads `DISABLED`.
 What *does* survive is `display.text`: the same screen as a flat 120
 character string, which is a 20x6 grid.
 
+### display.text follows the menu's font
+
+`display.text` is not a fixed 20x6 grid. It is as many columns as the
+font in use fits across the panel's 240 pixels, padded row by row, with
+the last row (the soft-key labels) left unpadded:
+
+| font | columns | rows that fit |
+|---|---|---|
+| A.FNT (and no `<font>` tag at all) | 40 | 13 |
+| B.FNT, MONOBD15.FNT | 26 | 11, 8 |
+| D.FNT | 20 | 7 |
+| E6.FNT | 18 | 6 |
+| F.FNT | 15 | 5 |
+| G.FNT | 5 | 2 |
+
+A WML menu picks the font with `<font name="X.FNT">`, which applies to
+the whole file wherever it appears. `display.load_card` names the file
+on screen and follows the menus as P1/P2 links are pressed (it is
+readable, whatever the manual says), so the LCD Viewer reads that file,
+finds the tag, and lays the text out to match. Every font on Z: was
+tried; `reference/WML/fnt-test/RESULTS.md` (kept out of the repository
+with the rest of `reference/`) has the full list and screenshots.
+Briefly: A, B, D, E6, F, H6, MONOBD15 and the four `N?20WGL4` fonts
+draw cleanly; E8, E12, E24, G, H8, H12 and H24 draw but overflow; the
+EPL fonts draw through another character map; GS, EPL6, EPL7 and
+EPL300-5 draw nothing; and a font that is missing (C, E) or a stub (P
+to V) falls back to A. The column counts for all of them are in
+`src/js/lcd.js`.
+
 ### Getting the real screen to the page
 
 Two ways that do not work, measured from Chrome 154 on another machine:

@@ -44,7 +44,9 @@ Three modes:
   backlight is on. Its keypad presses the printer's own buttons through
   the undocumented `diag.simulate_event`, so the menus can be driven
   from here — and Up and Down change the value on screen, as they do on
-  the printer. It draws the screen from `display.text` — unless
+  the printer. It draws the screen from `display.text`, laid out in
+  the columns and size of the font the menu on screen asks for (a WML
+  `<font>` tag, read from the file `display.load_card` names) — unless
   `./lcd_display_helper.sh <printer-ip>` is running on a computer that
   can reach the printer, and then it draws the printer's own pixels
   (below). The mode tells you how to start it. A printer whose

@@ -87,10 +87,40 @@ check('a picture without the stamp is not taken for a frame', () => {
   assert.equal(lcd.decodeFrame(rgba, width, height), null);
 });
 
-check('the text grid still splits into six rows of twenty', () => {
-  const rows = lcd.gridRows('A'.repeat(25));
-  assert.equal(rows.length, 6);
-  assert.equal(rows[1], 'AAAAA' + ' '.repeat(15));
+check('the text grid is as wide as the font says, and as tall as the text', () => {
+  // D.FNT: 20 columns, the soft-key row unpadded.
+  const rows = lcd.gridRows('V74.20.23Z'.padEnd(20) + 'FONT: D.FNT'.padEnd(20) + ' C  E12', 20);
+  assert.deepEqual(rows, ['V74.20.23Z          ', 'FONT: D.FNT         ', ' C  E12'.padEnd(20)]);
+  assert.equal(lcd.gridRows('x'.repeat(520)).length, 13, 'A.FNT, the default: 40 across');
+  assert.equal(lcd.gridRows('').length, 1);
+});
+
+check('a WML file names its font in a <font> tag, in either case', () => {
+  assert.equal(lcd.wmlFont('<card>\n  <font name="f.fnt" vspace="0"></font>'), 'F.FNT');
+  assert.equal(lcd.wmlFont('<FONT vspace="0" NAME=\'MONOBD15.FNT\'>'), 'MONOBD15.FNT');
+  assert.equal(lcd.wmlFont('<wml><display><card id="main"><p>x</p></card>'), null);
+  assert.equal(lcd.wmlFont('<fontsize name="X.FNT">'), null, 'only <font> itself');
+});
+
+check('each font lays display.text out in its own number of columns', () => {
+  assert.equal(lcd.lcdColumns(null), 40, 'no <font>: A.FNT');
+  assert.equal(lcd.lcdColumns('F.FNT'), 15);
+  assert.equal(lcd.lcdColumns('d.fnt'), 20);
+  assert.equal(lcd.lcdColumns('P.FNT'), 40, 'a font the panel cannot draw falls back to A');
+  assert.equal(lcd.lcdRows('G.FNT'), 2, 'fewer rows fit than display.text holds');
+  assert.equal(lcd.lcdRows(null), 13);
+});
+
+check('the file on screen comes from load_card, then root_wml', () => {
+  assert.equal(
+    lcd.currentWmlFile({ 'display.load_card': 'E:Menu.wml#card2', 'display.root_wml': 'X.WML' }),
+    'MENU.WML',
+  );
+  assert.equal(
+    lcd.currentWmlFile({ 'display.load_card': '', 'display.root_wml': 'a_fnt.wml' }),
+    'A_FNT.WML',
+  );
+  assert.equal(lcd.currentWmlFile({}), 'INDEX.WML');
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

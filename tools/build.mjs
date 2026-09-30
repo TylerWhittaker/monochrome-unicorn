@@ -45,7 +45,15 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * truncates any value at its first NUL byte, and a BMP has one at offset
  * four. display.text is the same screen as a 20x6 character grid.
  */
-const LCD_VARS = ['display.text', 'display.backlight', 'display.contrast'];
+const LCD_VARS = [
+  'display.text',
+  'display.backlight',
+  'display.contrast',
+  // Which WML file is on screen, for the font it asks for: that decides
+  // how many columns display.text is laid out in.
+  'display.load_card',
+  'display.root_wml',
+];
 
 /** A printer with no display.* branch has no front panel to mirror. */
 export function hasLcd(schema) {

@@ -38,11 +38,93 @@
  */
 
 import { el, replaceChildren } from './ui.js';
-import { readLcd, readPanelFrame, pressPanelButton } from './printer.js';
+import { readLcd, readPanelFrame, pressPanelButton, fetchStoredFile } from './printer.js';
 
-/** The front panel is twenty characters across and six rows down. */
-const COLS = 20;
-const ROWS = 6;
+/*
+ * The panel is 240x110 pixels, and display.text is that screen as a grid
+ * of characters -- but not a fixed one. It is as many columns as the
+ * font in use fits across 240 pixels, and as many rows as the text
+ * needs: 40 columns in A.FNT, the default, 15 in F.FNT. A WML menu picks
+ * the font with <font name="X.FNT">, which applies to the whole file.
+ *
+ * Measured on a ZD500R (V74.20.23Z) by loading a menu in each font on
+ * Z: and reading display.text back; docs/printer-notes.md has the lot.
+ * Each entry is [columns, rows]: the rows are how many lines of the
+ * font the panel has room for, which is not always how many display.text
+ * holds -- the panel clips what does not fit, and so does the grid here.
+ * A font the panel cannot draw -- C.FNT and E.FNT do not exist, P to V
+ * are stubs -- falls back to A, and so does one missing from this list.
+ */
+const LCD_WIDTH = 240;
+const LCD_HEIGHT = 110;
+const DEFAULT_COLUMNS = 40;
+const DEFAULT_ROWS = 13;
+const LCD_FONT_GRID = {
+  'A.FNT': [40, 13],
+  'B.FNT': [26, 11],
+  'D.FNT': [20, 7],
+  'E6.FNT': [18, 6],
+  'E8.FNT': [12, 4],
+  'E12.FNT': [9, 3],
+  'E24.FNT': [4, 2],
+  'F.FNT': [15, 5],
+  'G.FNT': [5, 2],
+  'GS.FNT': [9, 5],
+  'H6.FNT': [16, 7],
+  'H8.FNT': [12, 6],
+  'H12.FNT': [8, 4],
+  'H24.FNT': [4, 2],
+  'MONOBD15.FNT': [26, 8],
+  'NJ20WGL4.FNT': [20, 6],
+  'NK20WGL4.FNT': [20, 6],
+  'NS20WGL4.FNT': [20, 6],
+  'NT20WGL4.FNT': [20, 6],
+  'EPL1.FNT': [24, 10],
+  'EPL2.FNT': [20, 7],
+  'EPL3.FNT': [17, 6],
+  'EPL4.FNT': [15, 5],
+  'EPL5.FNT': [6, 3],
+  'EPL6.FNT': [17, 6],
+  'EPL7.FNT': [11, 5],
+  'EPL300-1.FNT': [20, 6],
+  'EPL300-2.FNT': [15, 4],
+  'EPL300-3.FNT': [12, 4],
+  'EPL300-4.FNT': [10, 3],
+  'EPL300-5.FNT': [2, 1],
+};
+
+/** B.FNT has no lower case: the panel draws it in capitals. */
+const CAPITALS_ONLY = new Set(['B.FNT']);
+
+/** How many columns display.text has in a font. */
+export function lcdColumns(font) {
+  return (LCD_FONT_GRID[String(font || '').toUpperCase()] || [DEFAULT_COLUMNS])[0];
+}
+
+/** How many rows of a font the panel shows. */
+export function lcdRows(font) {
+  return (LCD_FONT_GRID[String(font || '').toUpperCase()] || [0, DEFAULT_ROWS])[1];
+}
+
+/** The font a WML file asks for, e.g. "F.FNT", or null for the default. */
+export function wmlFont(source) {
+  const tag = /<font\b[^>]*\bname\s*=\s*["']([^"']+)["']/i.exec(String(source ?? ''));
+  return tag ? tag[1].trim().toUpperCase() : null;
+}
+
+/**
+ * The file on screen, from display.load_card (which follows the menus
+ * as they are navigated) or else display.root_wml, as the object name
+ * the web server publishes it under: "E:MENU.WML#card2" -> "MENU.WML".
+ */
+export function currentWmlFile(values) {
+  const raw = (values && (values['display.load_card'] || values['display.root_wml'])) || '';
+  const file = raw
+    .split('#')[0]
+    .trim()
+    .replace(/^[A-Z]:/i, '');
+  return (file || 'INDEX.WML').toUpperCase();
+}
 
 /**
  * Icon bytes the panel uses in place of characters. Only the home glyph
@@ -80,6 +162,11 @@ const state = {
   helperCheckedAt: 0,
   frameSeq: null,
   frameChangedAt: 0,
+  /** The WML file on screen, and the font it asks for (null: default). */
+  wmlFile: null,
+  font: null,
+  fontError: null,
+  lastValues: null,
 };
 
 let screenNode = null;
@@ -94,14 +181,44 @@ let tickTimer = null;
  * Drawing
  * ------------------------------------------------------------------ */
 
-/** Split the flat grid string into rows, padding short reads. */
-export function gridRows(text) {
-  const padded = String(text ?? '').padEnd(COLS * ROWS, ' ');
+/**
+ * Split the flat grid string into rows of `columns`. The last row -- the
+ * soft-key labels -- comes back unpadded, so it is padded here.
+ */
+export function gridRows(text, columns = DEFAULT_COLUMNS) {
+  const flat = String(text ?? '');
+  const count = Math.max(1, Math.ceil(flat.length / columns));
+  const padded = flat.padEnd(count * columns, ' ');
   const rows = [];
-  for (let r = 0; r < ROWS; r++) {
-    rows.push(padded.slice(r * COLS, (r + 1) * COLS));
+  for (let r = 0; r < count; r++) {
+    rows.push(padded.slice(r * columns, (r + 1) * columns));
   }
   return rows;
+}
+
+/**
+ * The screen has moved to another WML file: find out what font it uses.
+ * Read in the background, and the screen redrawn when it is known; until
+ * then the last font stands.
+ */
+function noteWmlFile(file) {
+  if (file === state.wmlFile) return;
+  state.wmlFile = file;
+  const dot = file.lastIndexOf('.');
+  fetchStoredFile({ oname: file.slice(0, dot), otype: file.slice(dot + 1) })
+    .then((bytes) => {
+      if (state.wmlFile !== file) return;
+      state.font = wmlFont(new TextDecoder('windows-1252').decode(bytes));
+      state.fontError = null;
+    })
+    .catch((err) => {
+      if (state.wmlFile !== file) return;
+      state.font = null;
+      state.fontError = `could not read ${file}: ${err.message}`;
+    })
+    .finally(() => {
+      if (state.wmlFile === file && state.mode === 'text') render(state.lastValues);
+    });
 }
 
 function drawRow(row) {
@@ -129,10 +246,30 @@ function drawRow(row) {
 }
 
 function render(values) {
+  state.lastValues = values;
   const text = values ? values['display.text'] : null;
   const backlight = values ? values['display.backlight'] : null;
+  if (values) noteWmlFile(currentWmlFile(values));
 
-  replaceChildren(screenNode, gridRows(text).map(drawRow));
+  // Sized from the panel's own 240x110: the characters are as wide as
+  // 240 pixels over the columns, and as tall as 110 over the rows the
+  // font has room for, so a big font looks big here too, and what would
+  // not fit on the panel is clipped. (0.6em is a monospace advance.)
+  const columns = lcdColumns(state.font);
+  const rows = gridRows(text, columns);
+  const grid = el(
+    'div',
+    {
+      class: 'overflow-hidden',
+      style:
+        `font-size:calc(100cqw / ${columns * 0.6});` +
+        `line-height:calc(100cqw * ${LCD_HEIGHT / LCD_WIDTH} / ${lcdRows(state.font)});` +
+        `height:calc(100cqw * ${LCD_HEIGHT / LCD_WIDTH});` +
+        (CAPITALS_ONLY.has(state.font) ? 'text-transform:uppercase;' : ''),
+    },
+    rows.map(drawRow),
+  );
+  replaceChildren(screenNode, [grid]);
   // Lit glass while the backlight is on, dull grey-green when it is not.
   screenNode.classList.toggle('lcd-lit', backlight !== 'off');
   renderMeta();
@@ -245,11 +382,24 @@ function renderMeta() {
   const text =
     state.mode === 'image'
       ? 'the printer\u2019s own screen, via lcd_display_helper.sh'
-      : state.helper === 'stale'
-        ? 'lcd_display_helper.sh has stopped updating \u2014 showing display.text'
-        : 'generated via display.text \u2014 not an exact screenshot';
+      : (state.helper === 'stale'
+          ? 'lcd_display_helper.sh has stopped updating \u2014 showing display.text'
+          : 'generated via display.text \u2014 not an exact screenshot') + fontNote();
   if (metaNode.textContent !== text) metaNode.textContent = text;
   helpNode.hidden = state.mode === 'image';
+}
+
+/** Which font the grid is laid out for, and why, after the caption. */
+function fontNote() {
+  if (state.fontError) return ` (${state.fontError}; assuming A.FNT)`;
+  if (!state.wmlFile) return '';
+  const font = state.font || 'A.FNT';
+  const known = !state.font || state.font in LCD_FONT_GRID;
+  return (
+    ` \u00b7 ${state.wmlFile} in ${font}` +
+    (known ? '' : ', not a font this panel is known to draw; laid out as A.FNT') +
+    (/^EPL/.test(font) ? ' (the panel draws EPL fonts with other characters)' : '')
+  );
 }
 
 /** How to get the real screen: the helper, with this printer's address in. */
@@ -445,9 +595,11 @@ export function mountLcd(panel) {
 
   // w-fit, or the block would stretch to the card and leave the grid
   // sitting in a wide empty panel.
+  // The screen's width is the one measure everything inside scales from
+  // (cqw), so the text grid and the helper's bitmap come out the same size.
   screenNode = el('div', {
     class: 'lcd-screen lcd-lit',
-    style: 'font-size:clamp(12px,2.4vw,19px);line-height:1.2;letter-spacing:0.08em;',
+    style: 'width:504px;max-width:100%;container-type:inline-size;',
   });
 
   ageNode = el('p', { class: 'text-[11px] text-ink-400' });

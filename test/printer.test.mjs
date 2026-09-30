@@ -106,8 +106,9 @@ const lcdSrc = readFileSync(new URL('../src/js/lcd.js', import.meta.url), 'utf8'
 );
 const lcd = await import('data:text/javascript;base64,' + Buffer.from(lcdSrc).toString('base64'));
 
-check('display.text splits into a 20x6 grid', () => {
-  // Exactly what the printer returned for an idle screen.
+check('display.text splits into a 20x6 grid in a 20-column font', () => {
+  // Exactly what the printer returned for an idle screen, in a 20-column
+  // font (lcd.js has which fonts are which).
   const screen =
     '   PRINTER READY    ' +
     '                    ' +
@@ -115,7 +116,7 @@ check('display.text splits into a 20x6 grid', () => {
     '                    ' +
     '                    ' +
     ' \u00c2            ABOUT ';
-  const rows = lcd.gridRows(screen);
+  const rows = lcd.gridRows(screen, 20);
   assert.equal(rows.length, 6);
   assert.ok(
     rows.every((r) => r.length === 20),
@@ -126,10 +127,9 @@ check('display.text splits into a 20x6 grid', () => {
   assert.ok(rows[5].endsWith('ABOUT '));
 });
 
-check('a short or missing read still yields a full grid', () => {
-  assert.deepEqual(lcd.gridRows('HI').length, 6);
-  assert.equal(lcd.gridRows('HI')[0], 'HI' + ' '.repeat(18));
-  assert.ok(lcd.gridRows(null).every((r) => r === ' '.repeat(20)));
+check('a short or missing read still yields a row', () => {
+  assert.deepEqual(lcd.gridRows('HI', 20), ['HI' + ' '.repeat(18)]);
+  assert.deepEqual(lcd.gridRows(null), [' '.repeat(40)], 'A.FNT, the default: 40 across');
 });
 
 check('records are pulled out of a stream as they complete', () => {
