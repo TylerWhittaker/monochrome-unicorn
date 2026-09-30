@@ -415,5 +415,17 @@ check('a char width equal to the height is read as following it', () => {
   assert.match(toZpl(doc), /\^A0N,40,40\^FH\^FDsame/, 'and is written back the same');
 });
 
+check('a label with no fields yet has nothing the visual editor would lose', () => {
+  assert.deepEqual(parseZpl(toZpl(newLabel(DPI)), DPI).unsupported, []);
+  assert.deepEqual(parseZpl('^XA\n^XZ', DPI).unsupported, []);
+  assert.deepEqual(parseZpl('', DPI).unsupported, []);
+});
+
+check('text that is not ZPL at all is flagged', () => {
+  assert.deepEqual(parseZpl('N\nA50,0,0,1,1,1,N,"hi"\nP1\n', DPI).unsupported, [
+    '(text that is not ZPL)',
+  ]);
+});
+
 console.log(failures ? `\n${failures} failing` : '\nall passing');
 process.exit(failures ? 1 : 0);

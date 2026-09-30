@@ -888,8 +888,11 @@ export function parseZpl(text, dpi = 203) {
     }
   }
 
-  if (!sawFieldOrigin && doc.elements.length === 0 && text.trim() !== '') {
-    unsupported.push('(no recognisable fields)');
+  // Text with no ZPL in it at all (EPL pasted in, say) would vanish in
+  // the visual editor. A label that is ZPL but has no fields yet -- a new
+  // one, or one being written -- loses nothing, so it is not flagged.
+  if (tokens.length === 0 && text.trim() !== '') {
+    unsupported.push('(text that is not ZPL)');
   }
 
   return { doc, unsupported: [...new Set(unsupported)] };
