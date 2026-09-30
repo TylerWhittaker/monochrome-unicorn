@@ -191,6 +191,54 @@ export async function confirmDialog(title, message, confirmLabel = 'Confirm') {
   return result === true;
 }
 
+/*
+ * Printing asks first only for a large run -- a mistyped count is the
+ * expensive mistake -- and the dialog offers to stop asking at all. That
+ * choice is remembered in this browser.
+ */
+export const CONFIRM_PRINT_OVER = 25;
+const NO_PRINT_CONFIRM_KEY = 'zebra.noPrintConfirm';
+
+function printConfirmOff() {
+  try {
+    return localStorage.getItem(NO_PRINT_CONFIRM_KEY) === '1';
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * Whether to go ahead and print `count` labels: at once for up to
+ * CONFIRM_PRINT_OVER, otherwise once the user says so.
+ */
+export async function confirmPrint(count, what) {
+  if (count <= CONFIRM_PRINT_OVER || printConfirmOff()) return true;
+
+  const never = el('input', { type: 'checkbox', class: 'h-3.5 w-3.5 accent-ink-900' });
+  const result = await modal(`Print ${count} labels?`, (close) =>
+    el('div', { class: 'space-y-3' }, [
+      el('p', { class: 'text-ink-700' }, [`${what} will be printed ${count} times.`]),
+      el('label', { class: 'flex items-center gap-2 text-[12px] text-ink-600' }, [
+        never,
+        "Don't ask before printing again",
+      ]),
+      el('div', { class: 'flex justify-end gap-2' }, [
+        el('button', { class: 'btn-secondary', onclick: () => close(false) }, ['Cancel']),
+        el('button', { class: 'btn-primary', onclick: () => close(true) }, [`Print ${count}`]),
+      ]),
+    ]),
+  );
+  if (result !== true) return false;
+  if (never.checked) {
+    try {
+      localStorage.setItem(NO_PRINT_CONFIRM_KEY, '1');
+    } catch (err) {
+      // Private mode or blocked storage: it will simply ask again.
+    }
+  }
+  return true;
+}
+
 /* ------------------------------------------------------------------ *
  * Printer password
  *

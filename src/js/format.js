@@ -34,7 +34,7 @@
  *         the background.
  */
 
-import { el, toast, confirmDialog, debounce, formatBytes, replaceChildren, modal } from './ui.js';
+import { el, toast, confirmPrint, debounce, formatBytes, replaceChildren, modal } from './ui.js';
 import { printer } from './state.js';
 import { listFiles, readScript } from './printer.js';
 import {
@@ -539,13 +539,7 @@ async function printFormatLabel() {
   if (!formatState.current) return;
   const { lang, current, copies } = formatState;
 
-  const ok = await confirmDialog(
-    'Print this label?',
-    `${copies > 1 ? `${copies} copies of` : 'One copy of'} ${current.oname}.${current.otype}` +
-      ` will be sent to the printer as ${lang.label}.`,
-    'Print',
-  );
-  if (!ok) return;
+  if (!(await confirmPrint(copies, `${current.oname}.${current.otype} (${lang.label})`))) return;
   formatPreview.print(recallZpl());
 }
 

@@ -35,6 +35,8 @@ export const printer = {
   boot: {},
   /** Printhead resolution in dots per inch; drives every unit conversion. */
   dpi: 203,
+  /** The label loaded, in dots, as far as the printer says: {width, height}. */
+  labelSize: {},
   name: 'Zebra Printer',
   model: '',
   serial: '',
@@ -69,7 +71,22 @@ export function initState(document) {
   const dpi = parseInt(boot['head.resolution.in_dpi'], 10);
   if (Number.isFinite(dpi) && dpi > 0) printer.dpi = dpi;
 
+  printer.labelSize = loadedLabelSize(boot);
+
   return printer;
+}
+
+/**
+ * The label the printer is set up for, in dots: ezpl.print_width across
+ * and zpl.label_length down. Either one missing or nonsense is left out,
+ * and a new label falls back to 4x6 inches for it.
+ */
+export function loadedLabelSize(boot) {
+  const dots = (name) => {
+    const n = parseInt(boot[name], 10);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+  return { width: dots('ezpl.print_width'), height: dots('zpl.label_length') };
 }
 
 /** Where each value of ip.active_network keeps its address. */

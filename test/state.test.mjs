@@ -29,7 +29,7 @@ const src = readFileSync(new URL('../src/js/state.js', import.meta.url), 'utf8')
   /^import\s*\{[^}]*\}\s*from\s*'\.\/[^']*';?$/gm,
   '',
 );
-const { activeIpAddress } = await import(
+const { activeIpAddress, loadedLabelSize } = await import(
   'data:text/javascript;base64,' + Buffer.from(src).toString('base64')
 );
 
@@ -96,6 +96,17 @@ check('an interface with no address yet falls back too', () => {
     }),
     '5.6.7.8',
   );
+});
+
+check('a new label is the size the printer has loaded, where it says', () => {
+  assert.deepEqual(loadedLabelSize({ 'ezpl.print_width': '1200', 'zpl.label_length': '1800' }), {
+    width: 1200,
+    height: 1800,
+  });
+  assert.deepEqual(loadedLabelSize({ 'ezpl.print_width': '0', 'zpl.label_length': '?' }), {
+    width: undefined,
+    height: undefined,
+  });
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

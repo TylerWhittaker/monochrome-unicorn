@@ -49,16 +49,25 @@ function row(labelText, control, { wide = false } = {}) {
   ]);
 }
 
-function numberField(value, onCommit, { min, max, step = 1, suffix } = {}) {
+/**
+ * A number box. `optional` ones may be left empty, which commits null --
+ * "leave it to the printer" -- and says so in grey.
+ */
+function numberField(value, onCommit, { min, max, step = 1, suffix, optional = false } = {}) {
   const input = el('input', {
     class: 'field field-mono',
     type: 'number',
     value: String(value ?? ''),
     step: String(step),
+    placeholder: optional ? 'default' : '',
   });
   if (min !== undefined) input.min = String(min);
   if (max !== undefined) input.max = String(max);
   const fire = () => {
+    if (optional && input.value.trim() === '') {
+      onCommit(null);
+      return;
+    }
     const n = parseFloat(input.value);
     if (Number.isFinite(n)) onCommit(n);
   };
@@ -116,15 +125,31 @@ function radioField(groupName, value, options, onCommit) {
   return el('div', { class: 'flex flex-wrap items-center gap-x-4 gap-y-1' }, buttons);
 }
 
-function selectField(value, options, onCommit) {
+function selectField(value, options, onCommit, { emptyIsDefault = false } = {}) {
   const select = el('select', { class: 'field' });
   for (const opt of options) {
     const [optValue, optLabel] = Array.isArray(opt) ? opt : [opt.value, opt.label];
     select.append(
-      el('option', { value: optValue, selected: String(optValue) === String(value) }, [optLabel]),
+      el(
+        'option',
+        {
+          value: optValue,
+          selected: String(optValue) === String(value),
+          // The grey is for the closed box; the open list stays readable.
+          class: emptyIsDefault ? 'text-ink-900' : null,
+        },
+        [optLabel],
+      ),
     );
   }
-  select.addEventListener('change', () => onCommit(select.value));
+  // Where empty means "default", grey it like an empty box's placeholder.
+  const shade = () =>
+    select.classList.toggle('text-ink-400', emptyIsDefault && select.value === '');
+  shade();
+  select.addEventListener('change', () => {
+    shade();
+    onCommit(select.value);
+  });
   return select;
 }
 
@@ -376,7 +401,7 @@ export function renderLabelPanel(host, { doc, onChange }) {
             commit((v) => {
               doc.darkness = v;
             }),
-            { min: -30, max: 30 },
+            { min: -30, max: 30, optional: true },
           ),
         ),
         row(
@@ -386,17 +411,18 @@ export function renderLabelPanel(host, { doc, onChange }) {
             commit((v) => {
               doc.speed = v;
             }),
-            { min: 1, max: 14, suffix: 'ips' },
+            { min: 1, max: 14, suffix: 'ips', optional: true },
           ),
         ),
       ]),
+      // How many to print is beside the Print button, not here.
       grid([
         row(
           'Media',
           selectField(
             doc.mediaType ?? '',
             [
-              ['', 'Printer setting'],
+              ['', 'default'],
               ['N', 'Continuous'],
               ['Y', 'Web / gap'],
               ['M', 'Black mark'],
@@ -404,16 +430,7 @@ export function renderLabelPanel(host, { doc, onChange }) {
             commit((v) => {
               doc.mediaType = v || null;
             }),
-          ),
-        ),
-        row(
-          'Copies',
-          numberField(
-            doc.copies,
-            commit((v) => {
-              doc.copies = Math.max(1, Math.round(v));
-            }),
-            { min: 1, max: 999 },
+            { emptyIsDefault: true },
           ),
         ),
       ]),

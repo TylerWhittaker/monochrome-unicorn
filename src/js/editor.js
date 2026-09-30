@@ -35,6 +35,7 @@ import {
   toast,
   modal,
   confirmDialog,
+  confirmPrint,
   withPrinterPassword,
   debounce,
   formatBytes,
@@ -55,6 +56,7 @@ import { createCanvas } from './wysiwyg.js';
 import { renderLabelPanel, renderElementPanel, panelHeading } from './inspector.js';
 import { createCodeEditor } from './codeeditor.js';
 import { createPreview } from './preview.js';
+import { parseCopies } from './formats.js';
 
 const editorState = {
   doc: null,
@@ -77,6 +79,7 @@ let fileSelect = null;
 let addBar = null;
 let viewBar = null;
 let zoomGroup = null;
+let editorCountInput = null;
 /** A label another mode asked for, waiting for this one to exist. */
 let pendingOpen = null;
 
@@ -177,7 +180,30 @@ async function setView(next) {
   rebuildEditorView();
 }
 
+/**
+ * The Count box is the label's own ^PQ, so it follows whichever label is
+ * open. In the source view the text is what prints, ^PQ and all, so it
+ * is edited there instead.
+ */
+function syncCount() {
+  if (!editorCountInput) return;
+  const source = editorState.view === 'source';
+  editorCountInput.value = source ? '' : String(editorState.doc.copies || 1);
+  editorCountInput.disabled = source;
+  editorCountInput.title = source
+    ? 'In the source view, set the count with ^PQ in the ZPL'
+    : 'How many to print; saved with the label as ^PQ';
+}
+
+/** How many labels Print will produce: ^PQ in the source view, else Count. */
+function printCount() {
+  if (editorState.view !== 'source') return editorState.doc.copies || 1;
+  const pq = /\^PQ\s*(\d+)/i.exec(editorZpl());
+  return pq ? parseInt(pq[1], 10) || 1 : 1;
+}
+
 function rebuildEditorView() {
+  syncCount();
   if (canvas) {
     canvas.destroy();
     canvas = null;
@@ -442,7 +468,7 @@ async function newLabelDoc() {
   )
     return;
   const unit = editorState.doc ? editorState.doc.unit : loadUnitPreference();
-  editorState.doc = newLabel(printer.dpi);
+  editorState.doc = newLabel(printer.dpi, printer.labelSize);
   editorState.doc.unit = unit;
   editorState.source = toZpl(editorState.doc);
   editorState.file = null;
@@ -490,12 +516,8 @@ async function uploadImageForElement(item) {
 }
 
 async function printEditorLabel() {
-  const ok = await confirmDialog(
-    'Print this label?',
-    `The printer will feed and print ${editorState.doc.copies > 1 ? `${editorState.doc.copies} copies` : 'one label'}.`,
-    'Print',
-  );
-  if (!ok) return;
+  const name = editorState.file ? `${editorState.file.oname}.ZPL` : 'This label';
+  if (!(await confirmPrint(printCount(), name))) return;
   editorPreview.print(editorZpl());
 }
 
@@ -504,7 +526,7 @@ async function printEditorLabel() {
  * ------------------------------------------------------------------ */
 
 export function mountEditor(panel) {
-  editorState.doc = newLabel(printer.dpi);
+  editorState.doc = newLabel(printer.dpi, printer.labelSize);
   editorState.doc.unit = loadUnitPreference();
   editorState.source = toZpl(editorState.doc);
 
@@ -575,6 +597,30 @@ export function mountEditor(panel) {
 
   editorPreview = createPreview({ onPrint: () => printEditorLabel() });
 
+  // Digits only, and never less than one: a keystroke that is not a
+  // digit does not land, and an empty or zero box goes back to the count.
+  editorCountInput = el('input', {
+    class: 'field field-mono w-11 text-center',
+    type: 'text',
+    inputmode: 'numeric',
+    maxlength: '3',
+    autocomplete: 'off',
+  });
+  editorCountInput.addEventListener('input', () => {
+    const digits = editorCountInput.value.replace(/\D+/g, '');
+    if (digits !== editorCountInput.value) editorCountInput.value = digits;
+  });
+  editorCountInput.addEventListener('change', () => {
+    const count = parseCopies(editorCountInput.value, editorState.doc.copies || 1);
+    editorCountInput.value = String(count);
+    if (count === editorState.doc.copies) return;
+    editorState.doc.copies = count;
+    markDirty();
+  });
+  editorCountInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') editorCountInput.blur();
+  });
+
   // Editor, preview and properties sit side by side once there is room,
   // and stack in that order when there is not. Every column is min-w-0:
   // a grid item defaults to min-width:auto, so a wide child (the canvas,
@@ -613,11 +659,13 @@ export function mountEditor(panel) {
               el('button', { class: 'btn-danger btn-sm', onclick: () => deleteCurrent() }, [
                 'Delete',
               ]),
-              el(
-                'button',
-                { class: 'btn-primary btn-sm ml-auto', onclick: () => printEditorLabel() },
-                ['Print'],
-              ),
+              el('label', { class: 'ml-auto flex items-center gap-1.5 text-ink-600' }, [
+                'Count',
+                editorCountInput,
+              ]),
+              el('button', { class: 'btn-primary btn-sm', onclick: () => printEditorLabel() }, [
+                'Print',
+              ]),
             ]),
             addBar,
             viewBar,

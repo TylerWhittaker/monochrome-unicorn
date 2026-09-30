@@ -102,6 +102,9 @@ const BOOT_VARS = [
   'device.languages',
   'appl.name',
   'head.resolution.in_dpi',
+  // The size of the label loaded, in dots: a new label starts at it.
+  'zpl.label_length',
+  'ezpl.print_width',
   'media.darkness',
   'print.tone',
   // Which interface is in use, and each one's address: ip.addr alone

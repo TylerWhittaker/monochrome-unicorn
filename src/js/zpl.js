@@ -199,11 +199,14 @@ export function elementId() {
   return `el${nextId++}`;
 }
 
-/** A blank 4x6 label at the printer's resolution. */
-export function newLabel(dpi = 203) {
+/**
+ * A blank label at the printer's resolution: the size given, in dots, or
+ * 4x6 inches for whatever is not.
+ */
+export function newLabel(dpi = 203, { width, height } = {}) {
   return {
-    width: Math.round(4 * dpi),
-    height: Math.round(6 * dpi),
+    width: width || Math.round(4 * dpi),
+    height: height || Math.round(6 * dpi),
     unit: 'in',
     orientation: 'N',
     darkness: null,

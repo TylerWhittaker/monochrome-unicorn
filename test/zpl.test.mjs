@@ -398,5 +398,14 @@ check('expandClock fills in what the printer will', () => {
   assert.equal(expandClock('#d %d %q', '#,{', at), '05 %d %q', 'only the primary indicator');
 });
 
+check('a new label takes the size it is given, else 4x6 inches', () => {
+  const sized = newLabel(300, { width: 1200, height: 1800 });
+  assert.equal(sized.width, 1200);
+  assert.equal(sized.height, 1800);
+  const half = newLabel(203, { width: 600 });
+  assert.deepEqual([half.width, half.height], [600, 1218]);
+  assert.deepEqual([newLabel(203).width, newLabel(203).height], [812, 1218]);
+});
+
 console.log(failures ? `\n${failures} failing` : '\nall passing');
 process.exit(failures ? 1 : 0);
