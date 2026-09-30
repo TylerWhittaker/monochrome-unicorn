@@ -336,21 +336,30 @@ export function rulerTicks(lengthDots, scale, gap = 32) {
   return ticks;
 }
 
+const RULER_FONT = '9px ui-sans-serif, system-ui, sans-serif';
+let rulerMeasure = null;
+
+/**
+ * How wide the side ruler is for a label this tall: room for as many
+ * digits as its last mark has. It depends on the length alone, not on the
+ * zoom, so the fit can reserve it before the scale is known.
+ */
+function sideRulerWidth(lengthDots) {
+  if (!rulerMeasure) rulerMeasure = document.createElement('canvas').getContext('2d');
+  rulerMeasure.font = RULER_FONT;
+  const last = Math.floor(lengthDots / RULER_STEP) * RULER_STEP;
+  return Math.ceil(12 + rulerMeasure.measureText('0'.repeat(String(last).length)).width);
+}
+
 /** One ruler, drawn crisp at the device's pixel ratio. */
 function drawRuler(canvas, { lengthDots, scale, vertical }) {
   const length = Math.max(1, Math.round(lengthDots * scale));
   const ratio = window.devicePixelRatio || 1;
   const ticks = rulerTicks(lengthDots, scale);
   const ctx = canvas.getContext('2d');
-  const font = '9px ui-sans-serif, system-ui, sans-serif';
+  const font = RULER_FONT;
 
-  // The side ruler is as wide as its longest number needs.
-  ctx.font = font;
-  const widest = ticks.reduce(
-    (n, tick) => (tick.label === null ? n : Math.max(n, ctx.measureText(String(tick.label)).width)),
-    0,
-  );
-  const [w, h] = vertical ? [Math.ceil(12 + widest), length] : [length, RULER];
+  const [w, h] = vertical ? [sideRulerWidth(lengthDots), length] : [length, RULER];
   canvas.width = Math.round(w * ratio);
   canvas.height = Math.round(h * ratio);
   canvas.style.width = `${w}px`;
@@ -476,12 +485,13 @@ export function createCanvas(
     surface,
   ]);
   // The grey field hugs the label: the same 16px of it shows on all four
-  // sides, and it only starts scrolling once a label (or a zoom) is
-  // taller than the budget computeScale() fits to.
+  // sides (outside the rulers, when they are on), and it only starts
+  // scrolling once a label or a zoom is bigger than the budget
+  // computeScale() fits to.
   const scroller = el(
     'div',
     {
-      class: 'min-h-0 min-w-0 max-h-[70vh] overflow-auto bg-ink-100 p-4 pt-1',
+      class: 'min-h-0 min-w-0 w-fit max-w-full max-h-[70vh] overflow-auto bg-ink-100 p-4',
       onpointerdown: (event) => {
         if (event.target === scroller || event.target === surface || event.target === frame) {
           select(null);
@@ -510,12 +520,18 @@ export function createCanvas(
       return;
     }
     const doc = getDoc();
-    const ruler = getRulers() ? RULER : 0;
-    const availableW = Math.max(160, scroller.clientWidth - 32 - ruler - 16);
-    // Height comes from the viewport rather than from the scroller,
-    // which now takes its height from the label: measuring the box we
-    // are about to resize would feed its own last answer back in.
-    const availableH = Math.max(160, Math.round(window.innerHeight * 0.7) - 20 - ruler);
+    const rulers = getRulers();
+    // Both come from outside the scroller, which takes its size from the
+    // label: measuring the box we are about to resize would feed its own
+    // last answer back in. The 32 is the 16px of grey either side.
+    const availableW = Math.max(
+      160,
+      container.clientWidth - 32 - (rulers ? sideRulerWidth(doc.height) : 0),
+    );
+    const availableH = Math.max(
+      160,
+      Math.floor(window.innerHeight * 0.7) - 32 - (rulers ? RULER : 0),
+    );
     scale = Math.min(1, availableW / Math.max(1, doc.width), availableH / Math.max(1, doc.height));
   }
 
@@ -750,8 +766,6 @@ export function createCanvas(
     const rulers = getRulers();
     // By style, not `hidden`: the canvases' `block` class would win over it.
     for (const node of [corner, topRuler, sideRuler]) node.style.display = rulers ? '' : 'none';
-    // The top ruler stands in for most of the field above the label.
-    scroller.classList.toggle('pt-1', rulers);
     if (rulers) {
       drawRuler(topRuler, { lengthDots: doc.width, scale, vertical: false });
       drawRuler(sideRuler, { lengthDots: doc.height, scale, vertical: true });
