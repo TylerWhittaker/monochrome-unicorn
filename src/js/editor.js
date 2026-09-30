@@ -51,9 +51,11 @@ import {
   elementId,
   nextFieldNumber,
   formatZpl,
+  storedFonts,
 } from './zpl.js';
 import { createCanvas } from './wysiwyg.js';
-import { renderLabelPanel, renderElementPanel, panelHeading } from './inspector.js';
+import { renderLabelPanel, renderElementPanel, panelHeading, setStoredFonts } from './inspector.js';
+import { cachedDriveListing, onDriveListing } from './drives.js';
 import { createCodeEditor } from './codeeditor.js';
 import { createPreview } from './preview.js';
 import { parseCopies } from './formats.js';
@@ -67,6 +69,8 @@ const editorState = {
   dirty: false,
   scripts: [],
   images: [],
+  /** What /dir listed on E:, for the stored fonts. */
+  driveFiles: [],
 };
 
 let canvas = null;
@@ -358,6 +362,8 @@ async function refreshFileList() {
     const files = await listFiles({ dev: 'E', otype: '*  ' });
     editorState.scripts = files.filter((f) => f.otype === 'ZPL');
     editorState.images = files.filter((f) => ['PNG', 'GRF', 'BMP', 'PCX'].includes(f.otype));
+    editorState.driveFiles = files;
+    takeStoredFonts();
   } catch (err) {
     toast(`Could not list the printer's files: ${err.message}`, 'error');
     return;
@@ -618,15 +624,16 @@ export function mountEditor(panel) {
 
   addBar = el('div', { class: 'toolbar' }, [
     el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, ['Add']),
-    ...['text', 'barcode', 'image', 'box', 'line', 'field', 'date'].map((type) =>
-      el(
-        'button',
-        {
-          class: 'btn-secondary btn-sm capitalize',
-          onclick: () => addElement(type),
-        },
-        [type],
-      ),
+    ...['text', 'barcode', 'serial', 'image', 'box', 'ellipse', 'line', 'field', 'date'].map(
+      (type) =>
+        el(
+          'button',
+          {
+            class: 'btn-secondary btn-sm capitalize',
+            onclick: () => addElement(type),
+          },
+          [type],
+        ),
     ),
   ]);
 
@@ -784,6 +791,22 @@ export function mountEditor(panel) {
   refreshFileList();
   refreshEditorPreview();
   drainPendingOpen();
+
+  onDriveListing(takeStoredFonts);
+}
+
+/**
+ * TrueType fonts for the font lists: those on E: from the /dir read the
+ * file list already makes, and any other drive's once file.drive_listing
+ * has been read (Settings reads it after its sweep; it is too slow to
+ * read just for this).
+ */
+function takeStoredFonts() {
+  const listing = cachedDriveListing();
+  setStoredFonts(
+    storedFonts([...(editorState.driveFiles || []), ...(listing ? listing.files : [])]),
+  );
+  if (inspectorHost && editorState.view === 'visual') renderEditorInspector();
 }
 
 /** Re-read the printer's file list whenever the tab comes back into view. */

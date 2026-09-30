@@ -33,23 +33,164 @@
  * Barcode symbologies
  * ------------------------------------------------------------------ */
 
+/*
+ * `kind` is how the canvas draws one: '1d' as bars, '2d' as a matrix.
+ * `sizes` is which of the size controls mean anything to it -- bar
+ * `height`, `module` width from ^BY, the wide:narrow `ratio`, the
+ * interpretation line (`text`), `mag`nification -- so the inspector
+ * offers only those. `example` is data it will accept, for a new one.
+ */
 export const SYMBOLOGIES = {
-  code128: { label: 'Code 128', cmd: 'BC', kind: '1d' },
-  code39: { label: 'Code 39', cmd: 'B3', kind: '1d' },
-  code93: { label: 'Code 93', cmd: 'BA', kind: '1d' },
-  i2of5: { label: 'Interleaved 2 of 5', cmd: 'B2', kind: '1d' },
-  ean13: { label: 'EAN-13', cmd: 'BE', kind: '1d' },
-  upca: { label: 'UPC-A', cmd: 'BU', kind: '1d' },
-  qr: { label: 'QR Code', cmd: 'BQ', kind: '2d' },
-  datamatrix: { label: 'Data Matrix', cmd: 'BX', kind: '2d' },
-  pdf417: { label: 'PDF417', cmd: 'B7', kind: '2d' },
-  aztec: { label: 'Aztec', cmd: 'B0', kind: '2d' },
+  code128: {
+    label: 'Code 128',
+    cmd: 'BC',
+    kind: '1d',
+    sizes: ['height', 'module', 'text'],
+    example: '12345678',
+  },
+  gs1_128: {
+    label: 'GS1-128 (UCC/EAN-128)',
+    cmd: 'BC',
+    kind: '1d',
+    sizes: ['height', 'module', 'text'],
+    example: '(01)12345678901231',
+  },
+  code39: {
+    label: 'Code 39',
+    cmd: 'B3',
+    kind: '1d',
+    sizes: ['height', 'module', 'ratio', 'text'],
+    example: 'ABC123',
+  },
+  code93: {
+    label: 'Code 93',
+    cmd: 'BA',
+    kind: '1d',
+    sizes: ['height', 'module', 'text'],
+    example: 'ABC123',
+  },
+  i2of5: {
+    label: 'Interleaved 2 of 5',
+    cmd: 'B2',
+    kind: '1d',
+    sizes: ['height', 'module', 'ratio', 'text'],
+    example: '12345678',
+  },
+  codabar: {
+    label: 'Codabar',
+    cmd: 'BK',
+    kind: '1d',
+    sizes: ['height', 'module', 'ratio', 'text'],
+    example: '123456',
+  },
+  ean13: {
+    label: 'EAN-13',
+    cmd: 'BE',
+    kind: '1d',
+    sizes: ['height', 'module', 'text'],
+    example: '123456789012',
+  },
+  ean8: {
+    label: 'EAN-8',
+    cmd: 'B8',
+    kind: '1d',
+    sizes: ['height', 'module', 'text'],
+    example: '1234567',
+  },
+  upca: {
+    label: 'UPC-A',
+    cmd: 'BU',
+    kind: '1d',
+    sizes: ['height', 'module', 'text'],
+    example: '12345678901',
+  },
+  upce: {
+    label: 'UPC-E',
+    cmd: 'B9',
+    kind: '1d',
+    sizes: ['height', 'module', 'text'],
+    example: '1230000045',
+  },
+  databar: {
+    label: 'GS1 DataBar',
+    cmd: 'BR',
+    kind: '1d',
+    sizes: ['mag'],
+    example: '1234567890123',
+  },
+  postnet: {
+    label: 'USPS POSTNET',
+    cmd: 'BZ',
+    kind: '1d',
+    sizes: ['height', 'text'],
+    example: '12345',
+  },
+  planet: {
+    label: 'USPS PLANET',
+    cmd: 'BZ',
+    kind: '1d',
+    sizes: ['height', 'text'],
+    example: '12345678901',
+  },
+  imb: {
+    label: 'USPS Intelligent Mail',
+    cmd: 'BZ',
+    kind: '1d',
+    sizes: ['height', 'text'],
+    example: '0123456709498765432101234567891',
+  },
+  qr: { label: 'QR Code', cmd: 'BQ', kind: '2d', sizes: ['mag'], example: '12345678' },
+  datamatrix: {
+    label: 'Data Matrix',
+    cmd: 'BX',
+    kind: '2d',
+    sizes: ['module'],
+    example: '12345678',
+  },
+  pdf417: {
+    label: 'PDF417',
+    cmd: 'B7',
+    kind: '2d',
+    sizes: ['height', 'module'],
+    example: '12345678',
+  },
+  micropdf: {
+    label: 'MicroPDF417',
+    cmd: 'BF',
+    kind: '2d',
+    sizes: ['height', 'module'],
+    example: '12345678',
+  },
+  aztec: { label: 'Aztec', cmd: 'B0', kind: '2d', sizes: ['mag'], example: '12345678' },
+  maxicode: { label: 'MaxiCode', cmd: 'BD', kind: '2d', sizes: [], example: 'MAXICODE 12345' },
 };
 
-/** Reverse lookup from ZPL command to symbology key. */
-const CMD_TO_SYMBOLOGY = Object.fromEntries(
-  Object.entries(SYMBOLOGIES).map(([key, spec]) => [spec.cmd, key]),
-);
+/** The GS1 DataBar family, the second argument of ^BR. */
+export const DATABAR_TYPES = [
+  { value: 1, label: 'Omnidirectional' },
+  { value: 2, label: 'Truncated' },
+  { value: 3, label: 'Stacked' },
+  { value: 4, label: 'Stacked Omnidirectional' },
+  { value: 5, label: 'Limited' },
+  { value: 6, label: 'Expanded' },
+];
+
+/** ^BZ's last argument says which of the postal codes it draws. */
+const POSTAL_TYPES = { postnet: 0, planet: 1, imb: 3 };
+
+/**
+ * The symbology a barcode command draws. Mostly the command alone, but
+ * ^BC in UCC/EAN mode is GS1-128 and ^BZ is three postal codes.
+ */
+function symbologyFor(cmd, args) {
+  if (cmd === 'BC' && (args[5] || '').trim().toUpperCase() === 'D') return 'gs1_128';
+  if (cmd === 'BZ') {
+    const type = num(args[4], 0);
+    return Object.keys(POSTAL_TYPES).find((k) => POSTAL_TYPES[k] === type) || 'postnet';
+  }
+  if (cmd === 'B5') return 'planet';
+  return Object.keys(SYMBOLOGIES).find((key) => SYMBOLOGIES[key].cmd === cmd) || null;
+}
 
 export const ROTATIONS = [
   { value: 'N', label: 'Normal' },
@@ -58,7 +199,11 @@ export const ROTATIONS = [
   { value: 'B', label: 'Bottom-up 270°' },
 ];
 
-/** The scalable built-in fonts, plus the bitmap ones people still use. */
+/**
+ * The scalable built-in font, plus the bitmap ones people still use. A
+ * TrueType font stored on the printer is named by its path instead
+ * ("E:TT0003M_.TTF") and recalled with ^A@.
+ */
 export const FONTS = [
   { value: '0', label: 'Scalable (0)' },
   { value: 'A', label: 'A — 9x5' },
@@ -68,6 +213,30 @@ export const FONTS = [
   { value: 'F', label: 'F — 26x13' },
   { value: 'G', label: 'G — 60x40' },
   { value: 'H', label: 'H — 21x13 OCR-A' },
+];
+
+/** Whether a font value names a stored file rather than a built-in font. */
+export function isStoredFont(font) {
+  return String(font || '').includes(':');
+}
+
+/** Stored TrueType fonts, from a drive listing, for the font lists. */
+export function storedFonts(files) {
+  return (
+    (files || [])
+      .filter((f) => ['TTF', 'TTE'].includes(f.otype))
+      // Z:0.TTF is font 0 itself, which the list already has.
+      .filter((f) => !(f.dev === 'Z' && f.oname === '0'))
+      .filter((f, i, all) => all.findIndex((g) => g.name === f.name) === i)
+      .map((f) => ({ value: f.name, label: `${f.oname} (${f.dev}: TrueType)` }))
+  );
+}
+
+/** ^FP: which way a text field's characters run. */
+export const TEXT_DIRECTIONS = [
+  { value: 'H', label: 'Horizontal' },
+  { value: 'V', label: 'Vertical (stacked)' },
+  { value: 'R', label: 'Reverse (right to left)' },
 ];
 
 /*
@@ -240,17 +409,26 @@ export function newElement(type, doc, dpi = 203) {
       reverse: false,
     };
   }
+  if (type === 'serial') {
+    // A text field that counts: ^SN in place of ^FD.
+    return {
+      ...newElement('text', doc, dpi),
+      text: '0001',
+      serial: { step: 1, zeros: true },
+    };
+  }
   if (type === 'barcode') {
     return {
       ...base,
       symbology: 'code128',
-      data: '12345678',
+      data: SYMBOLOGIES.code128.example,
       height: Math.round(dpi * 0.4),
       moduleWidth: Math.max(2, Math.round(dpi / 100)),
       ratio: 3,
       showText: true,
       magnification: 4,
       errorLevel: 'Q',
+      databarType: 1,
     };
   }
   if (type === 'image') {
@@ -266,8 +444,21 @@ export function newElement(type, doc, dpi = 203) {
       invert: false,
     };
   }
+  if (type === 'ellipse') {
+    return { ...base, w: Math.round(dpi), h: Math.round(dpi * 0.6), thickness: 3, invert: false };
+  }
   if (type === 'line') {
-    return { ...base, length: Math.round(dpi * 1.5), thickness: 3, vertical: false };
+    // `diagonal` lines use w, h and lean; the others length and vertical.
+    return {
+      ...base,
+      length: Math.round(dpi * 1.5),
+      thickness: 3,
+      vertical: false,
+      diagonal: false,
+      w: Math.round(dpi),
+      h: Math.round(dpi * 0.5),
+      lean: 'R',
+    };
   }
   if (type === 'field') {
     return {
@@ -311,14 +502,44 @@ export function escapeFieldData(text) {
   );
 }
 
+/** ^A for a built-in font, ^A@ for one stored on the printer. */
+function fontZpl(item) {
+  const size = `${item.height},${item.width || item.height}`;
+  return isStoredFont(item.font)
+    ? `^A@${item.rotation},${size},${item.font}`
+    : `^A${item.font}${item.rotation},${size}`;
+}
+
+/*
+ * ^SN's starting value is an argument, not field data: no ^FH escapes
+ * reach it, and a comma would end it. So those, and the characters that
+ * would start a command, are dropped.
+ */
+export function serialStart(text) {
+  return String(text).replace(/[\^~,\r\n]/g, '');
+}
+
+/**
+ * A field's data: ^FD, or ^SN where the value counts up (or down) by
+ * `step` on each label, keeping its width when `zeros` is set.
+ */
+function dataZpl(item, data) {
+  if (item.serial) {
+    const step = Math.round(Number(item.serial.step)) || 1;
+    return `^SN${serialStart(data)},${step},${item.serial.zeros ? 'Y' : 'N'}`;
+  }
+  return `^FH^FD${escapeFieldData(data)}`;
+}
+
 function textZpl(item) {
   const parts = [`^FO${item.x},${item.y}`];
-  parts.push(`^A${item.font}${item.rotation},${item.height},${item.width || item.height}`);
+  parts.push(fontZpl(item));
+  if (item.direction === 'V' || item.direction === 'R') parts.push(`^FP${item.direction},0`);
   if (item.blockWidth > 0) {
     parts.push(`^FB${item.blockWidth},${item.blockLines || 4},0,${item.justify || 'L'},0`);
   }
   if (item.reverse) parts.push('^FR');
-  parts.push(`^FH^FD${escapeFieldData(item.text)}^FS`);
+  parts.push(`${dataZpl(item, item.text)}^FS`);
   return parts.join('');
 }
 
@@ -327,6 +548,8 @@ function barcodeZpl(item) {
   const pos = `^FO${item.x},${item.y}`;
   const show = item.showText ? 'Y' : 'N';
 
+  const data = `${dataZpl(item, item.data)}^FS`;
+
   if (item.symbology === 'qr') {
     // ^BQ takes the model and magnification; the data carries the error
     // correction level and input mode as a "LA," style prefix.
@@ -334,25 +557,42 @@ function barcodeZpl(item) {
     return `${pos}^BQ${item.rotation},2,${item.magnification}^FH^FD${level}A,${escapeFieldData(item.data)}^FS`;
   }
   if (item.symbology === 'datamatrix') {
-    return `${pos}^BX${item.rotation},${item.moduleWidth},200^FH^FD${escapeFieldData(item.data)}^FS`;
+    return `${pos}^BX${item.rotation},${item.moduleWidth},200${data}`;
   }
   if (item.symbology === 'pdf417') {
-    return `${pos}^B7${item.rotation},${item.moduleWidth},5,,${Math.max(3, Math.round(item.height / 10))},N^FH^FD${escapeFieldData(item.data)}^FS`;
+    return `${pos}^B7${item.rotation},${item.moduleWidth},5,,${Math.max(3, Math.round(item.height / 10))},N${data}`;
   }
   if (item.symbology === 'aztec') {
-    return `${pos}^B0${item.rotation},${item.magnification},N,0,N,1^FH^FD${escapeFieldData(item.data)}^FS`;
+    return `${pos}^B0${item.rotation},${item.magnification},N,0,N,1${data}`;
+  }
+  if (item.symbology === 'maxicode') {
+    // Mode 4 is the standard symbol for any data; 2 and 3 want a
+    // structured carrier message. ^BD has no rotation.
+    return `${pos}^BD${item.maxiMode || 4},1,1${data}`;
+  }
+  if (item.symbology === 'micropdf') {
+    // ^BF's height is per row; the width of a module comes from ^BY.
+    return `${pos}^BY${item.moduleWidth}^BF${item.rotation},${item.height},0${data}`;
+  }
+  if (item.symbology === 'databar') {
+    const type = item.databarType || 1;
+    return `${pos}^BR${item.rotation},${type},${item.magnification},1,${item.height || 25},22${data}`;
   }
 
   // 1D symbologies share ^BY for module width and ratio.
   const by = `^BY${item.moduleWidth},${item.ratio},${item.height}`;
   const cmd = spec.cmd;
   let params;
-  if (cmd === 'BC') params = `${item.rotation},${item.height},${show},N,N`;
+  if (item.symbology === 'gs1_128') params = `${item.rotation},${item.height},${show},N,N,D`;
+  else if (cmd === 'BC') params = `${item.rotation},${item.height},${show},N,N`;
   else if (cmd === 'B3') params = `${item.rotation},N,${item.height},${show},N`;
   else if (cmd === 'BA') params = `${item.rotation},${item.height},${show},N,N`;
   else if (cmd === 'B2') params = `${item.rotation},${item.height},${show},N,N`;
-  else params = `${item.rotation},${item.height},${show},N`;
-  return `${pos}${by}^${cmd}${params}^FH^FD${escapeFieldData(item.data)}^FS`;
+  else if (cmd === 'BK') params = `${item.rotation},N,${item.height},${show},N,A,A`;
+  else if (cmd === 'BZ') {
+    params = `${item.rotation},${item.height},${show},N,${POSTAL_TYPES[item.symbology] || 0}`;
+  } else params = `${item.rotation},${item.height},${show},N`;
+  return `${pos}${by}^${cmd}${params}${data}`;
 }
 
 /**
@@ -362,7 +602,7 @@ function barcodeZpl(item) {
  */
 function fieldZpl(item) {
   const parts = [`^FO${item.x},${item.y}`];
-  parts.push(`^A${item.font}${item.rotation},${item.height},${item.width || item.height}`);
+  parts.push(fontZpl(item));
   parts.push(`^FN${item.number}` + (item.name ? `"${item.name}"` : ''));
   if (item.initial) parts.push(`^FH^FD${escapeFieldData(item.initial)}`);
   parts.push('^FS');
@@ -408,7 +648,19 @@ function boxZpl(item) {
   return `^FO${item.x},${item.y}^GB${item.w},${item.h},${item.thickness},${color},${item.rounding || 0}^FS`;
 }
 
+/** ^GC when it is a circle, ^GE otherwise. */
+function ellipseZpl(item) {
+  const color = item.invert ? 'W' : 'B';
+  const pos = `^FO${item.x},${item.y}`;
+  if (item.w === item.h) return `${pos}^GC${item.w},${item.thickness},${color}^FS`;
+  return `${pos}^GE${item.w},${item.h},${item.thickness},${color}^FS`;
+}
+
 function lineZpl(item) {
+  if (item.diagonal) {
+    // ^GD: R leans like "/", L like "\".
+    return `^FO${item.x},${item.y}^GD${item.w},${item.h},${item.thickness},B,${item.lean === 'L' ? 'L' : 'R'}^FS`;
+  }
   // ^GB draws a line when one side collapses to the stroke thickness.
   const w = item.vertical ? item.thickness : item.length;
   const h = item.vertical ? item.length : item.thickness;
@@ -425,6 +677,8 @@ export function elementZpl(item) {
       return imageZpl(item);
     case 'box':
       return boxZpl(item);
+    case 'ellipse':
+      return ellipseZpl(item);
     case 'line':
       return lineZpl(item);
     case 'field':
@@ -644,6 +898,85 @@ export function parseZpl(text, dpi = 203) {
     doc.passthrough.push(source.slice(token.start, token.end).trim());
   };
 
+  /**
+   * A field's data has arrived (^FD, or ^SN counting from `raw`): it
+   * becomes whichever element the commands before it describe.
+   */
+  const placeData = (raw, serial) => {
+    if (field.fieldElement) {
+      // "^FN1^FDtext^FS" gives the field its default value.
+      field.fieldElement.initial = raw;
+    } else if (field.barcode) {
+      const item = { ...field.barcode, id: elementId(), x: field.x, y: field.y, data: raw };
+      if (field.clock) item.clock = field.clock;
+      if (serial) item.serial = serial;
+      if (item.symbology === 'qr') {
+        // "QA,payload" -- strip the error-correction/mode prefix.
+        const match = /^([HQML])([AMNK]),?([\s\S]*)$/.exec(raw);
+        if (match) {
+          item.errorLevel = match[1];
+          item.data = match[3];
+        }
+      }
+      doc.elements.push(item);
+    } else if (field.clock) {
+      // A ^FC makes this a clock field, whether or not it has a font.
+      const font = field.pending || { rotation: 'N', font: '0', height: 30, width: 0 };
+      doc.elements.push({
+        id: elementId(),
+        type: 'date',
+        x: field.x,
+        y: field.y,
+        rotation: font.rotation,
+        font: font.font,
+        height: font.height,
+        width: font.width,
+        format: raw,
+        clock: field.clock,
+        reverse: field.reverse,
+        direction: field.direction || 'H',
+        blockWidth: field.block ? field.block.blockWidth : 0,
+        blockLines: field.block ? field.block.blockLines : 0,
+        justify: field.block ? field.block.justify : 'L',
+      });
+    } else if (field.pending) {
+      doc.elements.push({
+        id: elementId(),
+        type: 'text',
+        x: field.x,
+        y: field.y,
+        rotation: field.pending.rotation,
+        font: field.pending.font,
+        height: field.pending.height,
+        width: field.pending.width,
+        text: raw,
+        reverse: field.reverse,
+        direction: field.direction || 'H',
+        blockWidth: field.block ? field.block.blockWidth : 0,
+        blockLines: field.block ? field.block.blockLines : 0,
+        justify: field.block ? field.block.justify : 'L',
+        ...(serial ? { serial } : {}),
+      });
+    } else if (raw.trim() !== '') {
+      // Data with no preceding font or barcode command: the printer
+      // would use whatever ^CF set, which we do not track.
+      doc.elements.push({
+        id: elementId(),
+        type: 'text',
+        x: field.x,
+        y: field.y,
+        rotation: 'N',
+        font: '0',
+        height: 30,
+        width: 0,
+        text: raw,
+        reverse: false,
+        blockWidth: 0,
+        ...(serial ? { serial } : {}),
+      });
+    }
+  };
+
   for (const token of tokens) {
     const args = token.args.split(',');
 
@@ -727,7 +1060,11 @@ export function parseZpl(text, dpi = 203) {
       case 'A':
         field.pending = {
           type: 'text',
-          font: (token.args[0] || '0').toUpperCase(),
+          // ^A@o,h,w,d:f.x names a stored font by its path.
+          font:
+            token.args[0] === '@'
+              ? (args[3] || '').trim().toUpperCase() || '0'
+              : (token.args[0] || '0').toUpperCase(),
           rotation: normalizeRotation(token.args[1]),
           height: num(args[1], 30),
           // A width equal to the height is the ordinary proportional font,
@@ -743,6 +1080,10 @@ export function parseZpl(text, dpi = 203) {
           ratio: num(args[1], 3),
           height: num(args[2], lastBy.height),
         };
+        break;
+
+      case 'FP':
+        field.direction = normalizeDirection(args[0]);
         break;
 
       case 'FB':
@@ -789,6 +1130,43 @@ export function parseZpl(text, dpi = 203) {
         break;
       }
 
+      case 'GC':
+      case 'GE': {
+        const circle = token.cmd === 'GC';
+        const w = num(args[0], 3);
+        doc.elements.push({
+          id: elementId(),
+          type: 'ellipse',
+          x: field.x,
+          y: field.y,
+          rotation: 'N',
+          w,
+          h: circle ? w : num(args[1], 3),
+          thickness: num(args[circle ? 1 : 2], 1),
+          invert: (args[circle ? 2 : 3] || 'B').trim().toUpperCase() === 'W',
+        });
+        break;
+      }
+
+      case 'GD': {
+        const lean = (args[4] || 'R').trim().toUpperCase();
+        doc.elements.push({
+          id: elementId(),
+          type: 'line',
+          x: field.x,
+          y: field.y,
+          rotation: 'N',
+          diagonal: true,
+          w: num(args[0], 3),
+          h: num(args[1], 3),
+          thickness: num(args[2], 1),
+          lean: lean === 'L' || lean === '\\' ? 'L' : 'R',
+          vertical: false,
+          length: num(args[0], 3),
+        });
+        break;
+      }
+
       case 'IM':
       case 'XG': {
         const parts = token.args.split(',');
@@ -805,80 +1183,20 @@ export function parseZpl(text, dpi = 203) {
         break;
       }
 
-      case 'FD': {
-        const raw = unescapeFieldData(token.args, field.hexEscape);
-        if (field.fieldElement) {
-          // "^FN1^FDtext^FS" gives the field its default value.
-          field.fieldElement.initial = raw;
-        } else if (field.barcode) {
-          const item = { ...field.barcode, id: elementId(), x: field.x, y: field.y, data: raw };
-          if (field.clock) item.clock = field.clock;
-          if (item.symbology === 'qr') {
-            // "QA,payload" -- strip the error-correction/mode prefix.
-            const match = /^([HQML])([AMNK]),?([\s\S]*)$/.exec(raw);
-            if (match) {
-              item.errorLevel = match[1];
-              item.data = match[3];
-            }
-          }
-          doc.elements.push(item);
-        } else if (field.clock) {
-          // A ^FC makes this a clock field, whether or not it has a font.
-          const font = field.pending || { rotation: 'N', font: '0', height: 30, width: 0 };
-          doc.elements.push({
-            id: elementId(),
-            type: 'date',
-            x: field.x,
-            y: field.y,
-            rotation: font.rotation,
-            font: font.font,
-            height: font.height,
-            width: font.width,
-            format: raw,
-            clock: field.clock,
-            reverse: field.reverse,
-            blockWidth: field.block ? field.block.blockWidth : 0,
-            blockLines: field.block ? field.block.blockLines : 0,
-            justify: field.block ? field.block.justify : 'L',
-          });
-        } else if (field.pending) {
-          doc.elements.push({
-            id: elementId(),
-            type: 'text',
-            x: field.x,
-            y: field.y,
-            rotation: field.pending.rotation,
-            font: field.pending.font,
-            height: field.pending.height,
-            width: field.pending.width,
-            text: raw,
-            reverse: field.reverse,
-            blockWidth: field.block ? field.block.blockWidth : 0,
-            blockLines: field.block ? field.block.blockLines : 0,
-            justify: field.block ? field.block.justify : 'L',
-          });
-        } else if (raw.trim() !== '') {
-          // Data with no preceding font or barcode command: the printer
-          // would use whatever ^CF set, which we do not track.
-          doc.elements.push({
-            id: elementId(),
-            type: 'text',
-            x: field.x,
-            y: field.y,
-            rotation: 'N',
-            font: '0',
-            height: 30,
-            width: 0,
-            text: raw,
-            reverse: false,
-            blockWidth: 0,
-          });
-        }
+      case 'FD':
+        placeData(unescapeFieldData(token.args, field.hexEscape), null);
         break;
-      }
+
+      // ^SNv,n,z stands where ^FD would, with a value that counts.
+      case 'SN':
+        placeData((args[0] || '').trim(), {
+          step: num(args[1], 1) || 1,
+          zeros: (args[2] || 'N').trim().toUpperCase() === 'Y',
+        });
+        break;
 
       default: {
-        const symbology = CMD_TO_SYMBOLOGY[token.cmd];
+        const symbology = /^B[0-9A-Z]$/.test(token.cmd) && symbologyFor(token.cmd, args);
         if (symbology) {
           field.barcode = barcodeFromArgs(symbology, args, lastBy);
         } else {
@@ -898,6 +1216,13 @@ export function parseZpl(text, dpi = 203) {
   return { doc, unsupported: [...new Set(unsupported)] };
 }
 
+function normalizeDirection(ch) {
+  const d = String(ch || 'H')
+    .trim()
+    .toUpperCase();
+  return ['H', 'V', 'R'].includes(d) ? d : 'H';
+}
+
 function normalizeRotation(ch) {
   const r = String(ch || 'N').toUpperCase();
   return ['N', 'R', 'I', 'B'].includes(r) ? r : 'N';
@@ -914,6 +1239,7 @@ function barcodeFromArgs(symbology, args, by) {
     showText: true,
     magnification: 4,
     errorLevel: 'Q',
+    databarType: 1,
   };
 
   if (symbology === 'qr') {
@@ -928,9 +1254,25 @@ function barcodeFromArgs(symbology, args, by) {
   } else if (symbology === 'aztec') {
     base.magnification = num(args[1], 4);
     base.height = 0;
-  } else if (symbology === 'code39') {
+  } else if (symbology === 'maxicode') {
+    base.rotation = 'N';
+    base.maxiMode = num(args[0], 2);
+    base.height = 0;
+  } else if (symbology === 'micropdf') {
+    base.height = num(args[1], by.height);
+  } else if (symbology === 'databar') {
+    base.databarType = num(args[1], 1);
+    base.magnification = num(args[2], 2);
+    base.height = num(args[4], 25);
+    base.showText = false;
+  } else if (symbology === 'code39' || symbology === 'codabar') {
+    // Both put a check-digit flag ahead of the height.
     base.height = num(args[2], by.height);
     base.showText = (args[3] || 'Y').trim().toUpperCase() !== 'N';
+  } else if (['postnet', 'planet', 'imb'].includes(symbology)) {
+    base.height = num(args[1], by.height);
+    // The postal codes default to no interpretation line.
+    base.showText = (args[2] || 'N').trim().toUpperCase() === 'Y';
   } else {
     base.height = num(args[1], by.height);
     base.showText = (args[2] || 'Y').trim().toUpperCase() !== 'N';

@@ -30,7 +30,7 @@
 
 import { el } from './ui.js';
 import { loadStoredImage } from './printer.js';
-import { SYMBOLOGIES, expandClock } from './zpl.js';
+import { SYMBOLOGIES, expandClock, isStoredFont } from './zpl.js';
 import { printer, fromDots } from './state.js';
 
 /** Rough advance width of the bitmap fonts, as a fraction of their height. */
@@ -81,18 +81,49 @@ function font0Width(text, height, width) {
   return em * height * FONT0.size * FONT0.squeeze * ((width || height) / height);
 }
 
+/*
+ * A TrueType font stored on the printer is drawn in the nearest thing the
+ * browser has: most of them (Swiss 721 among them) are Helvetica-alikes.
+ */
+const STORED_FAMILY = 'Helvetica, Arial, sans-serif';
+
+/** How wide a line of a stored font prints, in dots. */
+function storedFontWidth(text, height, width) {
+  if (!measureContext) measureContext = document.createElement('canvas').getContext('2d');
+  measureContext.font = `100px ${STORED_FAMILY}`;
+  const em = measureContext.measureText(text).width / 100;
+  return em * (width || height);
+}
+
 /** How wide a line of text prints, in dots. */
 function textWidth(item, text) {
-  if (item.font === '0' && typeof document !== 'undefined') {
-    return font0Width(text, item.height, item.width);
+  if (typeof document !== 'undefined') {
+    if (item.font === '0') return font0Width(text, item.height, item.width);
+    if (isStoredFont(item.font)) return storedFontWidth(text, item.height, item.width);
   }
   return text.length * (item.width || item.height) * FONT_ASPECT;
 }
 
+/**
+ * The text as it lies on the label: ^FP V stacks the characters one to a
+ * line, ^FP R runs them right to left.
+ */
+function laidOutText(item, text) {
+  if (item.direction === 'V') return [...String(text).replace(/\n/g, '')].join('\n');
+  if (item.direction === 'R') {
+    return String(text)
+      .split('\n')
+      .map((line) => [...line].reverse().join(''))
+      .join('\n');
+  }
+  return String(text);
+}
+
 /** Estimate an element's footprint in dots, for hit-testing and handles. */
 export function elementBounds(item) {
-  if (item.type === 'box') return { w: item.w, h: item.h };
+  if (item.type === 'box' || item.type === 'ellipse') return { w: item.w, h: item.h };
   if (item.type === 'line') {
+    if (item.diagonal) return { w: item.w, h: item.h };
     return item.vertical
       ? { w: item.thickness, h: item.length }
       : { w: item.length, h: item.thickness };
@@ -113,17 +144,50 @@ export function elementBounds(item) {
     return elementBounds({ ...item, type: 'text', text: dateSample(item) });
   }
   if (item.type === 'text') {
-    const lines = String(item.text).split('\n');
+    const lines = laidOutText(item, item.text).split('\n');
     const longest = lines.reduce((n, l) => Math.max(n, textWidth(item, l)), 0);
     const w = item.blockWidth > 0 ? item.blockWidth : Math.max(8, longest);
     return { w, h: item.height * lines.length };
   }
   if (item.type === 'barcode') {
     const spec = SYMBOLOGIES[item.symbology];
+    if (item.symbology === 'maxicode') {
+      // A fixed size, about 1.11 x 1.05 in, whatever the data.
+      return { w: Math.round(printer.dpi * 1.11), h: Math.round(printer.dpi * 1.054) };
+    }
+    if (item.symbology === 'databar') {
+      // Omnidirectional is 96 modules by 33.
+      const mag = item.magnification || 2;
+      return { w: 96 * mag, h: 33 * mag };
+    }
+    if (['postnet', 'planet', 'imb'].includes(item.symbology)) {
+      // Five bars a digit, or 65 for IMb, at a pitch of a 48th of an
+      // inch -- measured off the printer's own render.
+      const bars = item.symbology === 'imb' ? 65 : String(item.data).length * 5 + 2;
+      return {
+        w: Math.round((bars * printer.dpi) / 48),
+        h: item.height + (item.showText ? Math.round(item.height * 0.5) + 10 : 0),
+      };
+    }
+    if (item.symbology === 'pdf417' || item.symbology === 'micropdf') {
+      const chars = Math.max(1, String(item.data).length);
+      return {
+        w: (item.symbology === 'pdf417' ? 7 : 4) * 17 * (item.moduleWidth || 2),
+        h: Math.max(3, Math.ceil(chars / 4)) * (item.height || 10),
+      };
+    }
     if (spec && spec.kind === '2d') {
       const modules = item.symbology === 'qr' ? 29 : 24;
       const size = modules * (item.magnification || item.moduleWidth || 4);
       return { w: size, h: size };
+    }
+    // The retail codes have a fixed width in modules.
+    const fixed = { ean13: 95, upca: 95, ean8: 67, upce: 51 }[item.symbology];
+    if (fixed) {
+      return {
+        w: fixed * (item.moduleWidth || 2),
+        h: item.height + (item.showText ? Math.round(item.height * 0.25) + 10 : 0),
+      };
     }
     // 1D: roughly 11 modules per character plus quiet zones.
     const chars = Math.max(1, String(item.data).length);
@@ -137,6 +201,17 @@ export function elementBounds(item) {
 
 const ROTATION_DEG = { N: 0, R: 90, I: 180, B: 270 };
 
+/**
+ * How far left of its origin an element starts, in dots. Only reversed
+ * text does: the printer puts the first character at the origin and runs
+ * the rest leftwards from it.
+ */
+function originShift(item, bounds) {
+  if ((item.type !== 'text' && item.type !== 'date') || item.direction !== 'R') return 0;
+  const first = [...String(item.type === 'date' ? dateSample(item) : item.text)][0] || '';
+  return Math.max(0, bounds.w - textWidth(item, first));
+}
+
 /* ------------------------------------------------------------------ *
  * Element rendering
  * ------------------------------------------------------------------ */
@@ -148,6 +223,7 @@ function textSqueeze(item) {
 }
 
 function renderText(item, scale) {
+  const text = laidOutText(item, item.text);
   const stretch = (item.width || item.height) / item.height;
   // ^FB wraps at its width, which the squeeze would otherwise shrink.
   const wrap =
@@ -160,17 +236,30 @@ function renderText(item, scale) {
         `font-size:${item.height * scale * FONT0.size}px;` +
         `line-height:${item.height * scale}px;margin-top:-${FONT0.rise}em;` +
         `transform-origin:left top;transform:scaleX(${FONT0.squeeze * stretch});`
-      : `font-family:ui-monospace, monospace;font-size:${item.height * scale}px;` +
-        'line-height:1;' +
-        (stretch !== 1 ? `transform-origin:left top;transform:scaleX(${stretch});` : '');
+      : isStoredFont(item.font)
+        ? `font-family:${STORED_FAMILY};font-size:${item.height * scale}px;` +
+          `line-height:${item.height * scale}px;` +
+          (stretch !== 1 ? `transform-origin:left top;transform:scaleX(${stretch});` : '')
+        : `font-family:ui-monospace, monospace;font-size:${item.height * scale}px;` +
+          'line-height:1;' +
+          (stretch !== 1 ? `transform-origin:left top;transform:scaleX(${stretch});` : '');
   return el(
     'div',
     {
       class: 'whitespace-pre text-black',
       style: style + wrap + (item.reverse ? 'background:#000;color:#fff;' : ''),
     },
-    [item.text],
+    [text],
   );
+}
+
+/**
+ * A serial number drawn as its starting value, outlined in green so it
+ * reads as one that changes from label to label.
+ */
+function markSerial(node) {
+  node.classList.add('outline', 'outline-1', 'outline-dashed', 'outline-emerald-500');
+  return node;
 }
 
 /** A clock field as it would print right now, by this computer's clock. */
@@ -222,7 +311,8 @@ function renderBarcode(item, scale) {
     });
   }
 
-  const barsHeight = item.height * scale;
+  // DataBar's height is set by its magnification, not a bar height.
+  const barsHeight = (item.symbology === 'databar' ? bounds.h : item.height) * scale;
   const bars = el('div', {
     style:
       `height:${barsHeight}px;` +
@@ -308,8 +398,35 @@ function renderBox(item, scale) {
   });
 }
 
+function renderEllipse(item, scale) {
+  const color = item.invert ? '#fff' : '#000';
+  return el('div', {
+    class: 'h-full w-full rounded-[50%]',
+    style: `border:${Math.max(1, item.thickness * scale)}px solid ${color};`,
+  });
+}
+
+const SVG = 'http://www.w3.org/2000/svg';
+
+/**
+ * ^GD's stroke is `thickness` dots measured across, so it is drawn as the
+ * parallelogram the printer fills rather than as a stroked line.
+ */
 function renderLine(item) {
-  return el('div', { class: 'h-full w-full bg-black' });
+  if (!item.diagonal) return el('div', { class: 'h-full w-full bg-black' });
+  const { w, h } = item;
+  const t = Math.min(item.thickness, w);
+  const points =
+    item.lean === 'L' ? `0,0 ${t},0 ${w},${h} ${w - t},${h}` : `0,${h} ${t},${h} ${w},0 ${w - t},0`;
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('class', 'block h-full w-full overflow-visible');
+  const shape = document.createElementNS(SVG, 'polygon');
+  shape.setAttribute('points', points);
+  shape.setAttribute('fill', '#000');
+  svg.append(shape);
+  return svg;
 }
 
 /* ------------------------------------------------------------------ *
@@ -606,7 +723,7 @@ export function createCanvas(
     const node = nodes.get(item.id);
     if (!node) return;
     const bounds = boxOf(item);
-    node.style.left = `${item.x * scale}px`;
+    node.style.left = `${(item.x - originShift(item, bounds)) * scale}px`;
     node.style.top = `${item.y * scale}px`;
     node.style.width = `${Math.max(2, bounds.w * scale)}px`;
     node.style.height = `${Math.max(2, bounds.h * scale)}px`;
@@ -681,7 +798,7 @@ export function createCanvas(
 
   /** What the corner handle means differs per element type. */
   function applyResize(item, origin, dx, dy) {
-    if (item.type === 'box') {
+    if (item.type === 'box' || item.type === 'ellipse' || (item.type === 'line' && item.diagonal)) {
       item.w = Math.max(item.thickness, origin.w + dx);
       item.h = Math.max(item.thickness, origin.h + dy);
     } else if (item.type === 'line') {
@@ -722,13 +839,15 @@ export function createCanvas(
       else if (item.type === 'barcode') body = renderBarcode(item, scale);
       else if (item.type === 'image') body = renderImage(item, scale, () => render());
       else if (item.type === 'box') body = renderBox(item, scale);
+      else if (item.type === 'ellipse') body = renderEllipse(item, scale);
       else body = renderLine(item);
+      if (item.serial) markSerial(body);
 
       const node = el(
         'div',
         {
           style:
-            `left:${item.x * scale}px;top:${item.y * scale}px;` +
+            `left:${(item.x - originShift(item, bounds)) * scale}px;top:${item.y * scale}px;` +
             `width:${Math.max(2, bounds.w * scale)}px;height:${Math.max(2, bounds.h * scale)}px;` +
             `transform:rotate(${ROTATION_DEG[item.rotation] || 0}deg);transform-origin:left top;` +
             'cursor:move;',

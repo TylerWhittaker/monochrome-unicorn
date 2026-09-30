@@ -12,9 +12,13 @@ Three modes:
   differ from their factory default. All 574 of them arrive in one
   streamed request, painted as they land.
 - **Label Editor** — create and edit stored `.ZPL` labels, either by
-  dragging text, barcodes, images, boxes, lines, `^FN` fields and dates
+  dragging text, barcodes (twenty symbologies, GS1 and postal among
+  them), serial numbers (`^SN`, counting from label to label), images,
+  boxes, ellipses, straight and diagonal lines, `^FN` fields and dates
   (`^FC`, filled in from the printer's clock) around a canvas or by
-  writing ZPL directly. The preview beside it is the
+  writing ZPL directly. Text can run vertically or reversed, in the
+  built-in fonts or any TrueType font stored on the printer (`^A@`).
+  The preview beside it is the
   printer's own render, not a simulation. Every length is shown in
   inches, millimetres or dots, switched by one radio group and
   remembered between visits.

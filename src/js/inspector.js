@@ -34,9 +34,40 @@ import {
   FONTS,
   DATE_FORMATS,
   CLOCK_CODES,
+  DATABAR_TYPES,
+  TEXT_DIRECTIONS,
   expandClock,
   primaryClockIndicator,
+  isStoredFont,
 } from './zpl.js';
+
+/* ------------------------------------------------------------------ *
+ * Fonts
+ * ------------------------------------------------------------------ */
+
+/** TrueType fonts stored on the printer, as {value, label}. */
+let storedFontList = [];
+
+/** Take the printer's stored fonts, from its drive listing. */
+export function setStoredFonts(list) {
+  storedFontList = list || [];
+}
+
+/**
+ * The font list for one element: the built-in fonts, the printer's
+ * stored ones, and the element's own if it names one this printer does
+ * not have -- it still prints somewhere, so it is not quietly changed.
+ */
+function fontOptions(current) {
+  const options = [...FONTS, ...storedFontList];
+  if (current && !options.some((f) => f.value === current)) {
+    options.push({
+      value: current,
+      label: isStoredFont(current) ? `${current} (not on this printer)` : `Font ${current}`,
+    });
+  }
+  return options;
+}
 
 /* ------------------------------------------------------------------ *
  * Field builders
@@ -184,6 +215,53 @@ function checkField(labelText, checked, onCommit) {
   return el('label', { class: 'flex items-center gap-2 pt-5 text-ink-700' }, [box, labelText]);
 }
 
+/**
+ * Whether a field counts up (or down) from label to label: ^SN, with its
+ * step and whether it keeps its leading zeros. The value in the content
+ * box is where it starts.
+ */
+function serialRows(item, commit) {
+  const rows = [
+    checkField(
+      'Serial number (changes each label)',
+      !!item.serial,
+      commit((v) => {
+        item.serial = v ? { step: 1, zeros: true } : null;
+      }),
+    ),
+  ];
+  if (item.serial) {
+    rows.push(
+      grid([
+        row(
+          'Step',
+          numberField(
+            item.serial.step,
+            commit((v) => {
+              item.serial.step = Math.round(v) || 1;
+            }),
+            { min: -999999, max: 999999 },
+          ),
+        ),
+        checkField(
+          'Keep leading zeros',
+          item.serial.zeros,
+          commit((v) => {
+            item.serial.zeros = v;
+          }),
+        ),
+      ]),
+      el('p', { class: 'text-[11px] text-ink-400' }, [
+        'Saved as ^SN. The printer counts from the last number in the value; a negative ' +
+          'step counts down. Commas, ^ and ~ cannot be part of it.',
+      ]),
+    );
+  }
+  // The checkbox row carries a top pad for sitting beside a box; alone, not.
+  rows[0].classList.remove('pt-5');
+  return rows;
+}
+
 function grid(children) {
   return el('div', { class: 'grid grid-cols-2 gap-3' }, children);
 }
@@ -265,7 +343,7 @@ function dateSection(item, unit, commit) {
         'Font',
         selectField(
           item.font,
-          FONTS,
+          fontOptions(item.font),
           commit((v) => {
             item.font = v;
           }),
@@ -309,6 +387,40 @@ function dateSection(item, unit, commit) {
       ),
     ),
   ]);
+}
+
+/**
+ * Which way a line runs. The diagonals keep the box of the straight line
+ * they were: its length across, and a third of that down.
+ */
+function lineDirectionRow(item, commit) {
+  const current = item.diagonal ? `d${item.lean === 'L' ? 'L' : 'R'}` : item.vertical ? 'v' : 'h';
+  return row(
+    'Direction',
+    selectField(
+      current,
+      [
+        ['h', 'Horizontal'],
+        ['v', 'Vertical'],
+        ['dR', 'Diagonal /'],
+        ['dL', 'Diagonal \\'],
+      ],
+      commit((v) => {
+        if (v[0] === 'd') {
+          if (!item.diagonal) {
+            item.w = item.length;
+            item.h = Math.max(1, Math.round(item.length / 3));
+          }
+          item.diagonal = true;
+          item.lean = v[1];
+        } else {
+          if (item.diagonal) item.length = item.w;
+          item.diagonal = false;
+          item.vertical = v === 'v';
+        }
+      }),
+    ),
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -497,7 +609,7 @@ export function renderElementPanel(
           ),
         ),
       ]),
-      item.type !== 'box' && item.type !== 'line'
+      !['box', 'line', 'ellipse'].includes(item.type) && item.symbology !== 'maxicode'
         ? row(
             'Rotation',
             selectField(
@@ -520,21 +632,22 @@ export function renderElementPanel(
         'Text',
         [
           row(
-            'Content',
+            item.serial ? 'Starting value' : 'Content',
             textField(
               item.text,
               commit((v) => {
                 item.text = v;
               }),
-              { multiline: true },
+              { multiline: !item.serial },
             ),
           ),
+          ...serialRows(item, commit),
           grid([
             row(
               'Font',
               selectField(
                 item.font,
-                FONTS,
+                fontOptions(item.font),
                 commit((v) => {
                   item.font = v;
                 }),
@@ -561,6 +674,16 @@ export function renderElementPanel(
               }),
             ),
           ]),
+          row(
+            'Direction',
+            selectField(
+              item.direction || 'H',
+              TEXT_DIRECTIONS,
+              commit((v) => {
+                item.direction = v;
+              }),
+            ),
+          ),
           grid([
             // ^FB wraps the field into a block; zero means no wrapping.
             row(
@@ -636,7 +759,7 @@ export function renderElementPanel(
             'Font',
             selectField(
               item.font,
-              FONTS,
+              fontOptions(item.font),
               commit((v) => {
                 item.font = v;
               }),
@@ -674,6 +797,7 @@ export function renderElementPanel(
 
   if (item.type === 'barcode') {
     const spec = SYMBOLOGIES[item.symbology] || SYMBOLOGIES.code128;
+    const has = (size) => spec.sizes.includes(size);
     const fields = [
       row(
         'Symbology',
@@ -681,111 +805,166 @@ export function renderElementPanel(
           item.symbology,
           Object.entries(SYMBOLOGIES).map(([key, s]) => [key, s.label]),
           commit((v) => {
+            // Data made for one symbology rarely suits another: swap an
+            // untouched example for the new one's.
+            if (item.data === spec.example && SYMBOLOGIES[v]) item.data = SYMBOLOGIES[v].example;
+            // QR carries its own prefix in the data, which ^SN cannot.
+            if (v === 'qr') item.serial = null;
             item.symbology = v;
           }),
         ),
       ),
       row(
-        'Data',
+        item.serial ? 'Starting value' : 'Data',
         textField(
           item.data,
           commit((v) => {
             item.data = v;
           }),
-          { multiline: true },
+          { multiline: !item.serial },
         ),
       ),
     ];
+    if (item.symbology !== 'qr') fields.push(...serialRows(item, commit));
 
-    if (spec.kind === '1d') {
-      fields.push(
-        grid([
-          row(
-            'Bar height',
-            dotsField(
-              item.height,
-              unit,
-              commit((v) => {
-                item.height = Math.max(4, v);
-              }),
-            ),
-          ),
-          row(
-            'Module width',
-            dotsField(
-              item.moduleWidth,
-              unit,
-              commit((v) => {
-                item.moduleWidth = Math.min(10, Math.max(1, Math.round(v)));
-              }),
-              { fine: true, maxDots: 10 },
-            ),
-          ),
-        ]),
-      );
-      fields.push(
-        grid([
-          row(
-            'Wide:narrow',
-            numberField(
-              item.ratio,
-              commit((v) => {
-                item.ratio = v;
-              }),
-              { min: 2, max: 3, step: 0.1 },
-            ),
-          ),
-          checkField(
-            'Print interpretation line',
-            item.showText,
+    const sizes = [];
+    if (has('height')) {
+      sizes.push(
+        row(
+          ['pdf417', 'micropdf'].includes(item.symbology) ? 'Row height' : 'Bar height',
+          dotsField(
+            item.height,
+            unit,
             commit((v) => {
-              item.showText = v;
+              item.height = Math.max(1, v);
             }),
           ),
-        ]),
+        ),
       );
-    } else {
-      fields.push(
-        grid([
-          row(
-            'Magnification',
-            numberField(
-              item.magnification,
-              commit((v) => {
-                item.magnification = Math.min(20, Math.max(1, Math.round(v)));
-              }),
-              { min: 1, max: 20 },
-            ),
+    }
+    if (has('module')) {
+      const max = spec.kind === '2d' ? 20 : 10;
+      sizes.push(
+        row(
+          'Module width',
+          dotsField(
+            item.moduleWidth,
+            unit,
+            commit((v) => {
+              item.moduleWidth = Math.min(max, Math.max(1, Math.round(v)));
+            }),
+            { fine: true, maxDots: max },
           ),
-          item.symbology === 'qr'
-            ? row(
-                'Error correction',
-                selectField(
-                  item.errorLevel,
-                  [
-                    ['H', 'H — 30%'],
-                    ['Q', 'Q — 25%'],
-                    ['M', 'M — 15%'],
-                    ['L', 'L — 7%'],
-                  ],
-                  commit((v) => {
-                    item.errorLevel = v;
-                  }),
-                ),
-              )
-            : row(
-                'Module width',
-                dotsField(
-                  item.moduleWidth,
-                  unit,
-                  commit((v) => {
-                    item.moduleWidth = Math.min(20, Math.max(1, Math.round(v)));
-                  }),
-                  { fine: true, maxDots: 20 },
-                ),
-              ),
-        ]),
+        ),
       );
+    }
+    if (has('mag')) {
+      const max = item.symbology === 'databar' ? 10 : 20;
+      sizes.push(
+        row(
+          'Magnification',
+          numberField(
+            item.magnification,
+            commit((v) => {
+              item.magnification = Math.min(max, Math.max(1, Math.round(v)));
+            }),
+            { min: 1, max },
+          ),
+        ),
+      );
+    }
+    if (item.symbology === 'qr') {
+      sizes.push(
+        row(
+          'Error correction',
+          selectField(
+            item.errorLevel,
+            [
+              ['H', 'H — 30%'],
+              ['Q', 'Q — 25%'],
+              ['M', 'M — 15%'],
+              ['L', 'L — 7%'],
+            ],
+            commit((v) => {
+              item.errorLevel = v;
+            }),
+          ),
+        ),
+      );
+    }
+    if (item.symbology === 'databar') {
+      sizes.push(
+        row(
+          'Type',
+          selectField(
+            item.databarType || 1,
+            DATABAR_TYPES,
+            commit((v) => {
+              item.databarType = Number(v);
+            }),
+          ),
+        ),
+      );
+    }
+    if (item.symbology === 'maxicode') {
+      sizes.push(
+        row(
+          'Mode',
+          selectField(
+            item.maxiMode || 4,
+            [
+              [2, '2 — US carrier'],
+              [3, '3 — international carrier'],
+              [4, '4 — standard'],
+              [5, '5 — full ECC'],
+              [6, '6 — reader programming'],
+            ],
+            commit((v) => {
+              item.maxiMode = Number(v);
+            }),
+          ),
+        ),
+      );
+    }
+    if (has('ratio')) {
+      sizes.push(
+        row(
+          'Wide:narrow',
+          numberField(
+            item.ratio,
+            commit((v) => {
+              item.ratio = v;
+            }),
+            { min: 2, max: 3, step: 0.1 },
+          ),
+        ),
+      );
+    }
+    if (has('text')) {
+      sizes.push(
+        checkField(
+          'Print interpretation line',
+          item.showText,
+          commit((v) => {
+            item.showText = v;
+          }),
+        ),
+      );
+    }
+    for (let i = 0; i < sizes.length; i += 2) fields.push(grid(sizes.slice(i, i + 2)));
+
+    const notes = {
+      gs1_128:
+        'Put each application identifier in brackets, e.g. (01)… — the printer adds FNC1 and ' +
+        'the check digit.',
+      maxicode:
+        'A fixed size, and it cannot be rotated. Modes 2 and 3 need a structured carrier ' +
+        'message; mode 4 takes any data.',
+      databar: 'Omnidirectional takes a 13-digit GTIN; Expanded takes (AI) data.',
+      imb: '20, 25, 29 or 31 digits: tracking code, then the routing ZIP.',
+    };
+    if (notes[item.symbology]) {
+      fields.push(el('p', { class: 'text-[11px] text-ink-400' }, [notes[item.symbology]]));
     }
     specific.push(section('Barcode', fields));
   }
@@ -918,9 +1097,107 @@ export function renderElementPanel(
     );
   }
 
-  if (item.type === 'line') {
+  if (item.type === 'ellipse') {
+    specific.push(
+      section('Ellipse', [
+        grid([
+          row(
+            'Width',
+            dotsField(
+              item.w,
+              unit,
+              commit((v) => {
+                item.w = Math.max(3, v);
+              }),
+            ),
+          ),
+          row(
+            'Height',
+            dotsField(
+              item.h,
+              unit,
+              commit((v) => {
+                item.h = Math.max(3, v);
+              }),
+            ),
+          ),
+        ]),
+        grid([
+          row(
+            'Line thickness',
+            dotsField(
+              item.thickness,
+              unit,
+              commit((v) => {
+                item.thickness = Math.min(4095, Math.max(1, Math.round(v)));
+              }),
+              { fine: true },
+            ),
+          ),
+          checkField(
+            'White (knock out)',
+            item.invert,
+            commit((v) => {
+              item.invert = v;
+            }),
+          ),
+        ]),
+        el('p', { class: 'text-[11px] text-ink-400' }, [
+          'Saved as ^GE, or ^GC when the width and height are equal. A thickness of half ' +
+            'the smaller side fills it.',
+        ]),
+      ]),
+    );
+  }
+
+  if (item.type === 'line' && item.diagonal) {
     specific.push(
       section('Line', [
+        lineDirectionRow(item, commit),
+        grid([
+          row(
+            'Width',
+            dotsField(
+              item.w,
+              unit,
+              commit((v) => {
+                item.w = Math.max(1, v);
+              }),
+            ),
+          ),
+          row(
+            'Height',
+            dotsField(
+              item.h,
+              unit,
+              commit((v) => {
+                item.h = Math.max(1, v);
+              }),
+            ),
+          ),
+        ]),
+        row(
+          'Thickness',
+          dotsField(
+            item.thickness,
+            unit,
+            commit((v) => {
+              item.thickness = Math.min(200, Math.max(1, Math.round(v)));
+            }),
+            { fine: true, maxDots: 200 },
+          ),
+        ),
+        el('p', { class: 'text-[11px] text-ink-400' }, [
+          'Saved as ^GD, corner to corner of the box it spans.',
+        ]),
+      ]),
+    );
+  }
+
+  if (item.type === 'line' && !item.diagonal) {
+    specific.push(
+      section('Line', [
+        lineDirectionRow(item, commit),
         grid([
           row(
             'Length',
@@ -944,13 +1221,6 @@ export function renderElementPanel(
             ),
           ),
         ]),
-        checkField(
-          'Vertical',
-          item.vertical,
-          commit((v) => {
-            item.vertical = v;
-          }),
-        ),
       ]),
     );
   }

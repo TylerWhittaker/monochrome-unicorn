@@ -36,6 +36,10 @@ const {
   nextFieldNumber,
   formatZpl,
   expandClock,
+  elementZpl,
+  isStoredFont,
+  storedFonts,
+  SYMBOLOGIES,
 } = mod;
 
 let failures = 0;
@@ -228,12 +232,9 @@ check('other image formats still use ^IM', () => {
 });
 
 check('unknown commands are reported and preserved', () => {
-  const { doc, unsupported } = parseZpl(
-    '^XA^PW600^FO10,10^A0N,30,30^FDhi^FS^BY2^SNSERIAL,1,Y^XZ',
-    DPI,
-  );
-  assert.ok(unsupported.includes('^SN'), `expected ^SN in ${JSON.stringify(unsupported)}`);
-  assert.ok(toZpl(doc).includes('^SN'), 'unsupported command must survive regeneration');
+  const { doc, unsupported } = parseZpl('^XA^PW600^FO10,10^A0N,30,30^FDhi^FS^BY2^FWR^XZ', DPI);
+  assert.ok(unsupported.includes('^FW'), `expected ^FW in ${JSON.stringify(unsupported)}`);
+  assert.ok(toZpl(doc).includes('^FW'), 'unsupported command must survive regeneration');
 });
 
 check('^FN fields are discovered in order, with names and defaults', () => {
@@ -425,6 +426,118 @@ check('text that is not ZPL at all is flagged', () => {
   assert.deepEqual(parseZpl('N\nA50,0,0,1,1,1,N,"hi"\nP1\n', DPI).unsupported, [
     '(text that is not ZPL)',
   ]);
+});
+
+const roundTrip = (items) => {
+  const doc = newLabel(DPI);
+  doc.elements = items;
+  const zpl = toZpl(doc);
+  const { doc: back, unsupported } = parseZpl(zpl, DPI);
+  assert.deepEqual(unsupported, [], `nothing unmodelled in ${zpl}`);
+  assert.equal(toZpl(back), zpl, 'regenerates the same ZPL');
+  return { zpl, back: back.elements };
+};
+
+check('a serial number is ^SN in place of ^FD, and comes back as one', () => {
+  const doc = newLabel(DPI);
+  const item = newElement('serial', doc, DPI);
+  const { zpl, back } = roundTrip([item]);
+  assert.match(zpl, /\^A0N,\d+,\d+\^SN0001,1,Y\^FS/);
+  assert.equal(back[0].type, 'text');
+  assert.equal(back[0].text, '0001');
+  assert.deepEqual(back[0].serial, { step: 1, zeros: true });
+});
+
+check('a barcode can count too, downwards', () => {
+  const item = {
+    ...newElement('barcode', newLabel(DPI), DPI),
+    data: 'LOT100',
+    serial: { step: -5, zeros: false },
+  };
+  const { zpl, back } = roundTrip([item]);
+  assert.match(zpl, /\^BC[^^]*\^SNLOT100,-5,N\^FS/);
+  assert.deepEqual(back[0].serial, { step: -5, zeros: false });
+});
+
+check('a serial starting value drops what ^SN cannot carry', () => {
+  const item = { ...newElement('serial', newLabel(DPI), DPI), text: 'A,B^C~1' };
+  assert.match(elementZpl(item), /\^SNABC1,1,Y/);
+});
+
+check('an ellipse is ^GE, a circle ^GC', () => {
+  const doc = newLabel(DPI);
+  const oval = { ...newElement('ellipse', doc, DPI), w: 200, h: 100, thickness: 4 };
+  const round = { ...newElement('ellipse', doc, DPI), w: 150, h: 150, thickness: 2, invert: true };
+  const { zpl, back } = roundTrip([oval, round]);
+  assert.match(zpl, /\^GE200,100,4,B\^FS/);
+  assert.match(zpl, /\^GC150,2,W\^FS/);
+  assert.equal(back[1].type, 'ellipse');
+  assert.equal(back[1].h, 150);
+  assert.equal(back[1].invert, true);
+});
+
+check('a diagonal line is ^GD, leaning either way', () => {
+  const doc = newLabel(DPI);
+  const up = { ...newElement('line', doc, DPI), diagonal: true, w: 300, h: 100, lean: 'R' };
+  const down = { ...up, id: 'x', lean: 'L' };
+  const { zpl, back } = roundTrip([up, down]);
+  assert.match(zpl, /\^GD300,100,3,B,R\^FS/);
+  assert.match(zpl, /\^GD300,100,3,B,L\^FS/);
+  assert.equal(back[0].diagonal, true);
+  assert.equal(back[1].lean, 'L');
+});
+
+check('vertical and reverse text are ^FP', () => {
+  const doc = newLabel(DPI);
+  const item = { ...newElement('text', doc, DPI), direction: 'V' };
+  const { zpl, back } = roundTrip([item]);
+  assert.match(zpl, /\^FPV,0/);
+  assert.equal(back[0].direction, 'V');
+});
+
+check('a stored TrueType font is recalled with ^A@', () => {
+  const doc = newLabel(DPI);
+  const item = { ...newElement('text', doc, DPI), font: 'E:TT0003M_.TTF', height: 40 };
+  const { zpl, back } = roundTrip([item]);
+  assert.match(zpl, /\^A@N,40,40,E:TT0003M_\.TTF\^FH\^FD/);
+  assert.equal(back[0].font, 'E:TT0003M_.TTF');
+  assert.equal(isStoredFont(back[0].font), true);
+});
+
+check('only TrueType fonts join the font list, and not font 0 itself', () => {
+  const files = [
+    { name: 'E:TT0003M_.TTF', dev: 'E', oname: 'TT0003M_', otype: 'TTF' },
+    { name: 'Z:0.TTF', dev: 'Z', oname: '0', otype: 'TTF' },
+    { name: 'Z:A.FNT', dev: 'Z', oname: 'A', otype: 'FNT' },
+  ];
+  assert.deepEqual(
+    storedFonts(files).map((f) => f.value),
+    ['E:TT0003M_.TTF'],
+  );
+});
+
+check('every symbology survives a round trip as itself', () => {
+  const doc = newLabel(DPI);
+  for (const [key, spec] of Object.entries(SYMBOLOGIES)) {
+    const item = { ...newElement('barcode', doc, DPI), symbology: key, data: spec.example };
+    const { back } = roundTrip([item]);
+    assert.equal(back[0].symbology, key, `${key} came back as ${back[0].symbology}`);
+    assert.equal(back[0].data, spec.example, key);
+  }
+});
+
+check('GS1-128 is Code 128 in UCC/EAN mode', () => {
+  const item = { ...newElement('barcode', newLabel(DPI), DPI), symbology: 'gs1_128' };
+  assert.match(elementZpl(item), /\^BCN,\d+,Y,N,N,D\^FH\^FD/);
+});
+
+check('the postal codes are one command with a type', () => {
+  const doc = newLabel(DPI);
+  const imb = { ...newElement('barcode', doc, DPI), symbology: 'imb', showText: false };
+  assert.match(elementZpl(imb), /\^BZN,\d+,N,N,3\^/);
+  // ^B5 is PLANET on its own.
+  const { doc: back } = parseZpl('^XA^FO10,10^B5N,40,N,N^FD12345678901^FS^XZ', DPI);
+  assert.equal(back.elements[0].symbology, 'planet');
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');
