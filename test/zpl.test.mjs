@@ -407,5 +407,13 @@ check('a new label takes the size it is given, else 4x6 inches', () => {
   assert.deepEqual([newLabel(203).width, newLabel(203).height], [812, 1218]);
 });
 
+check('a char width equal to the height is read as following it', () => {
+  const src = '^XA^FO10,10^A0N,40,40^FDsame^FS^FO10,60^A0N,40,25^FDnarrow^FS^XZ';
+  const { doc } = parseZpl(src, DPI);
+  assert.equal(doc.elements[0].width, 0, 'follows the height');
+  assert.equal(doc.elements[1].width, 25, 'set on its own');
+  assert.match(toZpl(doc), /\^A0N,40,40\^FH\^FDsame/, 'and is written back the same');
+});
+
 console.log(failures ? `\n${failures} failing` : '\nall passing');
 process.exit(failures ? 1 : 0);

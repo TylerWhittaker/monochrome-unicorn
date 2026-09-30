@@ -283,16 +283,7 @@ function dateSection(item, unit, commit) {
       ),
     ]),
     grid([
-      row(
-        'Char width',
-        dotsField(
-          item.width || 0,
-          unit,
-          commit((v) => {
-            item.width = v;
-          }),
-        ),
-      ),
+      charWidthRow(item, unit, commit),
       checkField(
         'Reverse (white on black)',
         item.reverse,
@@ -323,6 +314,25 @@ function dateSection(item, unit, commit) {
 /* ------------------------------------------------------------------ *
  * Label setup
  * ------------------------------------------------------------------ */
+
+/**
+ * Char width follows the height until it is set to something else: 0 in
+ * the model, shown as the height it prints at. Setting it back to the
+ * height locks the two together again.
+ */
+function charWidthRow(item, unit, commit) {
+  const locked = !item.width;
+  return row(
+    locked ? 'Char width (= height)' : 'Char width',
+    dotsField(
+      item.width || item.height,
+      unit,
+      commit((v) => {
+        item.width = v === item.height ? 0 : v;
+      }),
+    ),
+  );
+}
 
 /**
  * Panel for the label itself: size, orientation and the print settings
@@ -542,16 +552,7 @@ export function renderElementPanel(
             ),
           ]),
           grid([
-            row(
-              'Char width',
-              dotsField(
-                item.width || 0,
-                unit,
-                commit((v) => {
-                  item.width = v;
-                }),
-              ),
-            ),
+            charWidthRow(item, unit, commit),
             checkField(
               'Reverse (white on black)',
               item.reverse,

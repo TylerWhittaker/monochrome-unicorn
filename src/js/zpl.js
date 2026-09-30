@@ -730,7 +730,10 @@ export function parseZpl(text, dpi = 203) {
           font: (token.args[0] || '0').toUpperCase(),
           rotation: normalizeRotation(token.args[1]),
           height: num(args[1], 30),
-          width: num(args[2], 0),
+          // A width equal to the height is the ordinary proportional font,
+          // and is kept as 0, "follows the height": what is written back
+          // is the same, and the editor keeps the two locked together.
+          width: num(args[2], 0) === num(args[1], 30) ? 0 : num(args[2], 0),
         };
         break;
 

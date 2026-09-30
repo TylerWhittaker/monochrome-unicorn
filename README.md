@@ -193,6 +193,7 @@ node test/printer.test.mjs  # helper-file parsing and entity decoding
 node test/state.test.mjs    # which interface's IP the header shows
 node test/build.test.mjs    # how settings branches pack into helper files
 node test/lcd.test.mjs      # reading lcd_display_helper.sh's frames
+node test/wysiwyg.test.mjs  # the designer's rulers
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier
 ```
@@ -230,8 +231,11 @@ a 500).
   is preserved verbatim and re-emitted, but is only editable in the
   source view; you are told which commands those are when you open the
   label and again before switching views.
-- The canvas approximates text width and barcode size. The preview is
-  authoritative — check it before printing.
+- The canvas approximates text width and barcode size. Font 0 is drawn
+  in Inter Bold, fitted to the printer's own render and fetched from a
+  CDN the first time the canvas opens (Helvetica/Arial without
+  internet); the bitmap fonts are only a monospace stand-in. The preview
+  is authoritative — check it before printing.
 - `^IM` places a stored image at its own size; there is no scaling.
 - Uploaded images are reduced to one bit per pixel, because that is all
   a thermal printer stores. The dialog shows the result before sending,
@@ -326,6 +330,9 @@ Third-party code, all AGPL-compatible and under its own terms:
   CSS is inlined) — MIT.
 - [Ace](https://ace.c9.io), fetched from cdnjs at runtime when the source
   editor opens, never redistributed here — BSD 3-Clause.
+- [Inter](https://rsms.me/inter/) Bold, the designer's stand-in for ZPL
+  font 0, fetched from jsdelivr (`@fontsource/inter`) at runtime, never
+  redistributed here — SIL Open Font License 1.1.
 
 The Zebra manuals under `reference/` are Zebra Technologies' documents,
 included for reference only and not covered by this licence; they are

@@ -31,9 +31,63 @@
 import { el } from './ui.js';
 import { loadStoredImage } from './printer.js';
 import { SYMBOLOGIES, expandClock } from './zpl.js';
+import { printer, fromDots } from './state.js';
 
-/** Rough advance width of the scalable font, as a fraction of cap height. */
+/** Rough advance width of the bitmap fonts, as a fraction of their height. */
 const FONT_ASPECT = 0.58;
+
+/*
+ * ZPL font 0 (CG Triumvirate Bold Condensed) is drawn in Inter Bold,
+ * fetched from jsdelivr the first time a canvas is shown -- like Ace, it
+ * is not worth its weight in a page served at 56 KB/s -- and Helvetica
+ * or Arial until then, or for good on a network with no internet.
+ *
+ * Fitted to the printer's own render of ^A0N,100,100: capitals 75 dots
+ * tall starting at the field origin, "The quick brown" 663 dots wide.
+ * Inter's capitals are 0.73 em, so it is set at 1.027 times the field
+ * height, squeezed to 0.79 of its width, and raised 0.122 em so the
+ * capitals start where the printer's do.
+ */
+const INTER_URL =
+  'https://cdn.jsdelivr.net/npm/@fontsource/inter@5/files/inter-latin-700-normal.woff2';
+const FONT0_FAMILY = "'ZPL Font 0', Helvetica, Arial, sans-serif";
+const FONT0 = { size: 1.027, squeeze: 0.79, rise: 0.122 };
+
+/** Canvases to redraw once Inter arrives, since text changes width. */
+const font0Waiters = new Set();
+let font0Requested = false;
+
+function loadFont0() {
+  if (font0Requested || typeof FontFace === 'undefined') return;
+  font0Requested = true;
+  new FontFace('ZPL Font 0', `url(${INTER_URL})`, { weight: '700' })
+    .load()
+    .then((face) => {
+      document.fonts.add(face);
+      for (const redraw of font0Waiters) redraw();
+    })
+    .catch(() => {
+      // Offline, or the CDN blocked: the fallback stays, which is fine.
+    });
+}
+
+let measureContext = null;
+
+/** How wide a line of font 0 prints, in dots, at a height and char width. */
+function font0Width(text, height, width) {
+  if (!measureContext) measureContext = document.createElement('canvas').getContext('2d');
+  measureContext.font = `700 100px ${FONT0_FAMILY}`;
+  const em = measureContext.measureText(text).width / 100;
+  return em * height * FONT0.size * FONT0.squeeze * ((width || height) / height);
+}
+
+/** How wide a line of text prints, in dots. */
+function textWidth(item, text) {
+  if (item.font === '0' && typeof document !== 'undefined') {
+    return font0Width(text, item.height, item.width);
+  }
+  return text.length * (item.width || item.height) * FONT_ASPECT;
+}
 
 /** Estimate an element's footprint in dots, for hit-testing and handles. */
 export function elementBounds(item) {
@@ -59,10 +113,9 @@ export function elementBounds(item) {
     return elementBounds({ ...item, type: 'text', text: dateSample(item) });
   }
   if (item.type === 'text') {
-    const charWidth = (item.width || item.height) * FONT_ASPECT;
     const lines = String(item.text).split('\n');
-    const longest = lines.reduce((n, l) => Math.max(n, l.length), 1);
-    const w = item.blockWidth > 0 ? item.blockWidth : Math.max(8, longest * charWidth);
+    const longest = lines.reduce((n, l) => Math.max(n, textWidth(item, l)), 0);
+    const w = item.blockWidth > 0 ? item.blockWidth : Math.max(8, longest);
     return { w, h: item.height * lines.length };
   }
   if (item.type === 'barcode') {
@@ -89,21 +142,24 @@ const ROTATION_DEG = { N: 0, R: 90, I: 180, B: 270 };
  * ------------------------------------------------------------------ */
 
 function renderText(item, scale) {
-  const node = el(
+  const stretch = (item.width || item.height) / item.height;
+  const style =
+    item.font === '0'
+      ? `font-family:${FONT0_FAMILY};font-weight:700;` +
+        `font-size:${item.height * scale * FONT0.size}px;` +
+        `line-height:${item.height * scale}px;margin-top:-${FONT0.rise}em;` +
+        `transform-origin:left top;transform:scaleX(${FONT0.squeeze * stretch});`
+      : `font-family:ui-monospace, monospace;font-size:${item.height * scale}px;` +
+        'line-height:1;' +
+        (stretch !== 1 ? `transform-origin:left top;transform:scaleX(${stretch});` : '');
+  return el(
     'div',
     {
-      class: 'whitespace-pre leading-none text-black',
-      style:
-        `font-size:${item.height * scale}px;` +
-        `font-family:${item.font === '0' ? 'Helvetica, Arial, sans-serif' : 'ui-monospace, monospace'};` +
-        (item.width && item.width !== item.height
-          ? `transform-origin:left top;transform:scaleX(${item.width / item.height});`
-          : '') +
-        (item.reverse ? 'background:#000;color:#fff;' : ''),
+      class: 'whitespace-pre text-black',
+      style: style + (item.reverse ? 'background:#000;color:#fff;' : ''),
     },
     [item.text],
   );
-  return node;
 }
 
 /** A clock field as it would print right now, by this computer's clock. */
@@ -246,6 +302,96 @@ function renderLine(item) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Rulers
+ * ------------------------------------------------------------------ */
+
+const RULER = 20;
+
+/** Dots in one of the unit, and the steps a ruler may label it in. */
+const RULER_UNITS = {
+  in: { dots: (dpi) => dpi, steps: [0.125, 0.25, 0.5, 1, 2, 5], minor: 4 },
+  mm: { dots: (dpi) => dpi / 25.4, steps: [1, 2, 5, 10, 20, 50, 100], minor: 5 },
+  dots: { dots: () => 1, steps: [10, 20, 50, 100, 200, 500, 1000], minor: 5 },
+};
+
+/**
+ * Where a ruler's ticks go: the smallest labelled step at least `gap`
+ * pixels apart, and the minor ticks between, for a length in dots.
+ */
+export function rulerTicks(lengthDots, unit, scale, dpi, gap = 48) {
+  const spec = RULER_UNITS[unit] || RULER_UNITS.in;
+  const perUnit = spec.dots(dpi);
+  const step = spec.steps.find((s) => s * perUnit * scale >= gap) || spec.steps.at(-1);
+  // Minor ticks only as close as 5px: fewer of them when zoomed out.
+  const majorPx = step * perUnit * scale;
+  let minor = spec.minor;
+  if (majorPx / minor < 5) minor = majorPx / 2 >= 5 ? 2 : 1;
+  const ticks = [];
+  const count = Math.floor((lengthDots / perUnit / step) * minor + 1e-9);
+  for (let i = 0; i <= count; i++) {
+    const value = (i * step) / minor;
+    ticks.push({
+      at: value * perUnit,
+      major: i % minor === 0,
+      label: i % minor === 0 ? value : null,
+    });
+  }
+  return ticks;
+}
+
+/** One ruler, drawn crisp at the device's pixel ratio. */
+function drawRuler(canvas, { lengthDots, unit, scale, vertical }) {
+  const length = Math.max(1, Math.round(lengthDots * scale));
+  const ratio = window.devicePixelRatio || 1;
+  const ticks = rulerTicks(lengthDots, unit, scale, printer.dpi);
+  const ctx = canvas.getContext('2d');
+  const font = '9px ui-sans-serif, system-ui, sans-serif';
+
+  // The side ruler is as wide as its longest number needs.
+  ctx.font = font;
+  const widest = ticks.reduce(
+    (n, tick) => (tick.label === null ? n : Math.max(n, ctx.measureText(String(tick.label)).width)),
+    0,
+  );
+  const [w, h] = vertical ? [Math.ceil(12 + widest), length] : [length, RULER];
+  canvas.width = Math.round(w * ratio);
+  canvas.height = Math.round(h * ratio);
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#64748b';
+  ctx.strokeStyle = '#94a3b8';
+  ctx.font = font;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const tick of ticks) {
+    const at = Math.round(tick.at * scale) + 0.5;
+    const size = tick.major ? 8 : 4;
+    if (vertical) {
+      // Against the label's right edge, numbers outside the ticks.
+      ctx.moveTo(0, at);
+      ctx.lineTo(size, at);
+      if (tick.label !== null && tick.at > 0) {
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(tick.label), 10, Math.min(h - 5, Math.max(5, at)));
+      }
+    } else {
+      // Along the label's top edge, numbers above the ticks.
+      ctx.moveTo(at, h);
+      ctx.lineTo(at, h - size);
+      if (tick.label !== null && tick.at > 0) {
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(tick.label), Math.min(w - 10, at), 1);
+      }
+    }
+  }
+  ctx.stroke();
+}
+
+/* ------------------------------------------------------------------ *
  * Canvas
  * ------------------------------------------------------------------ */
 
@@ -255,7 +401,7 @@ function renderLine(item) {
  * `onChange(reason)` fires after any edit the user made by direct
  * manipulation; `onSelect(id)` after the selection changes.
  */
-export function createCanvas(container, { getDoc, onChange, onSelect }) {
+export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = () => 0 }) {
   let selectedId = null;
   let scale = 1;
   let zoom = 'fit';
@@ -265,20 +411,39 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
   const surface = el('div', {
     class: 'preview-surface relative shrink-0 border border-ink-300 shadow-sm',
   });
+  // Rulers along the top and down the right, in the label's unit.
+  const topRuler = el('canvas', { class: 'block' });
+  const sideRuler = el('canvas', { class: 'block' });
+  const frame = el('div', { class: 'grid w-fit', style: 'grid-template-columns:auto auto;' }, [
+    topRuler,
+    el('span'),
+    surface,
+    sideRuler,
+  ]);
   // The grey field hugs the label: the same 16px of it shows on all four
   // sides, and it only starts scrolling once a label (or a zoom) is
   // taller than the budget computeScale() fits to.
   const scroller = el(
     'div',
     {
-      class: 'min-h-0 min-w-0 max-h-[70vh] overflow-auto bg-ink-100 p-4',
+      class: 'min-h-0 min-w-0 max-h-[70vh] overflow-auto bg-ink-100 p-4 pt-1',
       onpointerdown: (event) => {
-        if (event.target === scroller || event.target === surface) select(null);
+        if (event.target === scroller || event.target === surface || event.target === frame) {
+          select(null);
+        }
       },
     },
-    [surface],
+    [frame],
   );
   container.append(scroller);
+
+  // Where a drag has got to, beside the pointer.
+  const readout = el('div', {
+    class:
+      'pointer-events-none fixed z-50 rounded bg-ink-900/90 px-1.5 py-0.5 font-mono text-[11px] text-white shadow',
+    hidden: true,
+  });
+  document.body.append(readout);
 
   /**
    * "fit" shows the whole label at once, which is what you want while
@@ -290,11 +455,11 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
       return;
     }
     const doc = getDoc();
-    const availableW = Math.max(160, scroller.clientWidth - 32);
+    const availableW = Math.max(160, scroller.clientWidth - 32 - RULER - 16);
     // Height comes from the viewport rather than from the scroller,
     // which now takes its height from the label: measuring the box we
     // are about to resize would feed its own last answer back in.
-    const availableH = Math.max(160, Math.round(window.innerHeight * 0.7) - 32);
+    const availableH = Math.max(160, Math.round(window.innerHeight * 0.7) - 20 - RULER);
     scale = Math.min(1, availableW / Math.max(1, doc.width), availableH / Math.max(1, doc.height));
   }
 
@@ -400,8 +565,10 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
         applyResize(item, origin, dx, dy);
       }
       reposition(item);
+      showReadout(moveEvent, item, mode);
     };
     const end = () => {
+      readout.hidden = true;
       try {
         target.releasePointerCapture(event.pointerId);
       } catch (err) {
@@ -418,6 +585,24 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
     target.addEventListener('pointermove', move);
     target.addEventListener('pointerup', end);
     target.addEventListener('pointercancel', end);
+  }
+
+  /** Where the element is (or how big, while resizing), by the pointer. */
+  function showReadout(event, item, mode) {
+    const unit = getDoc().unit;
+    const show = (dots) => String(fromDots(dots, unit));
+    const suffix = unit === 'dots' ? '' : ` ${unit}`;
+    let text;
+    if (mode === 'move') {
+      text = `x ${show(item.x)}  y ${show(item.y)}${suffix}`;
+    } else {
+      const bounds = elementBounds(item);
+      text = `${show(bounds.w)} \u00d7 ${show(bounds.h)}${suffix}`;
+    }
+    readout.textContent = text;
+    readout.style.left = `${event.clientX + 14}px`;
+    readout.style.top = `${event.clientY + 14}px`;
+    readout.hidden = false;
   }
 
   /** What the corner handle means differs per element type. */
@@ -485,6 +670,25 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
       surface.append(node);
       decorate(node, item);
     }
+
+    // A grid over everything, which the pointer passes straight through.
+    const gridDots = getGrid();
+    if (gridDots > 0 && gridDots * scale >= 3) {
+      const size = gridDots * scale;
+      surface.append(
+        el('div', {
+          class: 'pointer-events-none absolute inset-0',
+          style:
+            'background-image:' +
+            'linear-gradient(to right, rgba(14,165,233,.35) 1px, transparent 1px),' +
+            'linear-gradient(to bottom, rgba(14,165,233,.35) 1px, transparent 1px);' +
+            `background-size:${size}px ${size}px;`,
+        }),
+      );
+    }
+
+    drawRuler(topRuler, { lengthDots: doc.width, unit: doc.unit, scale, vertical: false });
+    drawRuler(sideRuler, { lengthDots: doc.height, unit: doc.unit, scale, vertical: true });
   }
 
   /* -- keyboard ---------------------------------------------------- */
@@ -526,6 +730,10 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
   const onResize = () => render();
   window.addEventListener('resize', onResize);
 
+  // Font 0's stand-in changes every text width when it arrives.
+  font0Waiters.add(render);
+  loadFont0();
+
   render();
 
   return {
@@ -537,6 +745,8 @@ export function createCanvas(container, { getDoc, onChange, onSelect }) {
     destroy() {
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onResize);
+      font0Waiters.delete(render);
+      readout.remove();
       scroller.remove();
     },
   };

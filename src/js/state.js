@@ -203,7 +203,11 @@ export function unitStepFine(unit, dpi = printer.dpi) {
 
 const UNIT_KEY = 'zebra.unit';
 
+/** This page's choice, so it holds even where storage does not. */
+let unitChoice = null;
+
 export function loadUnitPreference() {
+  if (unitChoice) return unitChoice;
   try {
     const stored = localStorage.getItem(UNIT_KEY);
     return UNITS.includes(stored) ? stored : 'in';
@@ -213,6 +217,7 @@ export function loadUnitPreference() {
 }
 
 export function saveUnitPreference(unit) {
+  if (UNITS.includes(unit)) unitChoice = unit;
   try {
     localStorage.setItem(UNIT_KEY, unit);
   } catch (err) {

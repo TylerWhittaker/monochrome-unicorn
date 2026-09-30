@@ -40,7 +40,7 @@ import {
   debounce,
   formatBytes,
 } from './ui.js';
-import { printer, loadUnitPreference } from './state.js';
+import { printer, loadUnitPreference, toDots, fromDots, unitStep } from './state.js';
 import { listFiles, readScript, saveScript, deleteFile, parseObjectName } from './printer.js';
 import { uploadImageDialog } from './imagedialog.js';
 import {
@@ -80,6 +80,42 @@ let addBar = null;
 let viewBar = null;
 let zoomGroup = null;
 let editorCountInput = null;
+let gridSizeInput = null;
+
+/*
+ * The canvas grid: on or off, and its pitch in dots. A preference of the
+ * person, like the units, so it is remembered in this browser.
+ */
+const GRID_KEY = 'zebra.grid';
+const editorGrid = { on: false, dots: 0 };
+
+function loadGridPreference() {
+  editorGrid.dots = Math.round(printer.dpi / 4);
+  try {
+    const saved = JSON.parse(localStorage.getItem(GRID_KEY) || 'null');
+    if (saved && saved.dots > 0) Object.assign(editorGrid, { on: !!saved.on, dots: saved.dots });
+  } catch (err) {
+    /* nothing saved, or storage blocked */
+  }
+}
+
+function saveGridPreference() {
+  try {
+    localStorage.setItem(GRID_KEY, JSON.stringify(editorGrid));
+  } catch (err) {
+    /* private mode; it just will not persist */
+  }
+}
+
+/** The grid size box shows the pitch in whatever the units are now. */
+function syncGridInput() {
+  if (!gridSizeInput) return;
+  const unit = editorState.doc.unit;
+  gridSizeInput.value = String(fromDots(editorGrid.dots, unit));
+  gridSizeInput.step = String(unitStep(unit));
+  gridSizeInput.nextSibling.textContent = unit;
+  gridSizeInput.disabled = !editorGrid.on;
+}
 /** A label another mode asked for, waiting for this one to exist. */
 let pendingOpen = null;
 
@@ -121,18 +157,27 @@ function markDirty() {
 
 /** Called after any change made through the canvas or the inspector. */
 function onDocChanged() {
+  syncGridInput();
   if (canvas) canvas.render();
   renderEditorInspector();
   renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
   markDirty();
 }
 
+/**
+ * Units are a preference, not a property of the label: the Units radio
+ * buttons set it, it is remembered, and every label that takes the
+ * editor's place -- opened, new, or re-read from the source view --
+ * comes in with it. A parsed label on its own would say inches.
+ */
+function adoptDocument(doc) {
+  doc.unit = loadUnitPreference();
+  editorState.doc = doc;
+}
+
 function loadDocument(zpl, file) {
   const { doc, unsupported } = parseZpl(zpl, printer.dpi);
-  // Units are a preference, not a property of the label, so they survive
-  // opening a different one.
-  if (editorState.doc) doc.unit = editorState.doc.unit;
-  editorState.doc = doc;
+  adoptDocument(doc);
   editorState.source = zpl;
   editorState.file = file || null;
   editorState.dirty = false;
@@ -170,7 +215,7 @@ async function setView(next) {
       );
       if (!go) return;
     }
-    editorState.doc = doc;
+    adoptDocument(doc);
     editorState.source = text;
   } else {
     editorState.source = toZpl(editorState.doc);
@@ -204,6 +249,7 @@ function printCount() {
 
 function rebuildEditorView() {
   syncCount();
+  syncGridInput();
   if (canvas) {
     canvas.destroy();
     canvas = null;
@@ -236,6 +282,7 @@ function rebuildEditorView() {
         markDirty();
       },
       onSelect: () => renderEditorInspector(),
+      getGrid: () => (editorGrid.on ? editorGrid.dots : 0),
     });
     renderEditorInspector();
     return;
@@ -467,9 +514,7 @@ async function newLabelDoc() {
     !(await confirmDialog('Discard changes?', 'The current label has unsaved changes.', 'Discard'))
   )
     return;
-  const unit = editorState.doc ? editorState.doc.unit : loadUnitPreference();
-  editorState.doc = newLabel(printer.dpi, printer.labelSize);
-  editorState.doc.unit = unit;
+  adoptDocument(newLabel(printer.dpi, printer.labelSize));
   editorState.source = toZpl(editorState.doc);
   editorState.file = null;
   editorState.dirty = false;
@@ -526,8 +571,7 @@ async function printEditorLabel() {
  * ------------------------------------------------------------------ */
 
 export function mountEditor(panel) {
-  editorState.doc = newLabel(printer.dpi, printer.labelSize);
-  editorState.doc.unit = loadUnitPreference();
+  adoptDocument(newLabel(printer.dpi, printer.labelSize));
   editorState.source = toZpl(editorState.doc);
 
   fileSelect = el('select', { class: 'field w-full min-w-0 sm:w-64' });
@@ -585,8 +629,39 @@ export function mountEditor(panel) {
   // Which view you are in, and how big it is drawn: both are about
   // looking at the label rather than about the file, so they share a
   // row under the elements you can add to it.
+  loadGridPreference();
+  const gridToggle = el('input', {
+    type: 'checkbox',
+    class: 'h-3.5 w-3.5 accent-ink-900',
+    checked: editorGrid.on,
+  });
+  gridToggle.addEventListener('change', () => {
+    editorGrid.on = gridToggle.checked;
+    saveGridPreference();
+    syncGridInput();
+    if (canvas) canvas.render();
+  });
+  gridSizeInput = el('input', {
+    class: 'field field-mono w-16',
+    type: 'number',
+    min: '0',
+    title: 'Grid spacing',
+  });
+  gridSizeInput.addEventListener('change', () => {
+    const dots = toDots(parseFloat(gridSizeInput.value), editorState.doc.unit);
+    if (Number.isFinite(dots) && dots >= 1) {
+      editorGrid.dots = Math.round(dots);
+      saveGridPreference();
+      if (canvas) canvas.render();
+    }
+    syncGridInput();
+  });
+
   zoomGroup = el('div', { class: 'ml-auto flex items-center gap-2' }, [
-    el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, ['Zoom']),
+    el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [gridToggle, 'Grid']),
+    gridSizeInput,
+    el('span', { class: 'text-[11px] text-ink-400' }),
+    el('span', { class: 'ml-2 text-[11px] uppercase tracking-wide text-ink-500' }, ['Zoom']),
     zoomSelect,
   ]);
   viewBar = el('div', { class: 'toolbar' }, [viewToggle, zoomGroup]);
