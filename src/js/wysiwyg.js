@@ -141,8 +141,19 @@ const ROTATION_DEG = { N: 0, R: 90, I: 180, B: 270 };
  * Element rendering
  * ------------------------------------------------------------------ */
 
+/** How much narrower (or wider) a text element is drawn than laid out. */
+function textSqueeze(item) {
+  const stretch = (item.width || item.height) / item.height;
+  return item.font === '0' ? FONT0.squeeze * stretch : stretch;
+}
+
 function renderText(item, scale) {
   const stretch = (item.width || item.height) / item.height;
+  // ^FB wraps at its width, which the squeeze would otherwise shrink.
+  const wrap =
+    item.blockWidth > 0
+      ? `width:${(item.blockWidth * scale) / textSqueeze(item)}px;white-space:pre-wrap;overflow-wrap:anywhere;`
+      : 'width:max-content;';
   const style =
     item.font === '0'
       ? `font-family:${FONT0_FAMILY};font-weight:700;` +
@@ -156,7 +167,7 @@ function renderText(item, scale) {
     'div',
     {
       class: 'whitespace-pre text-black',
-      style: style + (item.reverse ? 'background:#000;color:#fff;' : ''),
+      style: style + wrap + (item.reverse ? 'background:#000;color:#fff;' : ''),
     },
     [item.text],
   );
@@ -407,6 +418,59 @@ export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = 
   let zoom = 'fit';
   /** Element id -> its node on the surface, so edits can skip a rebuild. */
   const nodes = new Map();
+  /**
+   * Element id -> the size its text actually took, in dots, where that
+   * came out bigger than elementBounds() predicted. Text is laid out by
+   * the browser, which rounds glyph advances differently by platform,
+   * zoom and pixel density, and a glyph's ink can reach past its advance;
+   * the outline is fitted to what was drawn, so it always encloses it.
+   */
+  const fitted = new Map();
+
+  /** Grow a text element's box to the text as drawn, and remember it. */
+  function fitText(node, item) {
+    const body = node.firstElementChild;
+    if (!body || !body.offsetWidth) return;
+    const style = getComputedStyle(body);
+    if (!measureContext) measureContext = document.createElement('canvas').getContext('2d');
+    measureContext.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    // Ink as well as advance: a glyph can reach past its advance to the
+    // right, and a descender below the line box.
+    let right = 0;
+    let inkDescent = 0;
+    for (const line of String(body.textContent).split('\n')) {
+      const m = measureContext.measureText(line);
+      right = Math.max(right, m.width, m.actualBoundingBoxRight);
+      inkDescent = Math.max(inkDescent, m.actualBoundingBoxDescent);
+    }
+    // Where the last line's baseline sits: the line box centres the
+    // font's own ascent and descent in the line height.
+    const font = measureContext.measureText('');
+    const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize);
+    const lines = Math.max(1, Math.round(body.offsetHeight / lineHeight));
+    const baseline =
+      (lines - 1) * lineHeight +
+      (lineHeight - font.fontBoundingBoxAscent - font.fontBoundingBoxDescent) / 2 +
+      font.fontBoundingBoxAscent;
+    const inkBottom = baseline + inkDescent;
+    const top = parseFloat(style.marginTop) || 0;
+
+    const width = ((Math.max(body.offsetWidth, right) + 1) * textSqueeze(item)) / scale;
+    const height = (Math.max(body.offsetHeight, inkBottom) + top + 1) / scale;
+    const bounds = elementBounds(item);
+    if (width <= bounds.w && height <= bounds.h) return;
+    const size = { w: Math.max(width, bounds.w), h: Math.max(height, bounds.h) };
+    fitted.set(item.id, size);
+    node.style.width = `${size.w * scale}px`;
+    node.style.height = `${size.h * scale}px`;
+  }
+
+  /** The box an element occupies on the canvas: predicted, or as drawn. */
+  function boxOf(item) {
+    const bounds = elementBounds(item);
+    const drawn = fitted.get(item.id);
+    return drawn ? { w: Math.max(bounds.w, drawn.w), h: Math.max(bounds.h, drawn.h) } : bounds;
+  }
 
   const surface = el('div', {
     class: 'preview-surface relative shrink-0 border border-ink-300 shadow-sm',
@@ -533,7 +597,7 @@ export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = 
   function reposition(item) {
     const node = nodes.get(item.id);
     if (!node) return;
-    const bounds = elementBounds(item);
+    const bounds = boxOf(item);
     node.style.left = `${item.x * scale}px`;
     node.style.top = `${item.y * scale}px`;
     node.style.width = `${Math.max(2, bounds.w * scale)}px`;
@@ -545,6 +609,8 @@ export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = 
   function beginDrag(event, item, mode) {
     event.preventDefault();
     event.stopPropagation();
+    // A resize changes what the text looks like; it is refitted after.
+    if (mode === 'resize') fitted.delete(item.id);
     const startX = event.clientX;
     const startY = event.clientY;
     const origin = { ...item };
@@ -596,7 +662,7 @@ export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = 
     if (mode === 'move') {
       text = `x ${show(item.x)}  y ${show(item.y)}${suffix}`;
     } else {
-      const bounds = elementBounds(item);
+      const bounds = boxOf(item);
       text = `${show(bounds.w)} \u00d7 ${show(bounds.h)}${suffix}`;
     }
     readout.textContent = text;
@@ -636,6 +702,7 @@ export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = 
     surface.style.height = `${doc.height * scale}px`;
     surface.replaceChildren();
     nodes.clear();
+    fitted.clear();
 
     for (const item of doc.elements) {
       const bounds = elementBounds(item);
@@ -668,6 +735,7 @@ export function createCanvas(container, { getDoc, onChange, onSelect, getGrid = 
 
       nodes.set(item.id, node);
       surface.append(node);
+      if (item.type === 'text' || item.type === 'date') fitText(node, item);
       decorate(node, item);
     }
 
