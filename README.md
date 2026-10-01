@@ -193,6 +193,10 @@ reference/            the ZPL, CPCL and EPL2 programming manuals (and
 
 ## Working on it
 
+`make` lists shortcuts for everything below -- `make deploy IP=...`,
+`make test`, `make test-live`, `make check` before a commit -- with the
+printer taken from `test/live/config.json` when `IP` is not given.
+
 ```sh
 node test/zpl.test.mjs      # ZPL generation/parsing round-trips
 node test/printer.test.mjs  # helper-file parsing and entity decoding

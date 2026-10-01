@@ -1,0 +1,86 @@
+# Zebra Printer Console -- a web console served from a Zebra printer.
+# Copyright (C) 2026 Tyler Whittaker
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Shortcuts for the scripts in this repository; each target says what it
+# runs, and `make` alone lists them.
+#
+#   make deploy IP=192.168.1.81
+#   make test-live ARGS="--only editor,files --no-deploy"
+#
+# IP defaults to the printer in test/live/config.json, when there is one.
+# PRINTERS is the set `make deploy-all` installs on -- the same two the
+# post-commit hook deploys to.
+
+IP ?= $(shell node -p "try { require('./test/live/config.json').ip || '' } catch { '' }" 2>/dev/null)
+PRINTERS ?= 192.168.1.220 192.168.1.81
+ARGS ?=
+
+.DEFAULT_GOAL := help
+.PHONY: help install build deploy deploy-quick deploy-all schema test test-live \
+        test-live-quick format format-check check lcd-helper lcd-shot version \
+        bump-patch bump-minor bump-major clean need-ip
+
+help: ## list the targets
+	@awk 'BEGIN { FS = ":.*## " } /^[a-z-]+:.*## / { printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@echo
+	@echo "  IP=$(if $(IP),$(IP),<unset>)  PRINTERS=$(PRINTERS)"
+
+need-ip:
+	@test -n "$(IP)" || { echo "Set the printer: make $(MAKECMDGOALS) IP=<printer-ip>" >&2; exit 2; }
+
+install: ## install the dev dependencies and the git hooks
+	npm install
+
+build: ## build dist/INDEX.SHTML without touching a printer
+	node tools/build.mjs
+
+deploy: need-ip ## read the printer's catalogue, build and install on IP
+	./deploy.sh $(IP)
+
+deploy-quick: need-ip ## build and install on IP, reusing data/sgd-schema.json
+	./deploy.sh $(IP) --no-schema
+
+deploy-all: ## build and install on every printer in PRINTERS
+	@for p in $(PRINTERS); do echo "== $$p"; ./deploy.sh $$p || exit 1; done
+
+schema: need-ip ## capture IP's settings catalogue into data/sgd-schema.json
+	node tools/fetch-schema.mjs $(IP)
+
+test: ## the unit tests: no printer needed
+	npm test
+
+test-live: ## every mode, in Chrome, against a real printer (asks first)
+	node test/live/run.mjs $(if $(IP),--ip $(IP)) $(ARGS)
+
+test-live-quick: ## the live tests from the config file, without deploying or asking
+	node test/live/run.mjs --yes --no-deploy $(if $(IP),--ip $(IP)) $(ARGS)
+
+format: ## lay out every .js/.mjs with prettier
+	npm run format
+
+format-check: ## fail if prettier would change anything
+	npm run format:check
+
+check: format-check test build ## what should pass before a commit
+
+lcd-helper: need-ip ## mirror IP's real LCD to the LCD Viewer (Ctrl-C stops)
+	./lcd_display_helper.sh $(IP)
+
+lcd-shot: need-ip ## save IP's front panel as lcd.png
+	node tools/lcd-shot.mjs $(IP)
+
+version: ## print the version
+	@node tools/version.mjs
+
+bump-patch: ## move the version on: a fix
+	node tools/version.mjs bump patch
+
+bump-minor: ## move the version on: a feature
+	node tools/version.mjs bump minor
+
+bump-major: ## move the version on: something that breaks
+	node tools/version.mjs bump major
+
+clean: ## remove the build output and the LCD helper's files
+	rm -rf dist lcd.bmp lcd.bmp.part lcd.png
