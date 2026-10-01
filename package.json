@@ -1,6 +1,6 @@
 {
   "name": "zebra-printer-web-app",
-  "version": "0.19.2",
+  "version": "0.20.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "author": "Tyler Whittaker",
@@ -13,9 +13,12 @@
     "version:show": "node tools/version.mjs",
     "prepare": "git config core.hooksPath tools/githooks",
     "format": "prettier --write \"**/*.{js,mjs}\"",
-    "format:check": "prettier --check \"**/*.{js,mjs}\""
+    "format:check": "prettier --check \"**/*.{js,mjs}\"",
+    "test": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done",
+    "test:live": "node test/live/run.mjs"
   },
   "devDependencies": {
+    "playwright-core": "^1.63.0",
     "prettier": "^3.9.9",
     "tailwindcss": "^3.4.17"
   }

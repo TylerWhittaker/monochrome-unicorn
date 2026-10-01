@@ -27,6 +27,7 @@ import {
   compactSchema,
   typeFromEntry,
   accessFromEntry,
+  mergeUserVars,
   LINK_OS_FIRMWARE,
 } from '../tools/fetch-schema.mjs';
 
@@ -215,6 +216,32 @@ check('slow settings are only listed when the printer has them', () => {
     'file.dir': { type: 'string', range: '', access: 'R', default: null },
   };
   assert.deepEqual(compactSchema(withDir, 'allcv').slow, ['file.dir', 'ip.netstat']);
+});
+
+check('user variables, which allconfig leaves out, are added from the branch', () => {
+  // A getvar of device.user_vars, as a ZD500R answers it.
+  const listing = [
+    'device.user_vars.',
+    'device.user_vars.create',
+    'device.user_vars.set_range',
+    'device.user_vars.test_string : hello ',
+    'device.user_vars.test_integer : 5 , Choices: 1-100',
+    'device.user_vars.test_double : 1.5 , Choices: 0.5-99.5',
+    'device.user_vars.test_choices : green , Choices: red,green,blue',
+  ].join('\r\n');
+  const config = { 'device.user_vars.create': { type: 'string', range: '', access: 'W' } };
+  assert.equal(mergeUserVars(config, listing), 4);
+  assert.deepEqual(config['device.user_vars.test_choices'], {
+    type: 'enum',
+    range: 'red,green,blue',
+    access: 'RW',
+    default: null,
+  });
+  assert.equal(config['device.user_vars.test_integer'].type, 'integer');
+  assert.equal(config['device.user_vars.test_double'].type, 'double');
+  assert.equal(config['device.user_vars.test_string'].type, 'string');
+  assert.equal(config['device.user_vars.test_string'].access, 'RW', 'writable, not RW?');
+  assert.equal(config['device.user_vars.create'].access, 'W', 'what allconfig said stands');
 });
 
 console.log(failures ? `\n${failures} failure(s)` : '\nall passed');

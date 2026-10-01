@@ -326,6 +326,31 @@ export function parseAllcv(text) {
   return config;
 }
 
+/*
+ * User variables
+ * ------------------------------------------------------------------
+ * device.user_vars.create makes a setting of the user's own, and
+ * allconfig never lists one: it has device.user_vars.create and
+ * set_range, and nothing they made. allcv does, and so does a getvar of
+ * the branch, in allcv's format -- "name : value , Choices: range" --
+ * so the same parser reads it, and its type is judged the same way.
+ * Every user variable can be set (that is what they are for), whatever
+ * allcv's rule for a value without choices would say.
+ */
+
+/** Add the user variables a getvar of the branch lists to a catalogue. */
+export function mergeUserVars(config, listing) {
+  const found = parseAllcv(listing);
+  let added = 0;
+  for (const [name, meta] of Object.entries(found)) {
+    if (!name.startsWith('device.user_vars.') || name in config) continue;
+    if (meta.access === 'W') continue; // a command, like create
+    config[name] = { ...meta, access: 'RW' };
+    added++;
+  }
+  return added;
+}
+
 /** Turn the printer's allconfig reply into the compact form we inline. */
 export function compactSchema(allconfig, source = 'allconfig') {
   const ranges = [];
@@ -432,6 +457,11 @@ async function main() {
     }
     if (!parsed.allconfig) throw new Error('Printer reply had no "allconfig" member');
     config = parsed.allconfig;
+    const added = mergeUserVars(
+      config,
+      await readFromPrinter(ip, '! U1 getvar "device.user_vars"\r\n', { idleMs: 1500 }),
+    );
+    if (added) process.stderr.write(`plus ${added} user variable${added === 1 ? '' : 's'}, `);
   }
 
   const schema = compactSchema(config, source);

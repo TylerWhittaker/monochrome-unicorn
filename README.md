@@ -183,10 +183,12 @@ tools/
   build.mjs           bundle and inline everything
   upload.mjs          CISDFCRC16 file upload
   lcd-shot.mjs        save the LCD framebuffer as a PNG (needs port 9100)
-test/                 round-trip tests for the ZPL model and the
-                      helper-file parser
+test/                 unit tests: the ZPL model, the helper-file
+                      parser and the other pure logic
+  live/               every mode, in Chrome, against a real printer
 docs/printer-notes.md what the printer does, measured
-reference/            the ZPL, CPCL and EPL2 programming manuals
+reference/            the ZPL, CPCL and EPL2 programming manuals (and
+                      zpl-zbi2-pg-en.txt, the ZPL one as searchable text)
 ```
 
 ## Working on it
@@ -198,9 +200,48 @@ node test/state.test.mjs    # which interface's IP the header shows
 node test/build.test.mjs    # how settings branches pack into helper files
 node test/lcd.test.mjs      # reading lcd_display_helper.sh's frames
 node test/wysiwyg.test.mjs  # the designer's rulers
+npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier
+npm run test:live           # every mode, in Chrome, against a real printer
 ```
+
+### The live tests
+
+`test/live/` drives the deployed console in a real browser against a
+real printer -- no mocks. It asks for the printer's address and
+password, whether it may print labels, and what label is loaded
+(defaulting to what the printer reports), then builds and deploys this
+working tree and runs a suite per mode: the app shell, Printer
+Settings, Label Editor, Stored Formats, File System and LCD Viewer.
+
+```sh
+npm run test:live                            # asks, and offers to save the answers
+npm run test:live -- --yes                   # no questions: test/live/config.json
+npm run test:live -- --only editor,files --no-deploy --headed
+```
+
+`test/live/config.example.json` shows the config file; the real one,
+`test/live/config.json`, is ignored by git since it holds the password.
+It needs Chrome (`--chrome` for another path) and the `nc`, `od` and
+`awk` the deploy and the LCD helper need.
+
+What the tests create is named `ZTEST*` and removed again, and what they
+change (`device.user_p1`, the menu on the screen) is put back. Printer
+Settings tests its editors on settings made for the purpose with
+`device.user_vars.create` -- `device.user_vars.test_string`,
+`test_integer`, `test_double` and `test_choices` -- which the printer
+cannot delete: they last until it is next power cycled, and the
+catalogue deployed by the run lists them until the next deploy after
+that. Nothing is printed unless you said so.
+
+**Every new feature gets live tests.** When a mode gains something a
+person can do, add a test for it to that mode's `test/live/*.live.mjs`
+(or a new suite, registered in `test/live/run.mjs` and
+`test/live/lib/config.mjs`) in the same change: drive it through the
+page as a person would, and check the result on the printer itself over
+port 9100 or plain HTTP (`test/live/lib/printer.mjs`), not just in the
+DOM.
 
 All JavaScript is formatted by [prettier](https://prettier.io), with the
 settings in `.prettierrc.json` — the sources, the tools and the tests,
