@@ -32,6 +32,7 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { ZPL } from '../src/data/zpl-reference.mjs';
 import { readVersion } from './version.mjs';
 import { execFileSync } from 'node:child_process';
 import { resolve, join, dirname } from 'node:path';
@@ -426,7 +427,22 @@ function helperFiles(schema) {
    */
   files.push({ dest: `E:${ALL_FILE}.SHTML`, contents: readable.map(varLine).join('\n') + '\n' });
 
+  files.push({ dest: 'E:ZPLREF.SHTML', contents: zplReferenceFile() });
+
   return { files, slowFiles, branchFiles };
+}
+
+/**
+ * The ZPL command reference the source view shows, as JSON in a file of
+ * its own (src/data/zpl-reference.mjs has why). One command to a line:
+ * the printer's preprocessor reads .SHTML line by line, and nothing is
+ * gained by finding out what it makes of a 95 KB one.
+ */
+export function zplReferenceFile() {
+  const lines = Object.entries(ZPL).map(
+    ([key, entry]) => `${JSON.stringify(key)}:${JSON.stringify(entry)}`,
+  );
+  return `{\n${lines.join(',\n')}\n}\n`;
 }
 
 /* ------------------------------------------------------------------ *

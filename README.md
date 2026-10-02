@@ -18,7 +18,11 @@ Three modes:
   (`^FC`, filled in from the printer's clock) around a canvas or by
   writing ZPL directly. Text can run vertically or reversed, in the
   built-in fonts or any TrueType font stored on the printer (`^A@`).
-  The preview beside it is the
+  In the source view, the panel beside it explains the command under
+  the cursor -- what it does, and each parameter with the value the
+  label gives it -- from a reference written for every command in the
+  ZPL guide (`src/data/zpl-reference.mjs`), served as `ZPLREF.SHTML` and
+  read the first time it is wanted. The preview beside it is the
   printer's own render, not a simulation. Every length is shown in
   inches, millimetres or dots, switched by one radio group and
   remembered between visits.
@@ -176,6 +180,9 @@ src/js/
   codeeditor.js       Ace loader, ZPL syntax mode, offline fallback
   preview.js          the preview pane (htmx round-trip to /zpl)
   ui.js               DOM helpers, toasts, modals, password prompt
+  zplhelp.js          the source view's panel: the command under the cursor
+src/data/
+  zpl-reference.mjs   every ZPL command and parameter, in our words
 lcd_display_helper.sh copy the real LCD bitmap to the printer for the
                       LCD Viewer, each second (needs port 9100)
 tools/
@@ -183,6 +190,8 @@ tools/
   build.mjs           bundle and inline everything
   upload.mjs          CISDFCRC16 file upload
   lcd-shot.mjs        save the LCD framebuffer as a PNG (needs port 9100)
+  zpl-manual-extract.mjs  split the ZPL guide's text into one record per
+                      command, to check zpl-reference.mjs against
 test/                 unit tests: the ZPL model, the helper-file
                       parser and the other pure logic
   live/               every mode, in Chrome, against a real printer
@@ -204,6 +213,7 @@ node test/state.test.mjs    # which interface's IP the header shows
 node test/build.test.mjs    # how settings branches pack into helper files
 node test/lcd.test.mjs      # reading lcd_display_helper.sh's frames
 node test/wysiwyg.test.mjs  # the designer's rulers
+node test/zplhelp.test.mjs  # the source view's command reference
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier

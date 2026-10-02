@@ -179,7 +179,7 @@ function defineAceZplMode(ace) {
  * padding and line-height so the painted text lines up under the real
  * (transparent) glyphs; scroll is mirrored on input and scroll.
  */
-function createFallbackEditor(container, { value, onChange }) {
+function createFallbackEditor(container, { value, onChange, onCursor }) {
   const shared =
     'm-0 border-0 p-3 font-mono text-[12px] leading-[1.5] whitespace-pre-wrap break-words';
 
@@ -211,6 +211,11 @@ function createFallbackEditor(container, { value, onChange }) {
     paint();
     onChange(textarea.value);
   });
+  // Where the cursor is, as a character offset, whenever it may have moved.
+  const reportCursor = () => onCursor(textarea.selectionStart);
+  for (const type of ['keyup', 'mouseup', 'input', 'focus']) {
+    textarea.addEventListener(type, reportCursor);
+  }
   textarea.addEventListener('scroll', () => {
     highlight.scrollTop = textarea.scrollTop;
     highlight.scrollLeft = textarea.scrollLeft;
@@ -249,10 +254,16 @@ function createFallbackEditor(container, { value, onChange }) {
 /**
  * Build the best source editor available. Resolves as soon as it knows
  * which one it got; `engine` says which, so the UI can mention it.
+ *
+ * `onCursor(offset)` is told where the cursor is, as a character offset
+ * into the text, each time it moves.
  */
-export async function createCodeEditor(container, { value = '', onChange = () => {} } = {}) {
+export async function createCodeEditor(
+  container,
+  { value = '', onChange = () => {}, onCursor = () => {} } = {},
+) {
   const ace = await loadAce();
-  if (!ace) return createFallbackEditor(container, { value, onChange });
+  if (!ace) return createFallbackEditor(container, { value, onChange, onCursor });
 
   const host = document.createElement('div');
   host.className = 'h-full w-full';
@@ -280,6 +291,9 @@ export async function createCodeEditor(container, { value = '', onChange = () =>
   editor.session.on('change', () => {
     if (suppress) return;
     onChange(editor.getValue());
+  });
+  editor.selection.on('changeCursor', () => {
+    onCursor(editor.session.doc.positionToIndex(editor.getCursorPosition()));
   });
 
   return {

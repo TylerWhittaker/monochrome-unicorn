@@ -41,7 +41,14 @@ import {
   formatBytes,
 } from './ui.js';
 import { printer, loadUnitPreference, toDots, fromDots, unitStep } from './state.js';
-import { listFiles, readScript, saveScript, deleteFile, parseObjectName } from './printer.js';
+import {
+  listFiles,
+  readScript,
+  saveScript,
+  deleteFile,
+  parseObjectName,
+  readZplReference,
+} from './printer.js';
 import { uploadImageDialog } from './imagedialog.js';
 import {
   newLabel,
@@ -55,6 +62,7 @@ import {
 } from './zpl.js';
 import { createCanvas } from './wysiwyg.js';
 import { renderLabelPanel, renderElementPanel, panelHeading, setStoredFonts } from './inspector.js';
+import { renderZplHelp } from './zplhelp.js';
 import { cachedDriveListing, onDriveListing } from './drives.js';
 import { createCodeEditor } from './codeeditor.js';
 import { createPreview } from './preview.js';
@@ -78,6 +86,8 @@ let codeEditor = null;
 let editorPreview = null;
 let editorHost = null;
 let inspectorHost = null;
+/** The heading over inspectorHost, which says what it is showing. */
+let inspectorHeadingHost = null;
 let labelPanelHost = null;
 let fileSelect = null;
 let addBar = null;
@@ -309,6 +319,10 @@ function rebuildEditorView() {
       editorState.source = text;
       markDirty();
     },
+    onCursor: (offset) => {
+      zplHelp.offset = offset;
+      showZplHelp();
+    },
   }).then((editor) => {
     placeholder.remove();
     codeEditor = editor;
@@ -320,16 +334,50 @@ function rebuildEditorView() {
   renderEditorInspector();
 }
 
+/*
+ * In the source view the properties panel explains the ZPL command the
+ * cursor is in, from a reference read from the printer the first time it
+ * is wanted (zplhelp.js).
+ */
+const zplHelp = { offset: null, reference: null, loading: false, error: null };
+
+function showZplHelp() {
+  if (editorState.view !== 'source' || !inspectorHost) return;
+  if (!zplHelp.reference && !zplHelp.loading && !zplHelp.error) {
+    zplHelp.loading = true;
+    readZplReference()
+      .then((reference) => {
+        zplHelp.reference = reference;
+      })
+      .catch((err) => {
+        zplHelp.error = err.message;
+      })
+      .finally(() => {
+        zplHelp.loading = false;
+        showZplHelp();
+      });
+  }
+  renderZplHelp(inspectorHost, {
+    source: codeEditor ? codeEditor.getValue() : editorState.source,
+    offset: zplHelp.offset,
+    reference: zplHelp.reference,
+    loading: zplHelp.loading,
+    error: zplHelp.error,
+  });
+}
+
 function renderEditorInspector() {
   const selectedId = canvas ? canvas.getSelected() : null;
   const item = selectedId ? editorState.doc.elements.find((e) => e.id === selectedId) : null;
 
+  inspectorHeadingHost.replaceChildren(
+    editorState.view === 'source'
+      ? panelHeading('ZPL command', 'The command under the cursor')
+      : panelHeading('Object options', 'The selected element'),
+  );
+
   if (editorState.view === 'source') {
-    inspectorHost.replaceChildren(
-      el('p', { class: 'px-3 py-4 text-[12px] text-ink-400' }, [
-        'Element properties are available in the visual editor.',
-      ]),
-    );
+    showZplHelp();
     return;
   }
 
@@ -692,6 +740,7 @@ export function mountEditor(panel) {
 
   editorHost = el('div', { class: EDITOR_HOST_CLASS.visual });
   inspectorHost = el('div');
+  inspectorHeadingHost = el('div', {}, [panelHeading('Object options', 'The selected element')]);
   labelPanelHost = el('div');
 
   editorPreview = createPreview({ onPrint: () => printEditorLabel() });
@@ -776,7 +825,7 @@ export function mountEditor(panel) {
         // as a whole is set up once, so it stays in the far rail under the
         // preview. Two boxes, each saying what it governs.
         el('div', { class: 'card min-w-0 self-start overflow-hidden' }, [
-          panelHeading('Object options', 'The selected element'),
+          inspectorHeadingHost,
           inspectorHost,
         ]),
         el('div', { class: 'min-w-0 space-y-3' }, [

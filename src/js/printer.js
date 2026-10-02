@@ -236,6 +236,24 @@ export async function readLcd({ timeout = 15000 } = {}) {
 }
 
 /**
+ * The ZPL command reference (src/data/zpl-reference.mjs), which the build
+ * writes to a file of its own rather than into the page: at ~95 KB it
+ * would add nearly two seconds to every load, and only the source view
+ * wants it. Read once, on first use.
+ */
+let zplReference = null;
+
+export function readZplReference() {
+  if (!zplReference) {
+    zplReference = getText('/ZPLREF.SHTML', { timeout: 60000 }).then((text) => JSON.parse(text));
+    zplReference.catch(() => {
+      zplReference = null;
+    });
+  }
+  return zplReference;
+}
+
+/**
  * The front panel's real bitmap, if lcd_display_helper.sh is running.
  *
  * The helper reads display.image over port 9100, which a page cannot,

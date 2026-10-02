@@ -50,6 +50,14 @@ export default function register(s, ctx) {
     assert.ok(page.bytes.length < 450 * 1024, `INDEX.SHTML is ${page.bytes.length} bytes`);
   });
 
+  s.test('the ZPL command reference is served beside the page, as JSON', async () => {
+    const { status, bytes } = await http(cfg.ip, '/ZPLREF.SHTML');
+    assert.equal(status, 200);
+    const reference = JSON.parse(Buffer.from(bytes).toString('utf8'));
+    assert.ok(Object.keys(reference).length > 200, 'every command');
+    assert.equal(reference['^FO'].name, 'Field Origin');
+  });
+
   s.test('the settings helper file streams @name=value@ records', async () => {
     const { status, bytes } = await http(cfg.ip, '/V_ALL.SHTML', { timeout: 120000 });
     assert.equal(status, 200);

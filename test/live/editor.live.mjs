@@ -583,6 +583,68 @@ export default function register(s, ctx) {
     assert.match(form, /\^FDChanged/, 'Save overwrote the stored label');
   });
 
+  /** Put the source view's cursor just inside `marker`, as a click would. */
+  async function cursorInto(marker, into = 1) {
+    await page.evaluate(
+      ({ marker, into }) => {
+        const p = document.querySelector('[data-panel="editor"]');
+        const ace = p.querySelector('.ace_editor');
+        if (ace && ace.env) {
+          const editor = ace.env.editor;
+          const at = editor.getValue().indexOf(marker) + into;
+          editor.moveCursorToPosition(editor.session.doc.indexToPosition(at));
+          editor.clearSelection();
+        } else {
+          const ta = p.querySelector('textarea');
+          const at = ta.value.indexOf(marker) + into;
+          ta.focus();
+          ta.setSelectionRange(at, at);
+          ta.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+        }
+      },
+      { marker, into },
+    );
+  }
+
+  s.test(
+    'in the source view, the properties panel explains the command under the cursor',
+    async () => {
+      const heading = () => page.locator('h2', { hasText: /Object options|ZPL command/ }).first();
+      assert.equal((await heading().textContent()).trim(), 'Object options');
+      await readSource();
+      await writeSource('^XA\n^FO10,20^A0N,30,40^FDhi^FS\n^XGE:ZLOGO.GRF,2,3^FS\n^ZQ1^XZ\n');
+      assert.equal((await heading().textContent()).trim(), 'ZPL command');
+      const help = page.locator('.card', { has: page.locator('h2', { hasText: 'ZPL command' }) });
+      await cursorInto('^FO10,2', 7); // in y
+      await help.locator('code', { hasText: /^\^FO$/ }).waitFor({ timeout: 30000 });
+      assert.match(await help.textContent(), /Field Origin/);
+      const active = help.locator('[data-param].bg-sky-50\\/70');
+      assert.equal(await active.getAttribute('data-param'), 'y', 'the parameter under the cursor');
+      assert.match(await help.locator('[data-param="x"]').textContent(), /10/);
+      assert.match(await help.locator('[data-param="z"]').textContent(), /default/);
+
+      await cursorInto('^A0N', 2);
+      await help.locator('code', { hasText: /^\^A$/ }).waitFor();
+      assert.match(await help.locator('[data-param="o"]').textContent(), /N/);
+      assert.match(await help.locator('[data-param="w"]').textContent(), /40/);
+
+      await cursorInto('^XGE', 5);
+      await help.locator('code', { hasText: /^\^XG$/ }).waitFor();
+      assert.match(await help.locator('[data-param="o"]').textContent(), /ZLOGO/);
+      assert.match(await help.locator('[data-param="my"]').textContent(), /3/);
+
+      await cursorInto('^ZQ', 2);
+      await help.getByText('Not a command the ZPL II programming guide describes').waitFor();
+
+      await viewButton('Visual').click();
+      await page.waitForTimeout(500);
+      const warn = page.locator('#modal-root .card', { hasText: 'Switch to the visual editor?' });
+      if (await warn.count()) await warn.getByRole('button', { name: 'Switch anyway' }).click();
+      await toVisual();
+      assert.equal((await heading().textContent()).trim(), 'Object options');
+    },
+  );
+
   s.test('ZPL typed in the source view comes back to the canvas', async () => {
     await readSource();
     await writeSource('^XA\n^PW400\n^LL200\n^FO20,20^A0N,40,40^FDFrom source^FS\n^XZ\n');
