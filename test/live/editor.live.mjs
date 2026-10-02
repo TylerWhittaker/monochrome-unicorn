@@ -503,6 +503,39 @@ export default function register(s, ctx) {
     await panel.locator('select', { has: page.locator('option[value="fit"]') }).selectOption('fit');
   });
 
+  s.test('the canvas sits centred in grey, wide window or narrow', async () => {
+    const zoom = panel.locator('select', { has: page.locator('option[value="fit"]') });
+    // A quarter size, so the label is narrower than its column either way.
+    await zoom.selectOption('0.25');
+    for (const width of [1400, 900]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.waitForTimeout(400);
+      const layout = await panel
+        .locator('.preview-surface')
+        .first()
+        .evaluate((surface) => {
+          const scroller = surface.parentElement.parentElement;
+          const host = scroller.parentElement;
+          const s = scroller.getBoundingClientRect();
+          const h = host.getBoundingClientRect();
+          return {
+            left: s.left - h.left,
+            right: h.right - s.right,
+            hostBg: getComputedStyle(host).backgroundColor,
+            scrollerBg: getComputedStyle(scroller).backgroundColor,
+          };
+        });
+      assert.ok(layout.left > 16, `at ${width}px the label is narrower than its column`);
+      assert.ok(
+        Math.abs(layout.left - layout.right) <= 1,
+        `centred at ${width}px: ${JSON.stringify(layout)}`,
+      );
+      assert.equal(layout.hostBg, layout.scrollerBg, `grey either side at ${width}px`);
+    }
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    await zoom.selectOption('fit');
+  });
+
   let saved = '';
 
   s.test('Save as stores the label on the printer', async () => {

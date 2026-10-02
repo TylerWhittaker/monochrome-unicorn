@@ -601,23 +601,27 @@ export function createCanvas(
     sideRuler,
     surface,
   ]);
-  // The grey field hugs the label: the same 16px of it shows on all four
-  // sides (outside the rulers, when they are on), and it only starts
-  // scrolling once a label or a zoom is bigger than the budget
-  // computeScale() fits to.
+  // The scroller hugs the label, 16px of grey round it (outside the
+  // rulers, when they are on), and sits centred in a host as grey as it
+  // is -- so a label narrower than the column has grey either side, not
+  // white to its right -- and it only starts scrolling once a label or a
+  // zoom is bigger than the budget computeScale() fits to.
   const scroller = el(
     'div',
     {
-      class: 'min-h-0 min-w-0 w-fit max-w-full max-h-[70vh] overflow-auto bg-ink-100 p-4',
-      onpointerdown: (event) => {
-        if (event.target === scroller || event.target === surface || event.target === frame) {
-          select(null);
-        }
-      },
+      class:
+        'min-h-0 min-w-0 w-fit max-w-full max-h-[70vh] self-center overflow-auto bg-ink-100 p-4',
     },
     [frame],
   );
+  container.classList.add('bg-ink-100');
   container.append(scroller);
+
+  // A press on the grey, anywhere round the label, lets go of the selection.
+  const onBackgroundDown = (event) => {
+    if ([container, scroller, surface, frame].includes(event.target)) select(null);
+  };
+  container.addEventListener('pointerdown', onBackgroundDown);
 
   // Where a drag has got to, beside the pointer.
   const readout = el('div', {
@@ -948,6 +952,8 @@ export function createCanvas(
       font0Waiters.delete(render);
       readout.remove();
       scroller.remove();
+      container.removeEventListener('pointerdown', onBackgroundDown);
+      container.classList.remove('bg-ink-100');
     },
   };
 }
