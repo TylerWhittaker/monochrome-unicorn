@@ -40,6 +40,18 @@ import { extractPrinterError, printerTurn } from './printer.js';
 let seq = 0;
 
 /**
+ * The label's own size, in dots, from the last ^PW and ^LL in its ZPL,
+ * or null for a part the ZPL does not give (a recalled format, say).
+ */
+export function labelSizeOf(zpl) {
+  const last = (re) => {
+    const all = [...String(zpl).matchAll(re)];
+    return all.length ? parseInt(all.at(-1)[1], 10) || null : null;
+  };
+  return { width: last(/\^PW(\d+)/g), height: last(/\^LL(\d+)/g) };
+}
+
+/**
  * Issue one htmx request and resolve with its response detail. It takes
  * its turn with the printer like any other request (printer.js).
  */
@@ -124,7 +136,37 @@ export function createPreview({ onPrinted, onPrint } = {}) {
 
   /** Replace the image with a message. */
   function showMessage(text) {
+    imageHost.classList.add('min-h-[12rem]');
     imageHost.replaceChildren(el('p', { class: 'py-6 text-[12px] text-ink-400' }, [text]));
+  }
+
+  /*
+   * The printer draws a preview on the whole of the media it is set up
+   * for -- 960 x 1800 dots on a printer configured for 4x6 -- whatever
+   * ^PW and ^LL the label asks for, with the label in its top-left
+   * corner. A 3x1 label would sit at the top of a tall white page, all
+   * of it looking like margin. So the image is shown through a frame the
+   * label's own shape, one image pixel to a dot, and the pane drops its
+   * minimum height so the grey round it is the same on every side.
+   */
+  function frameToLabel(img, size) {
+    imageHost.classList.remove('min-h-[12rem]');
+    if (!size.width && !size.height) return;
+    const fit = () => {
+      const w = Math.min(size.width || img.naturalWidth, img.naturalWidth);
+      const h = Math.min(size.height || img.naturalHeight, img.naturalHeight);
+      if (!w || !h) return;
+      const frame = el('div', {
+        class: 'relative w-full shrink-0 overflow-hidden bg-white shadow-sm ring-1 ring-ink-300',
+        style: `aspect-ratio:${w} / ${h};`,
+      });
+      img.className = 'absolute left-0 top-0 max-w-none';
+      img.style.width = `${(img.naturalWidth / w) * 100}%`;
+      img.replaceWith(frame);
+      frame.append(img);
+    };
+    if (img.complete && img.naturalWidth) fit();
+    else img.addEventListener('load', fit, { once: true });
   }
 
   async function run(mode) {
@@ -196,6 +238,7 @@ export function createPreview({ onPrinted, onPrint } = {}) {
       img.removeAttribute('border');
       img.className = 'max-w-full bg-white shadow-sm ring-1 ring-ink-300';
       img.alt = 'Rendered label';
+      frameToLabel(img, labelSizeOf(lastZpl));
       // The printer only writes the temp bitmap when the format draws
       // something, so an empty label leaves the promised URL 404.
       img.addEventListener(

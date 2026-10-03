@@ -462,6 +462,28 @@ export default function register(s, ctx) {
     await ui.setField(labelField('Orientation'), 'N');
   });
 
+  s.test('the preview shows the label at its own size, with even margins', async () => {
+    // The printer draws on the whole media it is set for; the pane crops
+    // that to the label's ^PW x ^LL (600 x 400 dots by now).
+    await previewIsDrawn();
+    const m = await panel.locator('img[alt="Rendered label"]').evaluate((img) => {
+      const frame = img.parentElement;
+      const host = frame.parentElement.getBoundingClientRect();
+      const r = frame.getBoundingClientRect();
+      return {
+        ratio: r.width / r.height,
+        left: r.left - host.left,
+        right: host.right - r.right,
+        top: r.top - host.top,
+        bottom: host.bottom - r.bottom,
+      };
+    });
+    assert.ok(Math.abs(m.ratio - 600 / 400) < 0.02, `framed at ${m.ratio.toFixed(3)}, not 1.5`);
+    for (const side of ['right', 'top', 'bottom']) {
+      assert.ok(Math.abs(m[side] - m.left) <= 1, `margins ${JSON.stringify(m)}`);
+    }
+  });
+
   s.test('elements move by drag and by arrow key, and are duplicated and deleted', async () => {
     await selectNode(3); // the box
     const x0 = Number(await field('X').inputValue());
