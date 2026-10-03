@@ -247,7 +247,9 @@ function renderText(item, scale) {
     'div',
     {
       class: 'whitespace-pre text-black',
-      style: style + wrap + (item.reverse ? 'background:#000;color:#fff;' : ''),
+      // ^FR is drawn white and blended by difference (on the element's node,
+      // in render()): white over white is black, white over black is white.
+      style: style + wrap + (item.reverse ? 'color:#fff;' : ''),
     },
     [text],
   );
@@ -854,6 +856,9 @@ export function createCanvas(
             `left:${(item.x - originShift(item, bounds)) * scale}px;top:${item.y * scale}px;` +
             `width:${Math.max(2, bounds.w * scale)}px;height:${Math.max(2, bounds.h * scale)}px;` +
             `transform:rotate(${ROTATION_DEG[item.rotation] || 0}deg);transform-origin:left top;` +
+            // ^FR inverts whatever is beneath the field, as the printer
+            // does: black on a blank label, white across a filled box.
+            (item.reverse ? 'mix-blend-mode:difference;' : '') +
             'cursor:move;',
           dataset: { id: item.id },
           onpointerdown: (event) => {

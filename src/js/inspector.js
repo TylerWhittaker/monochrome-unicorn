@@ -262,6 +262,18 @@ function serialRows(item, commit) {
   return rows;
 }
 
+/**
+ * What ^FR does, since it is not what most people expect: it inverts the
+ * field against whatever is under it, so on a blank label the text still
+ * prints black.
+ */
+function reverseHint() {
+  return el('p', { class: 'text-[11px] text-ink-400' }, [
+    'Prints black on a blank label and white across anything black. For white on black, ' +
+      'put a box behind it whose line thickness is half its height, so it is filled.',
+  ]);
+}
+
 function grid(children) {
   return el('div', { class: 'grid grid-cols-2 gap-3' }, children);
 }
@@ -363,7 +375,7 @@ function dateSection(item, unit, commit) {
     grid([
       charWidthRow(item, unit, commit),
       checkField(
-        'Reverse (white on black)',
+        'Reverse what is under it (^FR)',
         item.reverse,
         commit((v) => {
           item.reverse = v;
@@ -667,13 +679,14 @@ export function renderElementPanel(
           grid([
             charWidthRow(item, unit, commit),
             checkField(
-              'Reverse (white on black)',
+              'Reverse what is under it (^FR)',
               item.reverse,
               commit((v) => {
                 item.reverse = v;
               }),
             ),
           ]),
+          item.reverse ? reverseHint() : null,
           row(
             'Direction',
             selectField(

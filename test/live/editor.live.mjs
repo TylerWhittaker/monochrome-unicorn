@@ -278,6 +278,16 @@ export default function register(s, ctx) {
     assert.match(out, /\^A0N,50,30\^/);
     out = await generated(() => check(objectCard, 'Reverse').check());
     assert.match(out, /\^FR\^FH\^FDHello ZTEST/);
+    // ^FR inverts what is under it, so the canvas blends the text by
+    // difference rather than painting a black background of its own.
+    const node = nodes().first();
+    assert.equal(await node.evaluate((n) => getComputedStyle(n).mixBlendMode), 'difference');
+    assert.equal(
+      await node.evaluate((n) => getComputedStyle(n.firstElementChild).backgroundColor),
+      'rgba(0, 0, 0, 0)',
+      'no black box of its own',
+    );
+    assert.match(await objectCard.textContent(), /white across anything black/);
     out = await generated(() => ui.setField(field('Direction'), 'V'));
     assert.match(out, /\^FPV,0\^/);
     out = await generated(() => ui.setField(field('Direction'), 'H'));
