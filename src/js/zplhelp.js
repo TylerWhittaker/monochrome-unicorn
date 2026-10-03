@@ -234,17 +234,17 @@ export function renderZplHelp(host, { source, offset, reference, loading, error 
     rows.length
       ? el(
           'div',
-          { class: 'divide-y divide-ink-100' },
+          // Each row draws its own divider: divide-y would colour every
+          // side of the rows after the first, the highlight's left edge too.
+          {},
           rows.map(({ param, value, active }) => {
             const [letter, name, about, values, fallback] = param;
             return el(
               'div',
               {
                 class:
-                  'space-y-0.5 px-3 py-2' +
-                  (active
-                    ? ' border-l-2 border-sky-500 bg-sky-50/70'
-                    : ' border-l-2 border-transparent'),
+                  'space-y-0.5 border-l-2 border-t border-t-ink-100 px-3 py-2 first:border-t-0' +
+                  (active ? ' border-l-sky-500 bg-sky-50/70' : ' border-l-transparent'),
                 dataset: { param: letter },
               },
               [

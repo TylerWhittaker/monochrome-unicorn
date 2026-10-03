@@ -633,6 +633,12 @@ export default function register(s, ctx) {
       assert.match(await help.locator('[data-param="x"]').textContent(), /10/);
       assert.match(await help.locator('[data-param="z"]').textContent(), /default/);
 
+      // The highlight's blue edge, on a parameter that is not the first.
+      assert.equal(
+        await active.evaluate((n) => getComputedStyle(n).borderLeftColor),
+        'rgb(14, 165, 233)',
+      );
+
       await cursorInto('^A0N', 2);
       await help.locator('code', { hasText: /^\^A$/ }).waitFor();
       assert.match(await help.locator('[data-param="o"]').textContent(), /N/);
