@@ -62,5 +62,12 @@ check('zoomed out, the marks stay but the numbers thin out', () => {
   assert.deepEqual(labels(w.rulerTicks(1200, 0.05)), [0, 1000]);
 });
 
+check('a position snaps to the nearest grid line, and not at all with no grid', () => {
+  assert.equal(w.snap(112, 75), 75);
+  assert.equal(w.snap(113, 75), 150);
+  assert.equal(w.snap(0, 75), 0);
+  assert.equal(w.snap(113, 0), 113);
+});
+
 console.log(failures ? `\n${failures} failing` : '\nall passing');
 process.exit(failures ? 1 : 0);

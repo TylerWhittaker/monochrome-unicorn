@@ -514,6 +514,34 @@ export default function register(s, ctx) {
     assert.equal(await nodes().count(), count);
   });
 
+  s.test('with the grid on, a drag snaps to it; Alt drags freely', async () => {
+    await check(panel, 'Grid').check();
+    // The units are dots by now, so the grid box reads in dots.
+    const pitch = Number(await panel.locator('input[title="Grid spacing"]').inputValue());
+    assert.ok(pitch > 0, 'a grid pitch');
+    const drag = async (dx, altKey = false) => {
+      await selectNode(3); // the box
+      const box = nodes().nth(3);
+      const opts = { button: 0, pointerId: 1, altKey };
+      await box.dispatchEvent('pointerdown', { ...opts, clientX: 200, clientY: 200 });
+      await box.dispatchEvent('pointermove', { ...opts, clientX: 200 + dx, clientY: 200 + dx });
+      await box.dispatchEvent('pointerup', { ...opts, clientX: 200 + dx, clientY: 200 + dx });
+      await page.waitForTimeout(300);
+      return [Number(await field('X').inputValue()), Number(await field('Y').inputValue())];
+    };
+    const [x, y] = await drag(37);
+    assert.equal(x % pitch, 0, `X ${x} is on the ${pitch}-dot grid`);
+    assert.equal(y % pitch, 0, `Y ${y} is on the ${pitch}-dot grid`);
+    // Alt: wherever the pointer goes (a third of the pitch off, in pixels).
+    const scaleNow = await panel
+      .locator('.preview-surface')
+      .first()
+      .evaluate((n, w) => parseFloat(n.style.width) / w, 600);
+    const [freeX] = await drag(Math.round((pitch / 3) * scaleNow), true);
+    assert.notEqual(freeX % pitch, 0, `Alt-drag left X at ${freeX}`);
+    await check(panel, 'Grid').uncheck();
+  });
+
   s.test('rulers, grid and zoom change only how the label is drawn', async () => {
     const top = panel.locator('canvas').first();
     const rulers = check(panel, 'Rulers');

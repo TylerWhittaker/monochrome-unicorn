@@ -730,7 +730,14 @@ export function mountEditor(panel) {
 
   const zoomGroup = el('div', { class: 'ml-auto flex items-center gap-2' }, [
     el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [rulerToggle, 'Rulers']),
-    el('label', { class: 'ml-2 flex items-center gap-1.5 text-ink-600' }, [gridToggle, 'Grid']),
+    el(
+      'label',
+      {
+        class: 'ml-2 flex items-center gap-1.5 text-ink-600',
+        title: 'Show a grid, and snap elements to it as they are dragged (hold Alt to drag freely)',
+      },
+      [gridToggle, 'Grid'],
+    ),
     gridSizeInput,
     el('span', { class: 'text-[11px] text-ink-400' }),
     el('span', { class: 'ml-2 text-[11px] uppercase tracking-wide text-ink-500' }, ['Zoom']),

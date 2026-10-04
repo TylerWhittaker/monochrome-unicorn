@@ -201,6 +201,11 @@ export function elementBounds(item) {
 
 const ROTATION_DEG = { N: 0, R: 90, I: 180, B: 270 };
 
+/** A position or size on the grid: the nearest multiple of `pitch` dots. */
+export function snap(value, pitch) {
+  return pitch > 0 ? Math.round(value / pitch) * pitch : value;
+}
+
 /**
  * How far left of its origin an element starts, in dots. Only reversed
  * text does: the printer puts the first character at the origin and runs
@@ -755,11 +760,13 @@ export function createCanvas(
     const move = (moveEvent) => {
       const dx = Math.round((moveEvent.clientX - startX) / scale);
       const dy = Math.round((moveEvent.clientY - startY) / scale);
+      // With the grid showing, a drag lands on it; Alt lets go of it.
+      const pitch = moveEvent.altKey ? 0 : getGrid();
       if (mode === 'move') {
-        item.x = Math.max(0, origin.x + dx);
-        item.y = Math.max(0, origin.y + dy);
+        item.x = Math.max(0, snap(origin.x + dx, pitch));
+        item.y = Math.max(0, snap(origin.y + dy, pitch));
       } else {
-        applyResize(item, origin, dx, dy);
+        applyResize(item, origin, dx, dy, pitch);
       }
       reposition(item);
       showReadout(moveEvent, item, mode);
@@ -802,16 +809,19 @@ export function createCanvas(
     readout.hidden = false;
   }
 
-  /** What the corner handle means differs per element type. */
-  function applyResize(item, origin, dx, dy) {
+  /**
+   * What the corner handle means differs per element type. Sizes snap to
+   * the grid too; a barcode's do not, since they move in whole modules.
+   */
+  function applyResize(item, origin, dx, dy, pitch = 0) {
     if (item.type === 'box' || item.type === 'ellipse' || (item.type === 'line' && item.diagonal)) {
-      item.w = Math.max(item.thickness, origin.w + dx);
-      item.h = Math.max(item.thickness, origin.h + dy);
+      item.w = Math.max(item.thickness, snap(origin.w + dx, pitch));
+      item.h = Math.max(item.thickness, snap(origin.h + dy, pitch));
     } else if (item.type === 'line') {
-      item.length = Math.max(4, origin.length + (item.vertical ? dy : dx));
+      item.length = Math.max(4, snap(origin.length + (item.vertical ? dy : dx), pitch));
     } else if (item.type === 'text' || item.type === 'field' || item.type === 'date') {
-      item.height = Math.max(6, origin.height + dy);
-      if (origin.width) item.width = Math.max(4, origin.width + dx);
+      item.height = Math.max(6, snap(origin.height + dy, pitch));
+      if (origin.width) item.width = Math.max(4, snap(origin.width + dx, pitch));
     } else if (item.type === 'barcode') {
       const spec = SYMBOLOGIES[item.symbology];
       if (spec && spec.kind === '2d') {
