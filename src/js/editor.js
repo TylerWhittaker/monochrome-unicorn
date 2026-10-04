@@ -65,6 +65,7 @@ import { renderLabelPanel, renderElementPanel, panelHeading, setStoredFonts } fr
 import { renderZplHelp } from './zplhelp.js';
 import { cachedDriveListing, onDriveListing } from './drives.js';
 import { createCodeEditor } from './codeeditor.js';
+import { createHistory } from './history.js';
 import { createPreview } from './preview.js';
 import { parseCopies } from './formats.js';
 
@@ -177,7 +178,68 @@ function onDocChanged() {
   if (canvas) canvas.render();
   renderEditorInspector();
   renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
+  recordHistory();
   markDirty();
+}
+
+/*
+ * Undo and redo: the label is recorded as JSON after every change made
+ * in the visual editor, and a step back puts a recorded label back in
+ * the editor's place. The source view has Ace's own undo; switching back
+ * from it is one step here.
+ */
+const labelHistory = createHistory();
+let undoBtn = null;
+let redoBtn = null;
+
+function recordHistory() {
+  labelHistory.record(JSON.stringify(editorState.doc));
+  syncHistoryButtons();
+}
+
+/** Start again from the label now in the editor: opened, or new. */
+function resetHistory() {
+  labelHistory.reset(JSON.stringify(editorState.doc));
+  syncHistoryButtons();
+}
+
+function syncHistoryButtons() {
+  if (!undoBtn) return;
+  const visual = editorState.view === 'visual';
+  undoBtn.disabled = !visual || !labelHistory.canUndo;
+  redoBtn.disabled = !visual || !labelHistory.canRedo;
+}
+
+function stepHistory(direction) {
+  if (editorState.view !== 'visual') return;
+  // Anything changed but not yet recorded is kept, rather than lost.
+  labelHistory.record(JSON.stringify(editorState.doc));
+  const state = direction < 0 ? labelHistory.undo() : labelHistory.redo();
+  if (state === null) return;
+  const selected = canvas ? canvas.getSelected() : null;
+  adoptDocument(JSON.parse(state));
+  editorState.source = toZpl(editorState.doc);
+  rebuildEditorView();
+  renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
+  if (selected && canvas && editorState.doc.elements.some((e) => e.id === selected)) {
+    canvas.setSelected(selected);
+    renderEditorInspector();
+  }
+  syncHistoryButtons();
+  markDirty();
+}
+
+/** Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, while the visual editor is on screen. */
+function onHistoryKey(event) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+  if (editorState.view !== 'visual' || !editorHost || !editorHost.offsetParent) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  const key = event.key.toLowerCase();
+  if (key === 'z') stepHistory(event.shiftKey ? 1 : -1);
+  else if (key === 'y') stepHistory(1);
+  else return;
+  event.preventDefault();
 }
 
 /**
@@ -208,6 +270,7 @@ function loadDocument(zpl, file) {
   }
   renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
   rebuildEditorView();
+  resetHistory();
   refreshEditorPreview();
 }
 
@@ -242,6 +305,9 @@ async function setView(next) {
 
   editorState.view = next;
   rebuildEditorView();
+  // Whatever was typed in the source view comes back as one step.
+  if (next === 'visual') recordHistory();
+  syncHistoryButtons();
 }
 
 /**
@@ -297,8 +363,11 @@ function rebuildEditorView() {
   if (editorState.view === 'visual') {
     canvas = createCanvas(editorHost, {
       getDoc: () => editorState.doc,
+      // A drag, a nudge or the Delete key: the canvas has changed the
+      // label itself, so only the panels and the history need telling.
       onChange: () => {
         renderEditorInspector();
+        recordHistory();
         markDirty();
       },
       onSelect: () => renderEditorInspector(),
@@ -582,6 +651,7 @@ async function newLabelDoc() {
   fileSelect.value = '';
   rebuildEditorView();
   renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
+  resetHistory();
   refreshEditorPreview();
 }
 
@@ -770,6 +840,7 @@ export function mountEditor(panel) {
     editorCountInput.value = String(count);
     if (count === editorState.doc.copies) return;
     editorState.doc.copies = count;
+    recordHistory();
     markDirty();
   });
   editorCountInput.addEventListener('keydown', (event) => {
@@ -814,6 +885,26 @@ export function mountEditor(panel) {
               el('button', { class: 'btn-danger btn-sm', onclick: () => deleteCurrent() }, [
                 'Delete',
               ]),
+              (undoBtn = el(
+                'button',
+                {
+                  class: 'btn-secondary btn-sm',
+                  title: 'Undo (Ctrl+Z)',
+                  disabled: true,
+                  onclick: () => stepHistory(-1),
+                },
+                ['Undo'],
+              )),
+              (redoBtn = el(
+                'button',
+                {
+                  class: 'btn-secondary btn-sm',
+                  title: 'Redo (Ctrl+Shift+Z)',
+                  disabled: true,
+                  onclick: () => stepHistory(1),
+                },
+                ['Redo'],
+              )),
               el('label', { class: 'ml-auto flex items-center gap-1.5 text-ink-600' }, [
                 'Count',
                 editorCountInput,
@@ -852,6 +943,8 @@ export function mountEditor(panel) {
   drainPendingOpen();
 
   onDriveListing(takeStoredFonts);
+  resetHistory();
+  document.addEventListener('keydown', onHistoryKey);
 }
 
 /**

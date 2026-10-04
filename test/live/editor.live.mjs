@@ -470,7 +470,11 @@ export default function register(s, ctx) {
       const frame = img.parentElement;
       const host = frame.parentElement.getBoundingClientRect();
       const r = frame.getBoundingClientRect();
+      // Clipped to what the printer drew, if that was smaller.
+      const w = Math.min(600, img.naturalWidth);
+      const h = Math.min(400, img.naturalHeight);
       return {
+        expected: w / h,
         ratio: r.width / r.height,
         left: r.left - host.left,
         right: host.right - r.right,
@@ -478,7 +482,10 @@ export default function register(s, ctx) {
         bottom: host.bottom - r.bottom,
       };
     });
-    assert.ok(Math.abs(m.ratio - 600 / 400) < 0.02, `framed at ${m.ratio.toFixed(3)}, not 1.5`);
+    assert.ok(
+      Math.abs(m.ratio - m.expected) < 0.02,
+      `framed at ${m.ratio.toFixed(3)}, not ${m.expected.toFixed(3)}`,
+    );
     for (const side of ['right', 'top', 'bottom']) {
       assert.ok(Math.abs(m[side] - m.left) <= 1, `margins ${JSON.stringify(m)}`);
     }
@@ -540,6 +547,64 @@ export default function register(s, ctx) {
     const [freeX] = await drag(Math.round((pitch / 3) * scaleNow), true);
     assert.notEqual(freeX % pitch, 0, `Alt-drag left X at ${freeX}`);
     await check(panel, 'Grid').uncheck();
+  });
+
+  s.test('undo steps back through changes, and redo forward again', async () => {
+    const undo = fileBar().getByRole('button', { name: 'Undo', exact: true });
+    const redo = fileBar().getByRole('button', { name: 'Redo', exact: true });
+    const blur = () => page.evaluate(() => document.activeElement && document.activeElement.blur());
+    const before = await generated(async () => {
+      await selectNode(3);
+      await ui.setField(field('Line thickness'), '5');
+    });
+    await page.waitForTimeout(500); // a new step, not part of that one
+
+    // Three separate changes: a property, a drag, a delete.
+    await ui.setField(field('Corner rounding'), '7');
+    await page.waitForTimeout(500);
+    const box = nodes().nth(3);
+    const opts = { button: 0, pointerId: 1 };
+    await box.dispatchEvent('pointerdown', { ...opts, clientX: 100, clientY: 100 });
+    await box.dispatchEvent('pointermove', { ...opts, clientX: 160, clientY: 100 });
+    await box.dispatchEvent('pointerup', { ...opts, clientX: 160, clientY: 100 });
+    await page.waitForTimeout(500);
+    const count = await nodes().count();
+    await objectCard.getByRole('button', { name: 'Delete' }).click();
+    assert.equal(await nodes().count(), count - 1);
+    const after = await generated(() => page.waitForTimeout(100));
+    assert.equal(await undo.isEnabled(), true);
+
+    await blur();
+    const back = await generated(async () => {
+      for (let i = 0; i < 3; i++) {
+        await page.keyboard.press('Control+z');
+        await page.waitForTimeout(150);
+      }
+    });
+    const differing = (x, y) => {
+      const a = x.split('\n');
+      const b = y.split('\n');
+      return a
+        .map((line, i) => (line === b[i] ? null : `${line}  ≠  ${b[i]}`))
+        .filter(Boolean)
+        .join('\n');
+    };
+    assert.equal(
+      back,
+      before,
+      `three undos give the label before the three changes:\n${differing(back, before)}`,
+    );
+    assert.equal(await nodes().count(), count);
+    assert.equal(await redo.isEnabled(), true);
+
+    const forward = await generated(async () => {
+      await redo.click();
+      await blur();
+      await page.keyboard.press('Control+Shift+z');
+      await page.keyboard.press('Control+y');
+    });
+    assert.equal(forward, after, 'and three redos give it back');
+    assert.equal(await redo.isDisabled(), true, 'nothing left to redo');
   });
 
   s.test('rulers, grid and zoom change only how the label is drawn', async () => {
