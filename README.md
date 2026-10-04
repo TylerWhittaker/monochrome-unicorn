@@ -4,6 +4,11 @@ A single-page console that runs **on** a Zebra printer: the build folds
 everything into one `INDEX.SHTML` and uploads it to the printer's flash,
 where its onboard web server serves it at `http://<printer>/`.
 
+The header shows the printer's status -- ready, paused, paper out,
+ribbon out or head open -- refreshed every 15 seconds, and a Printer
+menu for what is otherwise done at the printer: feed a label, pause and
+resume, cancel all jobs, calibrate, print the configuration label.
+
 Three modes:
 
 - **Printer Settings** — every SGD on the printer, `about:config` style:

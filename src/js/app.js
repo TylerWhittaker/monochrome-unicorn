@@ -25,8 +25,9 @@
  * so a cold page only pays for what the user actually looks at.
  */
 
-import { el, qs, qsa, toast } from './ui.js';
-import { printer, initState } from './state.js';
+import { el, qs, qsa, toast, confirmDialog } from './ui.js';
+import { printer, initState, parseHostStatus } from './state.js';
+import { readStatus, sendControl } from './printer.js';
 import { mountSettings } from './settings.js';
 import { mountEditor, onEditorShown } from './editor.js';
 import { mountFormat, onFormatShown } from './format.js';
@@ -46,18 +47,149 @@ const mounted = new Set();
 const STATUS_STYLES = {
   ready: 'bg-emerald-500/15 text-emerald-300',
   'paper out': 'bg-amber-500/15 text-amber-300',
+  'ribbon out': 'bg-amber-500/15 text-amber-300',
   paused: 'bg-amber-500/15 text-amber-300',
+  'head open': 'bg-red-500/20 text-red-300',
   unknown: 'bg-ink-800 text-ink-400',
 };
+
+function renderStatus() {
+  const status = qs('#hdr-status');
+  status.textContent = printer.status;
+  status.className = `pill ${STATUS_STYLES[printer.status] || STATUS_STYLES.unknown}`;
+  if (pauseItem) pauseItem.textContent = printer.status === 'paused' ? 'Resume' : 'Pause';
+}
+
+/*
+ * The status pill is read once with the page, then kept up to date: a
+ * small helper file, every so often, while the page is in view -- so a
+ * head left open or a roll run out shows here, not only on the printer.
+ */
+const STATUS_EVERY_MS = 15000;
+
+async function refreshStatus() {
+  try {
+    const values = await readStatus();
+    printer.status = parseHostStatus(values['device.host_status'], values);
+  } catch (err) {
+    printer.status = 'unknown';
+  }
+  renderStatus();
+}
+
+function startStatusPolling() {
+  setInterval(() => {
+    if (!document.hidden) refreshStatus();
+  }, STATUS_EVERY_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshStatus();
+  });
+}
+
+/*
+ * The things otherwise done at the printer itself. All are control
+ * commands sent through the label form (sendControl); the ones that feed
+ * media or throw jobs away ask first.
+ */
+let pauseItem = null;
+
+const PRINTER_ACTIONS = [
+  { label: 'Feed a label', command: '~PH', done: 'Fed a label.' },
+  {
+    label: 'Pause',
+    command: () => (printer.status === 'paused' ? '~PS' : '~PP'),
+    done: () => (printer.status === 'paused' ? 'Paused.' : 'Resumed.'),
+    pause: true,
+  },
+  {
+    label: 'Cancel all jobs',
+    command: '~JA',
+    done: 'Cancelled every job waiting to print.',
+    confirm: [
+      'Cancel all jobs?',
+      'Every format waiting to print is thrown away; the label printing now finishes.',
+      'Cancel all',
+    ],
+  },
+  {
+    label: 'Calibrate media',
+    command: '~JC',
+    done: 'Calibrating: the printer feeds labels to measure them.',
+    confirm: [
+      'Calibrate the media?',
+      'The printer feeds one or more labels to measure the label length and set its sensors.',
+      'Calibrate',
+    ],
+  },
+  {
+    label: 'Print configuration label',
+    command: '~WC',
+    done: 'Printing the configuration label.',
+    confirm: [
+      'Print the configuration label?',
+      'One label listing the printer’s settings is printed.',
+      'Print',
+    ],
+  },
+];
+
+function buildPrinterMenu() {
+  const menu = el('details', { class: 'relative', id: 'printer-menu' });
+  const list = el('div', {
+    class:
+      'absolute left-0 z-30 mt-1 w-56 overflow-hidden rounded-md border border-ink-700 bg-ink-900 py-1 text-[12px] shadow-lg',
+    role: 'menu',
+  });
+  for (const action of PRINTER_ACTIONS) {
+    const item = el(
+      'button',
+      {
+        class: 'block w-full px-3 py-1.5 text-left text-ink-200 hover:bg-ink-800 hover:text-white',
+        role: 'menuitem',
+        onclick: async () => {
+          menu.open = false;
+          if (action.confirm && !(await confirmDialog(...action.confirm))) return;
+          const command = typeof action.command === 'function' ? action.command() : action.command;
+          try {
+            await sendControl(command);
+            await new Promise((resolve) => setTimeout(resolve, 600));
+            await refreshStatus();
+            toast(typeof action.done === 'function' ? action.done() : action.done, 'success');
+          } catch (err) {
+            toast(`The printer did not take ${command}: ${err.message}`, 'error');
+          }
+        },
+      },
+      [action.label],
+    );
+    if (action.pause) pauseItem = item;
+    list.append(item);
+  }
+  menu.append(
+    el(
+      'summary',
+      {
+        class:
+          'cursor-pointer list-none rounded px-1.5 py-0.5 text-[11px] text-ink-400 hover:bg-ink-800 hover:text-ink-200',
+        title: 'Feed, pause, calibrate and other things done at the printer',
+      },
+      ['Printer ▾'],
+    ),
+    list,
+  );
+  // A click anywhere else closes it.
+  document.addEventListener('click', (event) => {
+    if (menu.open && !menu.contains(event.target)) menu.open = false;
+  });
+  return menu;
+}
 
 function renderHeader() {
   qs('#hdr-name').textContent = printer.name;
   qs('#hdr-model').textContent = printer.model;
   qs('#hdr-ip').textContent = printer.ip;
 
-  const status = qs('#hdr-status');
-  status.textContent = printer.status;
-  status.className = `pill ${STATUS_STYLES[printer.status] || STATUS_STYLES.unknown}`;
+  renderStatus();
 
   const meta = [printer.serial && `S/N ${printer.serial}`, printer.firmware, `${printer.dpi} dpi`]
     .filter(Boolean)
@@ -121,7 +253,9 @@ function start() {
     });
   }
 
+  qs('#hdr-status').after(buildPrinterMenu());
   renderHeader();
+  startStatusPolling();
 
   for (const btn of qsa('.tab-btn')) {
     btn.addEventListener('click', () => showTab(btn.dataset.tab));

@@ -235,6 +235,30 @@ export async function readLcd({ timeout = 15000 } = {}) {
   return parseVarFile(await getText('/LCD.SHTML', { timeout, charset: 'windows-1252' }));
 }
 
+/** The settings the header's status pill is drawn from (build.mjs STATUS_VARS). */
+export async function readStatus({ timeout = 15000 } = {}) {
+  return parseVarFile(await getText('/STATUS.SHTML', { timeout }));
+}
+
+/**
+ * Send control commands -- ~PH, ~PP, ~JC and the like -- to be acted on
+ * at once. They go in through the label form's print action, which hands
+ * its data to the ZPL parser as a port would; a control command prints
+ * nothing of its own.
+ */
+export async function sendControl(commands) {
+  const res = await postForm('/zpl', {
+    data: commands,
+    dev: 'R',
+    oname: 'UNKNOWN',
+    otype: 'ZPL',
+    print: 'Print Label',
+  });
+  const err = extractPrinterError(res.text);
+  if (err) throw new Error(err);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
 /**
  * The ZPL command reference (src/data/zpl-reference.mjs), which the build
  * writes to a file of its own rather than into the page: at ~95 KB it

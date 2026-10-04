@@ -23,7 +23,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { openConsole } from './lib/browser.mjs';
-import { http, getvar } from './lib/printer.mjs';
+import { http, getvar, sendZpl, waitFor } from './lib/printer.mjs';
 import { skip } from './lib/harness.mjs';
 
 export const name = 'App shell';
@@ -118,6 +118,76 @@ export default function register(s, ctx) {
     assert.equal(tab, hasDisplay ? 1 : 0);
     const helper = await http(cfg.ip, '/LCD.SHTML');
     assert.equal(helper.status === 200, hasDisplay, 'LCD.SHTML uploaded only with a display');
+  });
+
+  /** The pause flag in device.host_status, read straight from the printer. */
+  const paused = async () => (await getvar(cfg.ip, 'device.host_status')).split(',')[2] === '1';
+  const menuItem = (name) => con.page.locator('#printer-menu').getByRole('menuitem', { name });
+  const openMenu = () => con.page.locator('#printer-menu summary').click();
+
+  s.cleanup(() => sendZpl(cfg.ip, '~PS'), 'make sure the printer is not left paused');
+
+  s.test('the status the header polls is served as a helper file', async () => {
+    const { status, bytes } = await http(cfg.ip, '/STATUS.SHTML');
+    assert.equal(status, 200);
+    assert.match(Buffer.from(bytes).toString('utf8'), /@device\.host_status=\d+,/);
+  });
+
+  s.test('the Printer menu offers what is done at the printer', async () => {
+    await openMenu();
+    const items = await con.page.locator('#printer-menu [role="menuitem"]').allTextContents();
+    assert.deepEqual(items, [
+      'Feed a label',
+      'Pause',
+      'Cancel all jobs',
+      'Calibrate media',
+      'Print configuration label',
+    ]);
+    await openMenu();
+  });
+
+  s.test('Pause and Resume from the menu, shown on the printer and in the header', async () => {
+    await openMenu();
+    await menuItem('Pause').click();
+    await waitFor(paused, { what: 'the printer to pause' });
+    await con.page.locator('#hdr-status', { hasText: 'paused' }).waitFor();
+    await openMenu();
+    await menuItem('Resume').click();
+    await waitFor(async () => !(await paused()), { what: 'the printer to resume' });
+    await con.page.locator('#hdr-status', { hasText: 'ready' }).waitFor();
+  });
+
+  s.test('a change at the printer reaches the header without a reload', async () => {
+    await sendZpl(cfg.ip, '~PP');
+    await con.page.locator('#hdr-status', { hasText: 'paused' }).waitFor({ timeout: 40000 });
+    await sendZpl(cfg.ip, '~PS');
+    await con.page.locator('#hdr-status', { hasText: 'ready' }).waitFor({ timeout: 40000 });
+  });
+
+  s.test('Cancel all asks first', async () => {
+    await openMenu();
+    await menuItem('Cancel all jobs').click();
+    const dialog = con.page.locator('#modal-root .card', { hasText: 'Cancel all jobs?' });
+    await dialog.getByRole('button', { name: 'Cancel all' }).click();
+    await con.ui.toast(/Cancelled every job/);
+  });
+
+  s.test('Feed, Calibrate and the configuration label move media', async () => {
+    if (!cfg.print) skip('printing not enabled');
+    for (const [name, button, done] of [
+      ['Feed a label', null, /Fed a label/],
+      ['Calibrate media', 'Calibrate', /Calibrating/],
+      ['Print configuration label', 'Print', /configuration label/],
+    ]) {
+      await openMenu();
+      await menuItem(name).click();
+      if (button) {
+        await con.page.locator('#modal-root .card').getByRole('button', { name: button }).click();
+      }
+      await con.ui.toast(done);
+      await con.page.waitForTimeout(4000);
+    }
+    con.ui.assertNoErrors();
   });
 
   s.test(

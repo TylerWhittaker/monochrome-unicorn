@@ -29,7 +29,7 @@ const src = readFileSync(new URL('../src/js/state.js', import.meta.url), 'utf8')
   /^import\s*\{[^}]*\}\s*from\s*'\.\/[^']*';?$/gm,
   '',
 );
-const { activeIpAddress, loadedLabelSize } = await import(
+const { activeIpAddress, loadedLabelSize, parseHostStatus } = await import(
   'data:text/javascript;base64,' + Buffer.from(src).toString('base64')
 );
 
@@ -107,6 +107,30 @@ check('a new label is the size the printer has loaded, where it says', () => {
     width: undefined,
     height: undefined,
   });
+});
+
+// A ZD500R's ~HS reply, as device.host_status gives it, ready to print.
+const READY = '412,0,0,1800,000,0,0,0,000,0,0,0\r\n000,0,0,0,0,3,3,0,00000000,1,017\r\n0000,0';
+const flag = (line, field) => {
+  const lines = READY.split('\r\n').map((l) => l.split(','));
+  lines[line][field] = '1';
+  return lines.map((l) => l.join(',')).join('\r\n');
+};
+
+check('the status pill: ready, paused, paper out, ribbon out, head open', () => {
+  assert.equal(parseHostStatus(READY), 'ready');
+  assert.equal(parseHostStatus(flag(0, 2)), 'paused');
+  assert.equal(parseHostStatus(flag(0, 1)), 'paper out');
+  assert.equal(parseHostStatus(flag(1, 3)), 'ribbon out');
+  assert.equal(parseHostStatus(flag(1, 2)), 'head open');
+  assert.equal(parseHostStatus(''), 'unknown');
+});
+
+check('head.latch and media.status count too, and the worst condition wins', () => {
+  assert.equal(parseHostStatus(READY, { 'head.latch': 'open' }), 'head open');
+  assert.equal(parseHostStatus(READY, { 'media.status': 'out' }), 'paper out');
+  assert.equal(parseHostStatus(flag(0, 2), { 'head.latch': 'open' }), 'head open', 'not paused');
+  assert.equal(parseHostStatus(READY, { 'head.latch': 'ok', 'media.status': 'ok' }), 'ready');
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

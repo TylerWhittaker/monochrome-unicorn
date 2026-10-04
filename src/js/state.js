@@ -116,16 +116,21 @@ export function activeIpAddress(boot) {
 }
 
 /**
- * device.host_status is the ~HS three-line reply. The first line's third
- * comma-separated field is the paper-out flag and the fourth is pause;
- * anything else we summarise as ready.
+ * device.host_status is the ~HS three-line reply. On the first line the
+ * second comma-separated field is the paper-out flag and the third is
+ * pause; on the second line the third is head up and the fourth ribbon
+ * out. head.latch and media.status, where they were read (`more`), say
+ * the same in words. The worst condition wins; otherwise it is ready.
  */
-export function parseHostStatus(raw) {
+export function parseHostStatus(raw, more = {}) {
   if (!raw) return 'unknown';
-  const first = String(raw).split(/[\r\n]+/)[0] || '';
-  const fields = first.split(',');
-  if (fields[1] === '1') return 'paper out';
-  if (fields[2] === '1') return 'paused';
+  const [first = '', second = ''] = String(raw).split(/[\r\n]+/);
+  const one = first.split(',');
+  const two = second.split(',');
+  if (two[2] === '1' || more['head.latch'] === 'open') return 'head open';
+  if (one[1] === '1' || more['media.status'] === 'out') return 'paper out';
+  if (two[3] === '1') return 'ribbon out';
+  if (one[2] === '1') return 'paused';
   return 'ready';
 }
 

@@ -46,6 +46,18 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * truncates any value at its first NUL byte, and a BMP has one at offset
  * four. display.text is the same screen as a 20x6 character grid.
  */
+/*
+ * What the header's status pill is refreshed from, every few seconds:
+ * the ~HS flags, and the two settings that say plainly when the head is
+ * open or the media has run out.
+ */
+const STATUS_VARS = [
+  'device.host_status',
+  'head.latch',
+  'media.status',
+  'odometer.total_label_count',
+];
+
 const LCD_VARS = [
   'display.text',
   'display.backlight',
@@ -413,6 +425,8 @@ function helperFiles(schema) {
   if (hasLcd(schema)) {
     files.push({ dest: 'E:LCD.SHTML', contents: LCD_VARS.map(varLine).join('\n') + '\n' });
   }
+
+  files.push({ dest: 'E:STATUS.SHTML', contents: STATUS_VARS.map(varLine).join('\n') + '\n' });
 
   /*
    * Every readable setting in one file, for the sweep.
