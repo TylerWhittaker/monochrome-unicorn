@@ -120,10 +120,16 @@ export function printerSpeaks(lang, deviceLanguages) {
 export function parseFields(lang, source) {
   if (!lang || !source) return [];
   if (lang.id === 'zpl') {
+    // A field the stored format gives data (^FN1^FDtext) is fixed: the
+    // printer prints that and ignores whatever a recall sends for it --
+    // measured on a ZD500R and a ZD620, and what the guide's ^FN entry
+    // says. So it is shown, not offered for filling in.
     return findFieldNumbers(source).map((f) => ({
       key: f.number,
+      name: f.name || '',
       label: f.name ? `${f.name}  (^FN${f.number})` : `Field ${f.number}`,
       initial: f.initial || '',
+      fixed: Boolean(f.initial),
     }));
   }
   if (lang.id === 'epl') return parseEplVariables(source);
@@ -205,7 +211,9 @@ export function buildRecall(lang, file, fields, values, { copies = 1 } = {}) {
   const valueFor = (field) => String(values.get(field.key) ?? '');
 
   if (lang.id === 'zpl') {
-    const pairs = fields.map((f) => [f.key, valueFor(f)]);
+    // Data sent for a fixed field would print on its own at the label's
+    // corner, in the default font, so it is not sent.
+    const pairs = fields.filter((f) => !f.fixed).map((f) => [f.key, valueFor(f)]);
     let zpl = buildFormatCall(file.dev, `${file.oname}.${file.otype}`, pairs);
     if (copies > 1) zpl = zpl.replace('^XZ', `^PQ${copies}\n^XZ`);
     return zpl;
@@ -251,4 +259,98 @@ export function parseCopies(text, previous = 1) {
   const trimmed = String(text).trim();
   if (!/^\d+$/.test(trimmed)) return previous;
   return Math.min(MAX_COPIES, Math.max(1, parseInt(trimmed, 10)));
+}
+
+/* ------------------------------------------------------------------ *
+ * Batches from CSV
+ * ------------------------------------------------------------------ */
+
+/**
+ * Parse CSV text -- or semicolon- or tab-separated, whichever the first
+ * line uses most -- into { headers, rows }. Quoted fields may hold the
+ * separator, line breaks and doubled quotes. Blank lines are skipped.
+ */
+export function parseCsv(text) {
+  const src = String(text).replace(/^\uFEFF/, '');
+  const firstLine = src.split(/\r?\n/, 1)[0] || '';
+  const sep = [',', ';', '\t'].reduce((best, c) =>
+    firstLine.split(c).length > firstLine.split(best).length ? c : best,
+  );
+  const records = [];
+  let record = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (quoted) {
+      if (ch === '"' && src[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') {
+        quoted = false;
+      } else {
+        cell += ch;
+      }
+    } else if (ch === '"' && cell === '') {
+      quoted = true;
+    } else if (ch === sep) {
+      record.push(cell);
+      cell = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && src[i + 1] === '\n') i++;
+      record.push(cell);
+      records.push(record);
+      record = [];
+      cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+  if (cell !== '' || record.length) {
+    record.push(cell);
+    records.push(record);
+  }
+  const filled = records.filter((r) => r.some((c) => c.trim() !== ''));
+  const [headers = [], ...rows] = filled;
+  return { headers: headers.map((h) => h.trim()), rows };
+}
+
+/**
+ * Which CSV column fills each field: { fieldKey: columnIndex }, -1 for
+ * none. A header matches a field by its ^FN name, or as "FN1", "Field 1"
+ * or plain "1"; failing any match at all, columns are taken in order.
+ */
+export function matchColumns(headers, fields) {
+  const norm = (s) =>
+    String(s)
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  const keys = headers.map(norm);
+  const mapping = {};
+  let named = 0;
+  for (const field of fields) {
+    if (field.fixed) {
+      mapping[field.key] = -1;
+      continue;
+    }
+    const wanted = [field.name, `fn${field.key}`, `field${field.key}`, String(field.key)]
+      .filter(Boolean)
+      .map(norm);
+    const at = keys.findIndex((k) => k !== '' && wanted.includes(k));
+    mapping[field.key] = at;
+    if (at !== -1) named++;
+  }
+  if (!named) {
+    fields
+      .filter((f) => !f.fixed)
+      .forEach((f, i) => (mapping[f.key] = i < headers.length ? i : -1));
+  }
+  return mapping;
+}
+
+/** One CSV row as the values Map buildRecall takes. */
+export function rowValues(row, fields, mapping) {
+  return new Map(
+    fields.map((f) => [f.key, mapping[f.key] >= 0 ? (row[mapping[f.key]] ?? '') : '']),
+  );
 }

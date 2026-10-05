@@ -418,13 +418,13 @@ export default function register(s, ctx) {
     assert.match(out, /\^GD250,80,3,B,L\^FS/);
   });
 
-  s.test('field: number, name and default value', async () => {
+  s.test('field: number, name and fixed value', async () => {
     await selectNode(6);
     await objectCard.locator('h3', { hasText: 'Variable field' }).waitFor();
     let out = await generated(() => ui.setField(field('Field number'), '7'));
     out = await generated(() => ui.setField(field('Name'), 'ZNAME'));
     assert.match(out, /\^FN7"ZNAME"\^FS/);
-    out = await generated(() => ui.setField(field('Default value'), 'fallback'));
+    out = await generated(() => ui.setField(field('Fixed value'), 'fallback'));
     assert.match(out, /\^FN7"ZNAME"\^FH\^FDfallback\^FS/);
   });
 

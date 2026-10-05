@@ -790,15 +790,21 @@ export function renderElementPanel(
           ),
         ]),
         row(
-          'Default value',
+          'Fixed value',
           textField(
             item.initial,
             commit((v) => {
               item.initial = v;
             }),
-            { placeholder: 'used when no data is supplied' },
+            { placeholder: 'empty: filled in when printed' },
           ),
         ),
+        item.initial
+          ? el('p', { class: 'text-[11px] text-amber-700' }, [
+              'With a value here the field always prints it: a printer ignores data sent for a ' +
+                'field the stored format fills in. Leave it empty to fill it in when printing.',
+            ])
+          : null,
         el('p', { class: 'text-[11px] text-ink-400' }, [
           'Saved as ^FN. Fill it in from the Stored Formats tab, or from a host that recalls this format.',
         ]),

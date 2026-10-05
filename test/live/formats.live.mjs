@@ -37,14 +37,14 @@ export const name = 'Stored Formats';
 const ZPL_FORMAT = 'ZTESTFMT';
 const CPCL_FORMAT = 'ZTESTCP';
 
-/** A ZPL format with three named fields, one of them with a default. */
+/** A ZPL format with three named fields, the last fixed by the format itself. */
 function zplFormat({ width, height }) {
   return [
     '^XA',
     `^DFE:${ZPL_FORMAT}.ZPL^FS`,
     `^PW${width}`,
     `^LL${height}`,
-    '^FO30,30^A0N,40,40^FN1"NAME"^FDdefault name^FS',
+    '^FO30,30^A0N,40,40^FN1"NAME"^FS',
     '^FO30,90^A0N,30,30^FN2"CITY"^FS',
     '^FO30,140^BY2^BCN,60,Y,N,N^FN3"SKU"^FD12345^FS',
     '^XZ',
@@ -101,7 +101,7 @@ export default function register(s, ctx) {
     );
   });
 
-  s.test('choosing it reads its fields, with their names and defaults', async () => {
+  s.test('choosing it reads its fields; one the format fills in is fixed', async () => {
     const since = Date.now();
     await select().selectOption(`E:${ZPL_FORMAT}.ZPL`);
     await waitFor(async () => (await inputs().count()) === 3, { what: 'three fields' });
@@ -110,25 +110,32 @@ export default function register(s, ctx) {
       captions.map((c) => c.replace(/\s+/g, ' ').trim()),
       ['NAME (^FN1)', 'CITY (^FN2)', 'SKU (^FN3)'],
     );
-    assert.equal(await inputs().nth(0).inputValue(), 'default name');
-    assert.equal(await inputs().nth(0).getAttribute('placeholder'), 'default: default name');
+    assert.equal(await inputs().nth(0).inputValue(), '');
+    // ^FN3^FD12345 in the format: the printer prints that whatever is sent.
     assert.equal(await inputs().nth(2).inputValue(), '12345');
+    assert.equal(
+      await inputs()
+        .nth(2)
+        .evaluate((n) => n.readOnly),
+      true,
+    );
+    assert.match(await panel.textContent(), /Set by the format \(\^FD\)/);
     assert.match(await panel.textContent(), /ZPL · 3 fields/);
     const first = await zpl.next('preview', { since });
     assert.match(first.data, new RegExp(`\\^XFE:${ZPL_FORMAT}\\.ZPL\\^FS`));
   });
 
-  s.test('filling the fields previews the recalled format', async () => {
+  s.test('filling the fields previews the recalled format, without the fixed one', async () => {
     await inputs().nth(0).fill('Ada Lovelace');
     await inputs().nth(1).fill('London & Co');
-    await inputs().nth(2).fill('SKU-42');
     const since = Date.now();
     const post = await zpl.next('preview', { since });
     await page.waitForTimeout(900);
     const data = zpl.last('preview').data || post.data;
     assert.match(data, /\^FN1\^FH\^FDAda Lovelace\^FS/);
     assert.match(data, /\^FN2\^FH\^FDLondon & Co\^FS/);
-    assert.match(data, /\^FN3\^FH\^FDSKU-42\^FS/);
+    // Sent, it would print on its own in the label's corner.
+    assert.doesNotMatch(data, /\^FN3/);
     await panel.getByText('up to date').waitFor();
     const img = panel.locator('img[alt="Rendered label"]');
     await waitFor(() => img.evaluate((n) => n.complete && n.naturalWidth > 0), {
@@ -136,7 +143,7 @@ export default function register(s, ctx) {
     });
   });
 
-  s.test('Enter walks the fields; Reset to defaults puts them back', async () => {
+  s.test('Enter walks the fields; Clear fields empties them', async () => {
     await inputs().nth(0).focus();
     await page.keyboard.press('Enter');
     assert.equal(
@@ -145,9 +152,10 @@ export default function register(s, ctx) {
         .evaluate((n) => n === document.activeElement),
       true,
     );
-    await panel.getByRole('button', { name: 'Reset to defaults' }).click();
-    assert.equal(await inputs().nth(0).inputValue(), 'default name');
+    await panel.getByRole('button', { name: 'Clear fields' }).click();
+    assert.equal(await inputs().nth(0).inputValue(), '');
     assert.equal(await inputs().nth(1).inputValue(), '');
+    assert.equal(await inputs().nth(2).inputValue(), '12345', 'the fixed field stays');
   });
 
   s.test('copies become ^PQ in the recall', async () => {
@@ -162,6 +170,62 @@ export default function register(s, ctx) {
     assert.equal(await copies.inputValue(), '1', 'zero becomes one');
     await copies.fill('1');
     await copies.dispatchEvent('change');
+  });
+
+  s.test('a CSV batch: columns matched by name, a row previewed', async () => {
+    await panel.getByRole('button', { name: 'Batch from CSV…' }).click();
+    const dialog = page.locator('#modal-root .card', { hasText: 'Batch from CSV' });
+    // Columns in another order than the fields, to be matched by ^FN name.
+    await dialog
+      .locator('textarea')
+      .fill(
+        'SKU,NAME,CITY\nS-1,Ada,London\nS-2,"Grace, Rear Admiral",Arlington\nS-3,Alan,Wilmslow\n',
+      );
+    await dialog.getByRole('button', { name: 'Use these rows' }).click();
+    await panel.getByText('Batch: 3 rows from pasted CSV').waitFor();
+    assert.equal(await panel.locator('tr[data-row]').count(), 3);
+    const mapped = await panel
+      .locator('label', {
+        has: page.locator('select', { has: page.locator('option', { hasText: '— none —' }) }),
+      })
+      .evaluateAll((labels) =>
+        labels.map((l) => [
+          l.textContent.split('—')[0].trim(),
+          l.querySelector('select').selectedOptions[0].textContent,
+        ]),
+      );
+    assert.deepEqual(
+      mapped.map(([field, column]) => [
+        field.replace(/\s+/g, ' ').replace(/ \(\^FN\d\).*$/, ''),
+        column,
+      ]),
+      [
+        ['NAME', 'NAME'],
+        ['CITY', 'CITY'],
+      ],
+      'the fixed SKU is not offered a column',
+    );
+    const since = Date.now();
+    await panel.locator('tr[data-row="1"]').click();
+    const post = await zpl.next('preview', { since });
+    assert.match(post.data, /\^FN1\^FH\^FDGrace, Rear Admiral\^FS/);
+    assert.match(post.data, /\^FN2\^FH\^FDArlington\^FS/);
+    assert.doesNotMatch(post.data, /\^FN3/);
+    assert.match(await panel.textContent(), /Print 3 labels/);
+  });
+
+  s.test('a CSV batch prints every row', async () => {
+    if (!cfg.print) {
+      await panel.getByRole('button', { name: 'Clear', exact: true }).click();
+      skip('printing not enabled');
+    }
+    const since = Date.now();
+    await panel.getByRole('button', { name: 'Print 3 labels' }).click();
+    await ui.toast(/Sent 3 rows to the printer/, { timeout: 60000 });
+    const sent = zpl.posts.filter((p) => p.action === 'print' && p.at >= since);
+    assert.equal(sent.length, 1, 'three rows fit one request');
+    assert.equal((sent[0].data.match(/\^XF/g) || []).length, 3);
+    await panel.getByRole('button', { name: 'Clear', exact: true }).click();
   });
 
   s.test('Print sends the filled-in format', async () => {

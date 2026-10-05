@@ -152,5 +152,61 @@ check('copies must be a whole number from 1 to the limit', () => {
   }
 });
 
+check('CSV: quoted fields, doubled quotes, line breaks inside quotes, CRLF', () => {
+  const { headers, rows } = f.parseCsv(
+    'NAME,CITY,SKU\r\n"Lovelace, Ada","London ""UK""",1\r\n"two\nlines",Paris,2\r\n\r\n',
+  );
+  assert.deepEqual(headers, ['NAME', 'CITY', 'SKU']);
+  assert.deepEqual(rows, [
+    ['Lovelace, Ada', 'London "UK"', '1'],
+    ['two\nlines', 'Paris', '2'],
+  ]);
+});
+
+check('CSV: semicolons or tabs, whichever the header line uses', () => {
+  assert.deepEqual(f.parseCsv('a;b\n1;2').rows, [['1', '2']]);
+  assert.deepEqual(f.parseCsv('a\tb\n1,5\t2').rows, [['1,5', '2']]);
+});
+
+check('columns match fields by ^FN name, by FN number, or else in order', () => {
+  const zpl = '^XA^FO1,1^FN1"NAME"^FS^FO1,1^FN2"CITY"^FS^FO1,1^FN3^FS^XZ';
+  const fields = f.parseFields(f.LANGUAGES.zpl, zpl);
+  assert.deepEqual(f.matchColumns(['sku', 'City', 'name', 'FN3'], fields), { 1: 2, 2: 1, 3: 3 });
+  assert.deepEqual(f.matchColumns(['x', 'y'], fields), { 1: 0, 2: 1, 3: -1 }, 'by position');
+  const values = f.rowValues(['Ada', 'London'], fields, { 1: 0, 2: 1, 3: -1 });
+  assert.deepEqual(
+    [...values],
+    [
+      [1, 'Ada'],
+      [2, 'London'],
+      [3, ''],
+    ],
+  );
+});
+
+check('a field the stored format fills in is fixed, and never sent in a recall', () => {
+  const zpl = '^XA^FO1,1^FN1"NAME"^FS^FO1,1^FN2"SKU"^FD12345^FS^XZ';
+  const fields = f.parseFields(f.LANGUAGES.zpl, zpl);
+  assert.deepEqual(
+    fields.map((x) => [x.key, x.fixed]),
+    [
+      [1, false],
+      [2, true],
+    ],
+  );
+  const recall = f.buildRecall(
+    f.LANGUAGES.zpl,
+    { dev: 'E', oname: 'F', otype: 'ZPL' },
+    fields,
+    new Map([
+      [1, 'Ada'],
+      [2, 'ignored'],
+    ]),
+  );
+  assert.match(recall, /\^FN1\^FH\^FDAda\^FS/);
+  assert.doesNotMatch(recall, /\^FN2/);
+  assert.deepEqual(f.matchColumns(['NAME', 'SKU'], fields), { 1: 0, 2: -1 });
+});
+
 console.log(failures ? `\n${failures} failing` : '\nall passing');
 process.exit(failures ? 1 : 0);

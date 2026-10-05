@@ -36,7 +36,7 @@
 
 import { el, toast, confirmPrint, debounce, formatBytes, replaceChildren, modal } from './ui.js';
 import { printer } from './state.js';
-import { listFiles, readScript } from './printer.js';
+import { listFiles, readScript, sendControl } from './printer.js';
 import {
   cachedDriveListing,
   driveListingError,
@@ -54,6 +54,9 @@ import {
   buildRecall,
   parseCopies,
   MAX_COPIES,
+  parseCsv,
+  matchColumns,
+  rowValues,
 } from './formats.js';
 import { createPreview } from './preview.js';
 
@@ -69,12 +72,15 @@ const formatState = {
   fields: [],
   values: new Map(),
   copies: 1,
+  /** A CSV batch: { name, headers, rows, mapping, selected, printing, stop }. */
+  batch: null,
 };
 
 let formatSelect = null;
 /** A format another mode asked for, waiting for this one to exist. */
 let pendingFormat = null;
 let fieldsHost = null;
+let batchHost = null;
 let sourceHost = null;
 let noticeHost = null;
 let formatPreview = null;
@@ -235,11 +241,26 @@ function renderFields() {
   }
 
   const rows = fields.map((field) => {
+    if (field.fixed) {
+      return el('label', { class: 'block space-y-1 px-3 py-2' }, [
+        el('span', { class: 'label-text' }, [field.label]),
+        el('input', {
+          class: 'field bg-ink-50 text-ink-500',
+          type: 'text',
+          value: field.initial,
+          readOnly: true,
+          tabIndex: -1,
+          title: 'The format sets this field itself, so the printer ignores data sent for it',
+        }),
+        el('span', { class: 'block text-[11px] text-ink-400' }, [
+          'Set by the format (^FD): always prints this.',
+        ]),
+      ]);
+    }
     const input = el('input', {
       class: 'field',
       type: 'text',
       value: formatState.values.get(field.key) ?? '',
-      placeholder: field.initial ? `default: ${field.initial}` : '',
       autocomplete: 'off',
     });
     if (field.maxLength) input.maxLength = field.maxLength;
@@ -277,13 +298,22 @@ function renderFields() {
             class: 'btn-secondary btn-sm',
             onclick: () => {
               for (const field of formatState.fields) {
-                formatState.values.set(field.key, field.initial || '');
+                if (!field.fixed) formatState.values.set(field.key, '');
               }
               renderFields();
               scheduleFormatPreview();
             },
           },
-          ['Reset to defaults'],
+          ['Clear fields'],
+        ),
+        el(
+          'button',
+          {
+            class: 'btn-secondary btn-sm',
+            title: 'Print one label per row of a CSV file, its columns filling the fields',
+            onclick: () => openBatchDialog(),
+          },
+          ['Batch from CSV…'],
         ),
         lang.previewable
           ? el(
@@ -499,6 +529,8 @@ async function selectFormat(value, preloaded = null) {
 
   formatState.current = { dev, oname, otype };
   formatState.lang = lang;
+  formatState.batch = null;
+  renderBatch();
 
   // A mode that has already read the file hands the source over with it,
   // which is the only way an EPL or CPCL format ever gets its fields
@@ -544,6 +576,237 @@ async function printFormatLabel() {
 }
 
 /* ------------------------------------------------------------------ *
+ * Batches from CSV
+ *
+ * One label per row of a CSV file, its columns filling the fields: the
+ * columns are matched to fields by name (formats.js matchColumns) and
+ * can be changed; a row is previewed by clicking it; printing sends the
+ * recalls a few rows to a request, so a long run can be stopped.
+ * ------------------------------------------------------------------ */
+
+const BATCH_ROWS_PER_REQUEST = 20;
+const BATCH_ROWS_SHOWN = 500;
+
+async function openBatchDialog() {
+  const picked = await modal('Batch from CSV', (close) => {
+    const area = el('textarea', {
+      class: 'field field-mono w-full',
+      rows: '8',
+      spellcheck: 'false',
+      placeholder: 'NAME,CITY,SKU\nAda Lovelace,London,1001\n…',
+    });
+    let name = 'pasted CSV';
+    const file = el('input', {
+      type: 'file',
+      accept: '.csv,.txt,text/csv,text/plain',
+      class: 'field',
+    });
+    file.addEventListener('change', async () => {
+      const chosen = file.files && file.files[0];
+      if (!chosen) return;
+      area.value = await chosen.text();
+      name = chosen.name;
+    });
+    return el('div', { class: 'space-y-3' }, [
+      el('p', { class: 'text-ink-600' }, [
+        'Paste CSV, or pick a file. The first row names the columns; each row after it is one label. ' +
+          'Commas, semicolons or tabs.',
+      ]),
+      file,
+      area,
+      el('div', { class: 'flex justify-end gap-2' }, [
+        el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Cancel']),
+        el('button', { class: 'btn-primary', onclick: () => close({ text: area.value, name }) }, [
+          'Use these rows',
+        ]),
+      ]),
+    ]);
+  });
+  if (!picked || !picked.text.trim()) return;
+  const { headers, rows } = parseCsv(picked.text);
+  if (!rows.length) {
+    toast('That CSV has a header row but no rows under it.', 'error');
+    return;
+  }
+  formatState.batch = {
+    name: picked.name,
+    headers,
+    rows,
+    mapping: matchColumns(headers, formatState.fields),
+    selected: 0,
+    printing: false,
+    stop: false,
+  };
+  renderBatch();
+  previewBatchRow(0);
+}
+
+function batchRecall(row) {
+  const { lang, current, fields, batch } = formatState;
+  return buildRecall(lang, current, fields, rowValues(row, fields, batch.mapping), {
+    copies: formatState.copies,
+  });
+}
+
+function previewBatchRow(index) {
+  const batch = formatState.batch;
+  if (!batch) return;
+  batch.selected = index;
+  renderBatch();
+  if (formatState.lang.previewable) formatPreview.update(batchRecall(batch.rows[index]));
+}
+
+async function printBatch() {
+  const batch = formatState.batch;
+  const { current, lang } = formatState;
+  const total = batch.rows.length * formatState.copies;
+  if (!(await confirmPrint(total, `${current.oname}.${current.otype} (${lang.label})`))) return;
+  batch.printing = true;
+  batch.stop = false;
+  batch.sent = 0;
+  renderBatch();
+  try {
+    for (let i = 0; i < batch.rows.length && !batch.stop; i += BATCH_ROWS_PER_REQUEST) {
+      const chunk = batch.rows.slice(i, i + BATCH_ROWS_PER_REQUEST);
+      await sendControl(chunk.map(batchRecall).join(lang.id === 'zpl' ? '\n' : ''));
+      batch.sent = i + chunk.length;
+      renderBatch();
+    }
+    toast(
+      batch.stop
+        ? `Stopped after ${batch.sent} of ${batch.rows.length} rows.`
+        : `Sent ${batch.rows.length} rows to the printer.`,
+      batch.stop ? 'info' : 'success',
+    );
+  } catch (err) {
+    toast(`Batch stopped after ${batch.sent} rows: ${err.message}`, 'error');
+  } finally {
+    batch.printing = false;
+    renderBatch();
+  }
+}
+
+function renderBatch() {
+  const batch = formatState.batch;
+  if (!batch || !formatState.current) {
+    replaceChildren(batchHost, []);
+    return;
+  }
+  const { fields } = formatState;
+  // A fixed field is the format's own: nothing in the CSV fills it.
+  const editable = fields.filter((f) => !f.fixed);
+  const options = [
+    ['-1', '— none —'],
+    ...batch.headers.map((h, i) => [String(i), h || `column ${i + 1}`]),
+  ];
+
+  const mappingRows = fields
+    .filter((field) => !field.fixed)
+    .map((field) => {
+      const select = el(
+        'select',
+        { class: 'field py-1 text-[12px]', disabled: batch.printing },
+        options.map(([value, text]) =>
+          el('option', { value, selected: String(batch.mapping[field.key]) === value }, [text]),
+        ),
+      );
+      select.addEventListener('change', () => {
+        batch.mapping[field.key] = Number(select.value);
+        previewBatchRow(batch.selected);
+      });
+      return el('label', { class: 'flex items-center gap-2 text-[12px]' }, [
+        el('span', { class: 'w-40 truncate text-ink-600', title: field.label }, [field.label]),
+        select,
+      ]);
+    });
+
+  const shown = batch.rows.slice(0, BATCH_ROWS_SHOWN);
+  const table = el('table', { class: 'w-full text-[12px]' }, [
+    el('thead', {}, [
+      el('tr', { class: 'text-left text-ink-500' }, [
+        el('th', { class: 'px-2 py-1' }, ['#']),
+        ...editable.map((f) => el('th', { class: 'px-2 py-1 font-medium' }, [f.label])),
+      ]),
+    ]),
+    el(
+      'tbody',
+      {},
+      shown.map((row, index) => {
+        const values = rowValues(row, fields, batch.mapping);
+        return el(
+          'tr',
+          {
+            class:
+              'cursor-pointer border-t border-ink-100 hover:bg-ink-50' +
+              (index === batch.selected ? ' bg-sky-50' : ''),
+            dataset: { row: String(index) },
+            onclick: () => previewBatchRow(index),
+          },
+          [
+            el('td', { class: 'px-2 py-1 text-ink-400' }, [String(index + 1)]),
+            ...editable.map((f) => el('td', { class: 'px-2 py-1 font-mono' }, [values.get(f.key)])),
+          ],
+        );
+      }),
+    ),
+  ]);
+
+  const total = batch.rows.length * formatState.copies;
+  replaceChildren(batchHost, [
+    el('div', { class: 'space-y-3 border-t border-ink-200 px-3 py-3' }, [
+      el('div', { class: 'flex flex-wrap items-center gap-3' }, [
+        el('span', { class: 'text-[12px] font-medium text-ink-700' }, [
+          `Batch: ${batch.rows.length} row${batch.rows.length === 1 ? '' : 's'} from ${batch.name}`,
+        ]),
+        el('span', { class: 'text-[11px] text-ink-400' }, ['Click a row to preview it.']),
+        el('div', { class: 'ml-auto flex items-center gap-2' }, [
+          batch.printing
+            ? el('span', { class: 'text-[11px] text-ink-500' }, [
+                `sent ${batch.sent} of ${batch.rows.length}…`,
+              ])
+            : null,
+          batch.printing
+            ? el(
+                'button',
+                {
+                  class: 'btn-secondary btn-sm',
+                  onclick: () => {
+                    batch.stop = true;
+                  },
+                },
+                ['Stop'],
+              )
+            : el(
+                'button',
+                {
+                  class: 'btn-secondary btn-sm',
+                  onclick: () => {
+                    formatState.batch = null;
+                    renderBatch();
+                    scheduleFormatPreview();
+                  },
+                },
+                ['Clear'],
+              ),
+          el(
+            'button',
+            { class: 'btn-primary btn-sm', disabled: batch.printing, onclick: () => printBatch() },
+            [`Print ${total} label${total === 1 ? '' : 's'}`],
+          ),
+        ]),
+      ]),
+      el('div', { class: 'grid gap-1.5 sm:grid-cols-2' }, mappingRows),
+      el('div', { class: 'max-h-64 overflow-auto rounded border border-ink-200' }, [table]),
+      batch.rows.length > BATCH_ROWS_SHOWN
+        ? el('p', { class: 'text-[11px] text-ink-400' }, [
+            `Showing the first ${BATCH_ROWS_SHOWN}; all ${batch.rows.length} print.`,
+          ])
+        : null,
+    ]),
+  ]);
+}
+
+/* ------------------------------------------------------------------ *
  * Mount
  * ------------------------------------------------------------------ */
 
@@ -564,6 +827,7 @@ export function mountFormat(panel) {
     formatState.copies = parseCopies(copiesInput.value, formatState.copies);
     copiesInput.value = String(formatState.copies);
     scheduleFormatPreview();
+    renderBatch();
   });
 
   scanNode = el('span', { class: 'flex items-center gap-1.5' });
@@ -581,6 +845,7 @@ export function mountFormat(panel) {
 
   noticeHost = el('div');
   fieldsHost = el('div');
+  batchHost = el('div');
   sourceHost = el('div');
   formatPreview = createPreview();
 
@@ -601,6 +866,7 @@ export function mountFormat(panel) {
         ]),
         noticeHost,
         fieldsHost,
+        batchHost,
         sourceHost,
       ]),
       el('div', { class: 'min-w-0' }, [formatPreview.node]),
