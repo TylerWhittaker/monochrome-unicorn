@@ -373,7 +373,9 @@ measured:
    inside a script removed a file).
 3. A `! CISDFCRC16` header inside such a script writes **any filename
    with any extension, byte for byte** -- `E:HELLO.TXT` was created
-   from the browser and served back identical. That is the header
+   from the browser and served back identical. (It has not been reproduced
+   since, and failed attempts wedge port 9100: see "What a browser can
+   upload" below.) That is the header
    `tools/upload.mjs` uses on port 9100, and it is what the console
    would need to upload a `.BAT`, `.EPL` or `.FMT`.
 
@@ -433,6 +435,30 @@ Everything else was tried and does not work:
   encodings: `A` with ASCII hex, `A` with `:B64:`, `P` with `:B64:`.
   No error, no file. (`:B64:` does work for the types that store at
   all, and a CRC of `0000` is accepted.)
+- **`~DY`'s WML type (`x = C`) stores nothing**, though the manual
+  lists it beside `F` (.HTM) and `H` (.GET). Tried 2026-10-03 on a
+  ZD500R (V74.20.23Z) and a ZD620 (V84.20.23Z), through the `/zpl` form
+  and on port 9100 alike, as `A` with ASCII hex, `B` with the raw text
+  and `A` with `:B64:`, with and without `.WML` in the name: no error,
+  no file, a 404 for `/NAME.WML`.
+- **The `file.run` chain above is not safe to build on**, retested
+  2026-10-03/04 on the ZD500R with a `.TXT` and a `.WML`. Every failure
+  left port 9100 accepting connections and answering nothing (HTTP
+  carried on) until a power cycle -- four of them:
+  - **The form strips trailing line breaks from `data`.** A `~DY` whose
+    data ends in CRLF arrives two bytes short; it is stored only when
+    the next request's bytes complete it. A `~DY` or `CISDFCRC16` left
+    short is what wedges the parser.
+  - **Appending `^XA^XZ` after the data does not cure it**: that
+    request answered HTTP 400, stored nothing, and wedged 9100 anyway.
+  - **Files on R: are not served over HTTP** (`/NAME.BMP` is a 404 even
+    while `/dir` lists it), so a page cannot check a stored script
+    before running it.
+  - Node's `fetch` gets HTTP 400 from `/zpl` where curl and browsers
+    get 200; test with curl.
+
+  Uploads other than `.ZPL` and `.GRF` stay with `tools/upload.mjs` on
+  port 9100.
 
 ## Printers older than Link-OS
 
