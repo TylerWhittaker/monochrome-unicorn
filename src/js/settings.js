@@ -31,9 +31,10 @@
  * row reports what the printer actually kept.
  */
 
-import { el, qs, replaceChildren, toast, debounce } from './ui.js';
+import { el, qs, replaceChildren, toast, debounce, modal } from './ui.js';
 import { printer, allSettings } from './state.js';
 import { createMaintenanceCard } from './maintenance.js';
+import { buildBackup, compareBackup } from './backup.js';
 import {
   readAllSettings,
   readSlowSetting,
@@ -876,6 +877,182 @@ async function refresh() {
 }
 
 /* ------------------------------------------------------------------ *
+ * Backup and restore
+ *
+ * backup.js decides what goes in and how a backup compares; restoring
+ * writes each chosen setting through the same applyChange a row uses,
+ * so each is read back and its row says what the printer kept.
+ * ------------------------------------------------------------------ */
+
+function sweepDone() {
+  if (refreshBtn && !refreshBtn.disabled) return true;
+  toast('Wait for the settings to finish reading first.', 'info');
+  return false;
+}
+
+function makeBackup(includeAll, includeNetwork) {
+  return buildBackup({
+    metas: allSettings(),
+    values,
+    includeAll,
+    includeNetwork,
+    same: valuesMatch,
+    info: {
+      name: printer.name,
+      model: printer.model,
+      firmware: printer.firmware,
+      serial: printer.serial,
+    },
+  });
+}
+
+async function openBackupDialog() {
+  if (!sweepDone()) return;
+  await modal('Back up settings', (close) => {
+    const allBox = el('input', { type: 'checkbox', class: 'h-3.5 w-3.5 accent-ink-900' });
+    const netBox = el('input', { type: 'checkbox', class: 'h-3.5 w-3.5 accent-ink-900' });
+    const count = el('p', { class: 'text-[12px] text-ink-500' });
+    const paint = () => {
+      const n = Object.keys(makeBackup(allBox.checked, netBox.checked).settings).length;
+      count.textContent = `${n} setting${n === 1 ? '' : 's'} will be saved.`;
+    };
+    allBox.addEventListener('change', paint);
+    netBox.addEventListener('change', paint);
+    paint();
+    const download = () => {
+      const backup = makeBackup(allBox.checked, netBox.checked);
+      const day = backup.captured.slice(0, 10);
+      const stem = (printer.name || 'printer').replace(/[^A-Za-z0-9_-]+/g, '-');
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(backup, null, 2) + '\n'], { type: 'application/json' }),
+      );
+      const link = el('a', { href: url, download: `${stem}-settings-${day}.json` });
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      close(true);
+    };
+    return el('div', { class: 'space-y-3' }, [
+      el('p', { class: 'text-ink-600' }, [
+        'Saves the settings this printer has been given, to put back after a reset or onto another ' +
+          'printer of the same kind. Passwords and keys are never included.',
+      ]),
+      el('label', { class: 'flex items-center gap-2 text-ink-700' }, [
+        allBox,
+        'Every writable setting, not just those changed from the default',
+      ]),
+      el('label', { class: 'flex items-center gap-2 text-ink-700' }, [
+        netBox,
+        'Include the network address and identity (restore only to this printer)',
+      ]),
+      count,
+      el('div', { class: 'flex justify-end gap-2' }, [
+        el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Cancel']),
+        el('button', { class: 'btn-primary', onclick: download }, ['Download']),
+      ]),
+    ]);
+  });
+}
+
+async function openRestoreDialog() {
+  if (!sweepDone()) return;
+  const chosen = await modal('Restore settings', (close) => {
+    const file = el('input', { type: 'file', accept: '.json,application/json', class: 'field' });
+    const host = el('div', { class: 'space-y-2' });
+    const go = el('button', { class: 'btn-primary', disabled: true }, ['Restore']);
+    let compared = [];
+    let boxes = [];
+    const syncButton = () => {
+      const n = boxes.filter((b) => b.checked).length;
+      go.textContent = `Restore ${n} setting${n === 1 ? '' : 's'}`;
+      go.disabled = n === 0;
+    };
+    file.addEventListener('change', async () => {
+      const picked = file.files && file.files[0];
+      if (!picked) return;
+      let backup;
+      try {
+        backup = JSON.parse(await picked.text());
+        compared = compareBackup(backup, allSettings(), values, valuesMatch);
+      } catch (err) {
+        replaceChildren(host, [el('p', { class: 'text-[12px] text-red-700' }, [err.message])]);
+        return;
+      }
+      boxes = [];
+      const from = backup.printer || {};
+      const table = el('table', { class: 'w-full text-[11px]' }, [
+        el(
+          'tbody',
+          {},
+          compared.map((row) => {
+            const box = el('input', {
+              type: 'checkbox',
+              class: 'h-3.5 w-3.5 accent-ink-900',
+              checked: row.status === 'differs',
+              disabled: row.status !== 'differs',
+              dataset: { name: row.name },
+            });
+            box.addEventListener('change', syncButton);
+            boxes.push(box);
+            return el('tr', { class: 'border-t border-ink-100 align-top' }, [
+              el('td', { class: 'py-1 pr-2' }, [box]),
+              el('td', { class: 'py-1 pr-2 font-mono break-all' }, [row.name]),
+              el('td', { class: 'py-1 pr-2 font-mono break-all' }, [row.backup]),
+              el('td', { class: 'py-1 font-mono break-all text-ink-400' }, [
+                row.status === 'differs' ? `now ${row.current ?? '—'}` : row.status,
+              ]),
+            ]);
+          }),
+        ),
+      ]);
+      replaceChildren(host, [
+        el('p', { class: 'text-[12px] text-ink-600' }, [
+          `From ${from.name || 'a printer'} (${from.model || 'unknown model'}), ${String(backup.captured || '').slice(0, 10)}. ` +
+            `${compared.filter((r) => r.status === 'differs').length} of ${compared.length} differ from this printer.`,
+        ]),
+        from.model && from.model !== printer.model
+          ? el('p', { class: 'text-[12px] text-amber-700' }, [
+              `This backup is from a ${from.model}; this printer is a ${printer.model}. Settings it does not have are skipped.`,
+            ])
+          : null,
+        el('div', { class: 'max-h-72 overflow-auto rounded border border-ink-200 px-2' }, [table]),
+      ]);
+      syncButton();
+    });
+    go.addEventListener('click', () =>
+      close(compared.filter((row, i) => boxes[i] && boxes[i].checked)),
+    );
+    return el('div', { class: 'space-y-3' }, [
+      el('p', { class: 'text-ink-600' }, ['Pick a backup made with Back up…']),
+      file,
+      host,
+      el('div', { class: 'flex justify-end gap-2' }, [
+        el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Cancel']),
+        go,
+      ]),
+    ]);
+  });
+  if (!chosen || !chosen.length) return;
+
+  const progress = toast(`Restoring 0 of ${chosen.length}…`, 'busy', { timeout: 0 });
+  const failed = [];
+  for (const [i, row] of chosen.entries()) {
+    const entry = rows.get(row.name);
+    await applyChange(entry, row.backup);
+    if (!valuesMatch(values[row.name], row.backup)) failed.push(row.name);
+    progress.update(`Restoring ${i + 1} of ${chosen.length}…`, 'busy', { timeout: 0 });
+  }
+  progress.update(
+    failed.length
+      ? `Restored ${chosen.length - failed.length} of ${chosen.length}; the printer kept its own value for ${failed.join(', ')}.`
+      : `Restored ${chosen.length} setting${chosen.length === 1 ? '' : 's'}.`,
+    failed.length ? 'error' : 'success',
+    { timeout: failed.length ? 0 : 6000 },
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Mount
  * ------------------------------------------------------------------ */
 
@@ -952,7 +1129,16 @@ export function mountSettings(panel) {
         toggle('changed from default', (v) => {
           modifiedOnly = v;
         }),
-        el('div', { class: 'ml-auto flex items-center gap-3' }, [countNode, refreshBtn]),
+        el('div', { class: 'ml-auto flex items-center gap-3' }, [
+          countNode,
+          el('button', { class: 'btn-secondary btn-sm', onclick: () => openBackupDialog() }, [
+            'Back up…',
+          ]),
+          el('button', { class: 'btn-secondary btn-sm', onclick: () => openRestoreDialog() }, [
+            'Restore…',
+          ]),
+          refreshBtn,
+        ]),
       ]),
       el(
         'p',

@@ -35,6 +35,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { openConsole } from './lib/browser.mjs';
 import { getvar, setvar, waitFor } from './lib/printer.mjs';
 import { skip } from './lib/harness.mjs';
@@ -302,6 +303,47 @@ export default function register(s, ctx) {
       .waitFor();
     await filter.fill('');
     ui.assertNoErrors();
+  });
+
+  let userP1 = null;
+  s.cleanup(async () => {
+    if (userP1 !== null) await setvar(cfg.ip, 'device.user_p1', userP1);
+  }, 'put device.user_p1 back');
+
+  s.test('a backup saves changed settings, and restoring puts one back', async () => {
+    userP1 = await getvar(cfg.ip, 'device.user_p1');
+    const backedUp = `ZTB${ctx.runId}`.slice(0, 20);
+    await setvar(cfg.ip, 'device.user_p1', backedUp);
+    const refresh = ui.button(ui.panel('settings'), 'Refresh values');
+    await refresh.click();
+    await waitFor(() => refresh.isEnabled(), { timeout: 90000, what: 'the sweep' });
+
+    await ui.panel('settings').getByRole('button', { name: 'Back up…' }).click();
+    const backupDialog = page.locator('#modal-root .card', { hasText: 'Back up settings' });
+    assert.match(await backupDialog.textContent(), /\d+ settings? will be saved/);
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      backupDialog.getByRole('button', { name: 'Download' }).click(),
+    ]);
+    const path = await download.path();
+    const backup = JSON.parse(readFileSync(path, 'utf8'));
+    assert.equal(backup.format, 'zebra-console-settings');
+    assert.equal(backup.settings['device.user_p1'], backedUp);
+    assert.ok(!Object.keys(backup.settings).some((n) => /password|^rtc\.|^odometer\./.test(n)));
+
+    // Changed behind the page's back, then put back from the backup.
+    await setvar(cfg.ip, 'device.user_p1', 'changed');
+    await refresh.click();
+    await waitFor(() => refresh.isEnabled(), { timeout: 90000, what: 'the sweep' });
+    await ui.panel('settings').getByRole('button', { name: 'Restore…' }).click();
+    const restoreDialog = page.locator('#modal-root .card', { hasText: 'Restore settings' });
+    await restoreDialog.locator('input[type="file"]').setInputFiles(path);
+    const box = restoreDialog.locator('input[data-name="device.user_p1"]');
+    await box.waitFor();
+    assert.equal(await box.isChecked(), true, 'the one that differs is ticked');
+    await restoreDialog.getByRole('button', { name: /^Restore \d+ settings?$/ }).click();
+    await ui.toast(/Restored \d+ setting/, { timeout: 120000 });
+    assert.equal(await getvar(cfg.ip, 'device.user_p1'), backedUp);
   });
 
   s.test('a slow setting is read on request', async () => {

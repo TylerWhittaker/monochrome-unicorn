@@ -19,6 +19,15 @@ Three modes:
   what it is for -- a summary written for every setting of the printers
   this was built against (`src/data/sgd-reference.mjs`, served as
   `SGDREF.SHTML` and read on first use) -- with its range and default.
+  Above the table, a Maintenance card shows the odometers -- media run
+  since the head was cleaned and since it was replaced, labels, cuts,
+  head temperature, uptime -- with buttons to reset the head counters.
+  **Back up…** downloads the settings that differ from their default
+  (or every writable one) as JSON; **Restore…** reads one back, shows
+  it against this printer with the differing ones ticked, and writes
+  the ticked ones, each confirmed by read-back. Passwords and keys
+  never go in a backup, nor do the clock, the odometers, commands or
+  user variables; the network address and identity only when asked.
 - **Label Editor** — create and edit stored `.ZPL` labels, either by
   dragging text, barcodes (twenty symbologies, GS1 and postal among
   them), serial numbers (`^SN`, counting from label to label), images,
