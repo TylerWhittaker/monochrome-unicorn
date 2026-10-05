@@ -127,6 +127,11 @@ export default function register(s, ctx) {
   s.test('the Maintenance card shows the printer’s own odometers', async () => {
     const card = page.locator('#maintenance');
     await card.getByText('Labels printed').waitFor({ timeout: 60000 });
+    const belowTable = await card.evaluate((node) => {
+      const table = document.getElementById('settings-empty').closest('.card');
+      return Boolean(table.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    assert.ok(belowTable, 'the card sits below the settings table');
     const labels = Number(await getvar(cfg.ip, 'odometer.total_label_count'));
     const shown = Number(
       (

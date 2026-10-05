@@ -19,7 +19,7 @@ Three modes:
   what it is for -- a summary written for every setting of the printers
   this was built against (`src/data/sgd-reference.mjs`, served as
   `SGDREF.SHTML` and read on first use) -- with its range and default.
-  Above the table, a Maintenance card shows the odometers -- media run
+  Below the table, a Maintenance card shows the odometers -- media run
   since the head was cleaned and since it was replaced, labels, cuts,
   head temperature, uptime -- with buttons to reset the head counters.
   **Back up…** downloads the settings that differ from their default

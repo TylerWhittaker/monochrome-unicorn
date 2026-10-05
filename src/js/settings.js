@@ -1115,11 +1115,6 @@ export function mountSettings(panel) {
   listNode = el('div');
   listNode.append(...buildGroups());
 
-  // Above the table, and read once the sweep is done so it does not hold
-  // the printer up for the settings.
-  const maintenance = createMaintenanceCard();
-  panel.append(el('div', { class: 'mb-3' }, [maintenance.node]));
-
   panel.append(
     el('div', { class: 'card overflow-hidden' }, [
       sourceNotice(),
@@ -1152,6 +1147,11 @@ export function mountSettings(panel) {
       listNode,
     ]),
   );
+
+  // Below the table, and read once the sweep is done so it does not hold
+  // the printer up for the settings.
+  const maintenance = createMaintenanceCard();
+  panel.append(el('div', { class: 'mt-3' }, [maintenance.node]));
 
   onDriveListing(paintDriveListing);
   applyFilter();
