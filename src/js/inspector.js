@@ -1269,3 +1269,49 @@ export function renderElementPanel(
 
   replaceChildren(host, [common, ...specific, actions]);
 }
+
+/**
+ * Panel for several selected elements: line them up, space them out,
+ * duplicate or delete them together. Their own properties are edited one
+ * at a time.
+ */
+export function renderArrangePanel(host, { count, onAlign, onDistribute, onDuplicate, onDelete }) {
+  const button = (label, title, onclick, disabled = false) =>
+    el('button', { class: 'btn-secondary btn-sm', title, onclick, disabled }, [label]);
+  const few = count < 3;
+  replaceChildren(host, [
+    el('p', { class: 'px-3 pt-3 text-[12px] text-ink-600' }, [
+      'Click one on its own to edit its properties; Shift-click adds or removes one.',
+    ]),
+    section('Align', [
+      el('div', { class: 'grid grid-cols-3 gap-2' }, [
+        button('Left', 'Line up their left edges', () => onAlign('left')),
+        button('Centre', 'Line up their centres, across', () => onAlign('center')),
+        button('Right', 'Line up their right edges', () => onAlign('right')),
+        button('Top', 'Line up their top edges', () => onAlign('top')),
+        button('Middle', 'Line up their centres, down', () => onAlign('middle')),
+        button('Bottom', 'Line up their bottom edges', () => onAlign('bottom')),
+      ]),
+    ]),
+    section('Distribute', [
+      el('div', { class: 'grid grid-cols-2 gap-2' }, [
+        button(
+          'Across',
+          few ? 'Needs three or more' : 'Equal gaps from left to right',
+          () => onDistribute('x'),
+          few,
+        ),
+        button(
+          'Down',
+          few ? 'Needs three or more' : 'Equal gaps from top to bottom',
+          () => onDistribute('y'),
+          few,
+        ),
+      ]),
+    ]),
+    el('div', { class: 'flex gap-2 px-3 py-3' }, [
+      el('button', { class: 'btn-secondary btn-sm', onclick: onDuplicate }, ['Duplicate']),
+      el('button', { class: 'btn-danger btn-sm', onclick: onDelete }, ['Delete']),
+    ]),
+  ]);
+}

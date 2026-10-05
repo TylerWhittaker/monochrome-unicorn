@@ -530,13 +530,19 @@ function drawRuler(canvas, { lengthDots, scale, vertical }) {
  * Mount the editing canvas.
  *
  * `onChange(reason)` fires after any edit the user made by direct
- * manipulation; `onSelect(id)` after the selection changes.
+ * manipulation; `onSelect()` after the selection changes.
+ *
+ * Several elements can be selected at once -- shift- (or Ctrl-) click
+ * adds or removes one, and a drag across the grey or the empty label
+ * selects every element it touches -- and then move, nudge and delete
+ * together. The resize handle is only offered on a single element.
  */
 export function createCanvas(
   container,
   { getDoc, onChange, onSelect, getGrid = () => 0, getRulers = () => false },
 ) {
-  let selectedId = null;
+  /** The selected element ids, in the order they were picked. */
+  const selection = new Set();
   let scale = 1;
   let zoom = 'fit';
   /** Element id -> its node on the surface, so edits can skip a rebuild. */
@@ -624,9 +630,73 @@ export function createCanvas(
   container.classList.add('bg-ink-100');
   container.append(scroller);
 
-  // A press on the grey, anywhere round the label, lets go of the selection.
+  /*
+   * A press on the grey, or on the label where nothing is, lets go of the
+   * selection; dragging from there draws a band, and selects every
+   * element it touches (added to the selection, with Shift held).
+   */
+  const band = el('div', {
+    class: 'pointer-events-none fixed z-40 border border-sky-500 bg-sky-400/15',
+    hidden: true,
+  });
+  document.body.append(band);
   const onBackgroundDown = (event) => {
-    if ([container, scroller, surface, frame].includes(event.target)) select(null);
+    if (![container, scroller, surface, frame].includes(event.target)) return;
+    if (event.button !== 0) return;
+    // A press on the scroller's own scrollbars scrolls, and nothing else.
+    if (
+      event.target === scroller &&
+      (event.offsetX >= scroller.clientWidth || event.offsetY >= scroller.clientHeight)
+    ) {
+      return;
+    }
+    const adding = event.shiftKey || event.ctrlKey || event.metaKey;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const before = [...selection];
+    let dragged = false;
+    try {
+      container.setPointerCapture(event.pointerId);
+    } catch (err) {
+      /* no capture support */
+    }
+    const bandRect = (e) => ({
+      left: Math.min(startX, e.clientX),
+      top: Math.min(startY, e.clientY),
+      right: Math.max(startX, e.clientX),
+      bottom: Math.max(startY, e.clientY),
+    });
+    const move = (e) => {
+      if (!dragged && Math.hypot(e.clientX - startX, e.clientY - startY) < 4) return;
+      dragged = true;
+      const r = bandRect(e);
+      Object.assign(band.style, {
+        left: `${r.left}px`,
+        top: `${r.top}px`,
+        width: `${r.right - r.left}px`,
+        height: `${r.bottom - r.top}px`,
+      });
+      band.hidden = false;
+      const touched = [];
+      for (const [id, node] of nodes) {
+        const b = node.getBoundingClientRect();
+        if (b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top) {
+          touched.push(id);
+        }
+      }
+      setSelection(adding ? [...before, ...touched] : touched, { quiet: true });
+    };
+    const end = () => {
+      band.hidden = true;
+      container.removeEventListener('pointermove', move);
+      container.removeEventListener('pointerup', end);
+      container.removeEventListener('pointercancel', end);
+      if (!dragged && !adding) setSelection([]);
+      else onSelect();
+    };
+    container.addEventListener('pointermove', move);
+    container.addEventListener('pointerup', end);
+    container.addEventListener('pointercancel', end);
   };
   container.addEventListener('pointerdown', onBackgroundDown);
 
@@ -674,37 +744,57 @@ export function createCanvas(
    * would detach the very node a pointerdown is about to start dragging,
    * which silently kills the drag before it begins.
    */
-  function paintSelection(previousId) {
-    for (const id of [previousId, selectedId]) {
-      if (!id) continue;
-      const node = nodes.get(id);
-      if (node)
-        decorate(
-          node,
-          getDoc().elements.find((e) => e.id === id),
-        );
-    }
+  function paintSelection() {
+    const byId = new Map(getDoc().elements.map((e) => [e.id, e]));
+    for (const [id, node] of nodes) decorate(node, byId.get(id));
   }
 
-  function select(id) {
-    if (selectedId === id) return;
-    const previous = selectedId;
-    selectedId = id;
-    paintSelection(previous);
-    onSelect(id);
+  /**
+   * Select exactly `ids` (those still on the label). `quiet` leaves
+   * onSelect() for later, while a band is still being drawn.
+   */
+  function setSelection(ids, { quiet = false } = {}) {
+    const present = new Set(getDoc().elements.map((e) => e.id));
+    const next = [...new Set(ids)].filter((id) => present.has(id));
+    if (next.length === selection.size && next.every((id) => selection.has(id))) return;
+    selection.clear();
+    for (const id of next) selection.add(id);
+    paintSelection();
+    if (!quiet) onSelect();
   }
 
+  /** Select one element, or none. */
   function setSelected(id) {
-    const previous = selectedId;
-    selectedId = id;
-    if (nodes.has(id) || nodes.has(previous)) paintSelection(previous);
-    else render();
+    setSelection(id ? [id] : [], { quiet: true });
+  }
+
+  /** The single selected element's id; null for none, or for several. */
+  const single = () => (selection.size === 1 ? [...selection][0] : null);
+
+  /**
+   * Where each element sits on the label as drawn, in dots -- rotation
+   * and fitted text included -- for lining several up.
+   */
+  function getBoxes(ids) {
+    const origin = surface.getBoundingClientRect();
+    return ids
+      .filter((id) => nodes.has(id))
+      .map((id) => {
+        const b = nodes.get(id).getBoundingClientRect();
+        return {
+          id,
+          x: Math.round((b.left - origin.left) / scale),
+          y: Math.round((b.top - origin.top) / scale),
+          w: Math.round(b.width / scale),
+          h: Math.round(b.height / scale),
+        };
+      });
   }
 
   /** Apply selection styling and the resize handle to one element node. */
   function decorate(node, item) {
     if (!item) return;
-    const selected = item.id === selectedId;
+    const selected = selection.has(item.id);
     node.className =
       'absolute touch-none' +
       (selected
@@ -712,7 +802,7 @@ export function createCanvas(
         : ' hover:outline hover:outline-1 hover:outline-sky-300');
 
     const existing = node.querySelector('[data-handle]');
-    if (selected && item.type !== 'image') {
+    if (selected && selection.size === 1 && item.type !== 'image') {
       if (!existing) {
         node.append(
           el('div', {
@@ -750,6 +840,14 @@ export function createCanvas(
     const startX = event.clientX;
     const startY = event.clientY;
     const origin = { ...item };
+    // Moving one of several selected moves them all, keeping their offsets.
+    const group =
+      mode === 'move' && selection.has(item.id)
+        ? getDoc().elements.filter((e) => selection.has(e.id) && e !== item)
+        : [];
+    const origins = new Map(group.map((e) => [e.id, { x: e.x, y: e.y }]));
+    const leftmost = Math.min(origin.x, ...group.map((e) => e.x));
+    const topmost = Math.min(origin.y, ...group.map((e) => e.y));
     const target = event.currentTarget;
     try {
       target.setPointerCapture(event.pointerId);
@@ -763,8 +861,16 @@ export function createCanvas(
       // With the grid showing, a drag lands on it; Alt lets go of it.
       const pitch = moveEvent.altKey ? 0 : getGrid();
       if (mode === 'move') {
-        item.x = Math.max(0, snap(origin.x + dx, pitch));
-        item.y = Math.max(0, snap(origin.y + dy, pitch));
+        // The one dragged lands on the grid; none goes off the label.
+        const mx = Math.max(-leftmost, snap(origin.x + dx, pitch) - origin.x);
+        const my = Math.max(-topmost, snap(origin.y + dy, pitch) - origin.y);
+        item.x = origin.x + mx;
+        item.y = origin.y + my;
+        for (const other of group) {
+          other.x = origins.get(other.id).x + mx;
+          other.y = origins.get(other.id).y + my;
+          reposition(other);
+        }
       } else {
         applyResize(item, origin, dx, dy, pitch);
       }
@@ -872,7 +978,17 @@ export function createCanvas(
             'cursor:move;',
           dataset: { id: item.id },
           onpointerdown: (event) => {
-            select(item.id);
+            if (event.shiftKey || event.ctrlKey || event.metaKey) {
+              const ids = [...selection];
+              const without = ids.filter((id) => id !== item.id);
+              setSelection(without.length < ids.length ? without : [...ids, item.id]);
+              if (!selection.has(item.id)) {
+                event.preventDefault();
+                return;
+              }
+            } else if (!selection.has(item.id)) {
+              setSelection([item.id]);
+            }
             beginDrag(event, item, 'move');
           },
         },
@@ -913,14 +1029,14 @@ export function createCanvas(
   /* -- keyboard ---------------------------------------------------- */
 
   const onKey = (event) => {
-    if (!selectedId) return;
+    if (!selection.size) return;
     // Ignore keys typed into the property inspector.
     const tag = document.activeElement && document.activeElement.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
     const doc = getDoc();
-    const item = doc.elements.find((e) => e.id === selectedId);
-    if (!item) return;
+    const items = doc.elements.filter((e) => selection.has(e.id));
+    if (!items.length) return;
 
     const step = event.shiftKey ? 10 : 1;
     const nudge = {
@@ -931,16 +1047,21 @@ export function createCanvas(
     }[event.key];
     if (nudge) {
       event.preventDefault();
-      item.x = Math.max(0, item.x + nudge[0]);
-      item.y = Math.max(0, item.y + nudge[1]);
+      // Together, so a nudge into the edge does not bunch them up.
+      const dx = Math.max(nudge[0], -Math.min(...items.map((e) => e.x)));
+      const dy = Math.max(nudge[1], -Math.min(...items.map((e) => e.y)));
+      for (const item of items) {
+        item.x += dx;
+        item.y += dy;
+      }
       render();
       onChange('nudge');
       return;
     }
     if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault();
-      doc.elements = doc.elements.filter((e) => e.id !== selectedId);
-      select(null);
+      doc.elements = doc.elements.filter((e) => !selection.has(e.id));
+      selection.clear();
       onChange('delete');
     }
   };
@@ -958,14 +1079,18 @@ export function createCanvas(
   return {
     render,
     setSelected,
+    setSelection,
     setZoom,
+    getBoxes,
     getScale: () => scale,
-    getSelected: () => selectedId,
+    getSelected: single,
+    getSelection: () => [...selection],
     destroy() {
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onResize);
       font0Waiters.delete(render);
       readout.remove();
+      band.remove();
       scroller.remove();
       container.removeEventListener('pointerdown', onBackgroundDown);
       container.classList.remove('bg-ink-100');

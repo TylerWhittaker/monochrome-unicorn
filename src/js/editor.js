@@ -56,12 +56,20 @@ import {
   toZpl,
   parseZpl,
   elementId,
+  elementZpl,
   nextFieldNumber,
   formatZpl,
   storedFonts,
 } from './zpl.js';
 import { createCanvas } from './wysiwyg.js';
-import { renderLabelPanel, renderElementPanel, panelHeading, setStoredFonts } from './inspector.js';
+import {
+  renderLabelPanel,
+  renderElementPanel,
+  renderArrangePanel,
+  panelHeading,
+  setStoredFonts,
+} from './inspector.js';
+import { alignBoxes, distributeBoxes } from './arrange.js';
 import { renderZplHelp } from './zplhelp.js';
 import { cachedDriveListing, onDriveListing } from './drives.js';
 import { createCodeEditor } from './codeeditor.js';
@@ -218,13 +226,13 @@ function stepHistory(direction) {
   labelHistory.record(JSON.stringify(editorState.doc));
   const state = direction < 0 ? labelHistory.undo() : labelHistory.redo();
   if (state === null) return;
-  const selected = canvas ? canvas.getSelected() : null;
+  const selected = canvas ? canvas.getSelection() : [];
   adoptDocument(JSON.parse(state));
   editorState.source = toZpl(editorState.doc);
   rebuildEditorView();
   renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
-  if (selected && canvas && editorState.doc.elements.some((e) => e.id === selected)) {
-    canvas.setSelected(selected);
+  if (selected.length && canvas) {
+    canvas.setSelection(selected, { quiet: true });
     renderEditorInspector();
   }
   syncHistoryButtons();
@@ -240,7 +248,9 @@ function onHistoryKey(event) {
   const key = event.key.toLowerCase();
   if (key === 'z') stepHistory(event.shiftKey ? 1 : -1);
   else if (key === 'y') stepHistory(1);
-  else return;
+  else if (key === 'a' && canvas) {
+    canvas.setSelection(editorState.doc.elements.map((e) => e.id));
+  } else return;
   event.preventDefault();
 }
 
@@ -440,15 +450,38 @@ function showZplHelp() {
 function renderEditorInspector() {
   const selectedId = canvas ? canvas.getSelected() : null;
   const item = selectedId ? editorState.doc.elements.find((e) => e.id === selectedId) : null;
+  const several = canvas && editorState.view === 'visual' ? canvas.getSelection() : [];
 
   inspectorHeadingHost.replaceChildren(
     editorState.view === 'source'
       ? panelHeading('ZPL command', 'The command under the cursor')
-      : panelHeading('Object options', 'The selected element'),
+      : several.length > 1
+        ? panelHeading('Object options', `${several.length} elements selected`)
+        : panelHeading('Object options', 'The selected element'),
   );
 
   if (editorState.view === 'source') {
     showZplHelp();
+    return;
+  }
+
+  if (several.length > 1) {
+    const move = (moves) => {
+      for (const element of editorState.doc.elements) {
+        const m = moves.get(element.id);
+        if (!m) continue;
+        element.x = Math.max(0, element.x + m.dx);
+        element.y = Math.max(0, element.y + m.dy);
+      }
+      onDocChanged();
+    };
+    renderArrangePanel(inspectorHost, {
+      count: several.length,
+      onAlign: (how) => move(alignBoxes(canvas.getBoxes(several), how)),
+      onDistribute: (axis) => move(distributeBoxes(canvas.getBoxes(several), axis)),
+      onDuplicate: () => pasteElements(selectedElements(), 20),
+      onDelete: () => deleteSelected(),
+    });
     return;
   }
 
@@ -458,22 +491,103 @@ function renderEditorInspector() {
     images: editorState.images,
     onChange: onDocChanged,
     onUploadImage: (target) => uploadImageForElement(target),
-    onDelete: () => {
-      editorState.doc.elements = editorState.doc.elements.filter((e) => e.id !== selectedId);
-      canvas.setSelected(null);
-      onDocChanged();
-    },
-    onDuplicate: () => {
-      const copy = { ...item, id: elementId(), x: item.x + 20, y: item.y + 20 };
-      // Two fields sharing a ^FN number are one field as far as the
-      // printer is concerned, so a copied field gets the next one.
-      if (copy.type === 'field') copy.number = nextFieldNumber(editorState.doc);
-      editorState.doc.elements.push(copy);
-      canvas.setSelected(copy.id);
-      onDocChanged();
-    },
+    onDelete: () => deleteSelected(),
+    onDuplicate: () => pasteElements([item], 20),
   });
 }
+
+/* ------------------------------------------------------------------ *
+ * Copy and paste
+ * ------------------------------------------------------------------ */
+
+/*
+ * Ctrl+C puts the selected elements on the clipboard as ZPL, so they
+ * paste into a text editor or another label as well as back here; Ctrl+V
+ * pastes copies, each paste a little further down and right, and ZPL
+ * copied from anywhere else is pasted as the elements it draws. Done
+ * through the copy and paste events rather than navigator.clipboard,
+ * which a page served over plain http on the LAN does not get.
+ */
+const clipboard = { zpl: '', items: [], pastes: 0 };
+
+function selectedElements() {
+  const ids = new Set(canvas ? canvas.getSelection() : []);
+  return editorState.doc.elements.filter((e) => ids.has(e.id));
+}
+
+function deleteSelected() {
+  const ids = new Set(canvas.getSelection());
+  editorState.doc.elements = editorState.doc.elements.filter((e) => !ids.has(e.id));
+  canvas.setSelection([], { quiet: true });
+  onDocChanged();
+}
+
+/** Add copies of `items`, moved by `offset` dots, and select them: one undo step. */
+function pasteElements(items, offset) {
+  const doc = editorState.doc;
+  const ids = [];
+  for (const item of items) {
+    const copy = JSON.parse(JSON.stringify(item));
+    copy.id = elementId();
+    copy.x = Math.min(Math.max(0, doc.width - 8), Math.max(0, copy.x + offset));
+    copy.y = Math.min(Math.max(0, doc.height - 8), Math.max(0, copy.y + offset));
+    // Two fields sharing a ^FN number are one field as far as the
+    // printer is concerned, so a copied field gets the next one.
+    if (copy.type === 'field') copy.number = nextFieldNumber(doc);
+    doc.elements.push(copy);
+    ids.push(copy.id);
+  }
+  if (canvas) canvas.setSelection(ids, { quiet: true });
+  onDocChanged();
+}
+
+/** Whether a clipboard key is meant for the canvas, not a text box. */
+function canvasHasKeys() {
+  if (!canvas || editorState.view !== 'visual' || !editorHost || !editorHost.offsetParent) {
+    return false;
+  }
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
+  return !String(window.getSelection ? window.getSelection() : '');
+}
+
+function onCopy(event, cut = false) {
+  if (!canvasHasKeys()) return;
+  const items = selectedElements();
+  if (!items.length) return;
+  clipboard.items = JSON.parse(JSON.stringify(items));
+  clipboard.zpl = ['^XA', '^CI28', ...items.map(elementZpl).filter(Boolean), '^XZ'].join('\n');
+  clipboard.pastes = 0;
+  event.clipboardData.setData('text/plain', clipboard.zpl);
+  event.preventDefault();
+  if (cut) deleteSelected();
+  const what = `${items.length} element${items.length === 1 ? '' : 's'}`;
+  toast(cut ? `Cut ${what}.` : `Copied ${what}.`, 'info');
+}
+
+function onPaste(event) {
+  if (!canvasHasKeys()) return;
+  const text = event.clipboardData.getData('text/plain');
+  if (text && text === clipboard.zpl && clipboard.items.length) {
+    event.preventDefault();
+    clipboard.pastes += 1;
+    pasteElements(clipboard.items, 20 * clipboard.pastes);
+    return;
+  }
+  if (!/\^F[OT]/.test(text)) return;
+  event.preventDefault();
+  const { doc, unsupported } = parseZpl(text, printer.dpi);
+  if (!doc.elements.length) {
+    toast('The pasted ZPL draws nothing the visual editor can place.', 'info');
+    return;
+  }
+  pasteElements(doc.elements, 0);
+  if (unsupported.length) {
+    toast(`Pasted without ${unsupported.join(', ')}, which the canvas cannot place.`, 'info');
+  }
+}
+
+const onCut = (event) => onCopy(event, true);
 
 /* ------------------------------------------------------------------ *
  * File operations
@@ -1018,6 +1132,9 @@ export function mountEditor(panel) {
   onDriveListing(takeStoredFonts);
   resetHistory();
   document.addEventListener('keydown', onHistoryKey);
+  document.addEventListener('copy', onCopy);
+  document.addEventListener('cut', onCut);
+  document.addEventListener('paste', onPaste);
 }
 
 /**

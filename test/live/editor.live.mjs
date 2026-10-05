@@ -918,4 +918,71 @@ export default function register(s, ctx) {
     assert.equal(await dialog.locator('input').inputValue(), 'ZTESTLOCAL.ZPL');
     await dialog.getByRole('button', { name: 'Cancel' }).click();
   });
+
+  // Runs on the two-element label the test before opened from disk.
+  s.test('several elements: select, align, nudge, copy, paste, undo', async () => {
+    const blur = () => page.evaluate(() => document.activeElement && document.activeElement.blur());
+    const selected = () => panel.locator('.preview-surface > div[data-id].outline-sky-500');
+    assert.equal(await nodes().count(), 2);
+
+    // Shift-click adds the second to the first.
+    await selectNode(0);
+    await nodes().nth(1).dispatchEvent('pointerdown', { button: 0, shiftKey: true });
+    await nodes().nth(1).dispatchEvent('pointerup', { button: 0 });
+    assert.equal(await selected().count(), 2);
+    assert.match(await objectCard.textContent(), /2 elements selected/);
+    assert.equal(await field('X').count(), 0, 'no single element’s properties');
+
+    // Lined up along their tops: the box rises to the text's 40.
+    let zplNow = await generated(() =>
+      objectCard.getByRole('button', { name: 'Top', exact: true }).click(),
+    );
+    assert.match(zplNow, /\^FO40,40\^GB200,80,4/);
+    assert.equal(await selected().count(), 2, 'still both selected');
+
+    // An arrow moves both.
+    await blur();
+    zplNow = await generated(() => page.keyboard.press('ArrowRight'));
+    assert.match(zplNow, /\^FO41,40\^A0N/);
+    assert.match(zplNow, /\^FO41,40\^GB200,80,4/);
+
+    // Ctrl+A, copy and paste: two more, 20 dots down and right, selected.
+    await selectNode(0);
+    await blur();
+    await page.keyboard.press('Control+a');
+    assert.equal(await selected().count(), 2);
+    await page.keyboard.press('Control+c');
+    await ui.toast(/Copied 2 elements/);
+    zplNow = await generated(() => page.keyboard.press('Control+v'));
+    assert.equal(await nodes().count(), 4);
+    assert.match(zplNow, /\^FO61,60\^GB200,80,4/);
+    assert.equal(await selected().count(), 2, 'the pasted pair is selected');
+
+    // One undo takes the whole paste away.
+    await blur();
+    await page.keyboard.press('Control+z');
+    await waitFor(async () => (await nodes().count()) === 2, { what: 'the paste undone' });
+
+    // ZPL from anywhere else pastes as the elements it draws.
+    zplNow = await generated(() =>
+      page.evaluate(() => {
+        const data = new DataTransfer();
+        data.setData('text/plain', '^XA^FO300,200^GB50,50,50^FS^XZ');
+        document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data }));
+      }),
+    );
+    assert.equal(await nodes().count(), 3);
+    assert.match(zplNow, /\^FO300,200\^GB50,50,50/);
+
+    // A band dragged across the whole label selects all three.
+    const surface = nodes().first().locator('..');
+    const r = await surface.boundingBox();
+    const at = (x, y) => ({ button: 0, pointerId: 7, clientX: x, clientY: y });
+    await surface.dispatchEvent('pointerdown', at(r.x + 1, r.y + 1));
+    await surface.dispatchEvent('pointermove', at(r.x + r.width / 2, r.y + r.height / 2));
+    await surface.dispatchEvent('pointermove', at(r.x + r.width - 1, r.y + r.height - 1));
+    await surface.dispatchEvent('pointerup', at(r.x + r.width - 1, r.y + r.height - 1));
+    assert.equal(await selected().count(), 3);
+    assert.match(await objectCard.textContent(), /3 elements selected/);
+  });
 }

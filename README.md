@@ -43,6 +43,11 @@ Three modes:
   printer's own render, not a simulation. Every length is shown in
   inches, millimetres or dots, switched by one radio group and
   remembered between visits.
+  Several elements can be selected at once -- Shift-click, Ctrl+A, or
+  a drag across the empty label -- then moved, nudged, deleted, lined
+  up or spaced evenly together. Ctrl+C puts them on the clipboard as
+  ZPL and Ctrl+V pastes copies; ZPL copied from anywhere else pastes
+  as the elements it draws.
 - **Stored Formats** — pick a stored format in any of the printer's
   label languages (ZPL, EPL, CPCL), fill in one box per field, preview
   and print. What is possible varies by language, because the printer's
