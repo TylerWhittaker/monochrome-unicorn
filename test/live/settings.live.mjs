@@ -123,6 +123,36 @@ export default function register(s, ctx) {
     }
   });
 
+  s.test('the Maintenance card shows the printer’s own odometers', async () => {
+    const card = page.locator('#maintenance');
+    await card.getByText('Labels printed').waitFor({ timeout: 60000 });
+    const labels = Number(await getvar(cfg.ip, 'odometer.total_label_count'));
+    const shown = Number(
+      (
+        await card
+          .locator('div', { hasText: /^Labels printed/ })
+          .locator('span')
+          .last()
+          .textContent()
+      ).replace(/,/g, ''),
+    );
+    assert.equal(shown, labels);
+    const cleaned = await getvar(cfg.ip, 'odometer.headclean');
+    const inches = /^(\d+) INCHES/.exec(cleaned);
+    if (inches) {
+      assert.match(
+        await card.textContent(),
+        new RegExp(`Since the head was cleaned${Number(inches[1]).toLocaleString('en-US')} in`),
+      );
+    }
+    // Resetting is checked as far as its confirmation: the printer's real
+    // count could not be put back afterwards.
+    await card.getByRole('button', { name: 'Head cleaned' }).click();
+    const dialog = page.locator('#modal-root .card', { hasText: 'Head cleaned?' });
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    assert.equal(await getvar(cfg.ip, 'odometer.headclean'), cleaned, 'Cancel changed nothing');
+  });
+
   s.test('the filter finds them by name, word by word in any order', async () => {
     const filter = page.getByPlaceholder('Filter by name or value…');
     await filter.fill('test_ user_vars');

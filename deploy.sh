@@ -94,7 +94,7 @@ if [ "$CLEAN" = 1 ]; then
   # ^ID takes a wildcard, and one object pattern per format; one
   # connection carries all three. Only .SHTML goes, so a user's own
   # V_ or S_ label or graphic is left alone.
-  printf '^XA^IDE:V_*.SHTML^FS^XZ\r\n^XA^IDE:S_*.SHTML^FS^XZ\r\n^XA^IDE:LCD.SHTML^FS^XZ\r\n^XA^IDE:STATUS.SHTML^FS^XZ\r\n^XA^IDE:CLOCK.SHTML^FS^XZ\r\n' \
+  printf '^XA^IDE:V_*.SHTML^FS^XZ\r\n^XA^IDE:S_*.SHTML^FS^XZ\r\n^XA^IDE:LCD.SHTML^FS^XZ\r\n^XA^IDE:STATUS.SHTML^FS^XZ\r\n^XA^IDE:CLOCK.SHTML^FS^XZ\r\n^XA^IDE:MAINT.SHTML^FS^XZ\r\n' \
     | nc -C -q 3 "$IP" 9100 || true
 fi
 

@@ -235,6 +235,11 @@ export async function readLcd({ timeout = 15000 } = {}) {
   return parseVarFile(await getText('/LCD.SHTML', { timeout, charset: 'windows-1252' }));
 }
 
+/** The odometers and the rest of the Maintenance card (build.mjs MAINT_VARS). */
+export async function readMaintenance({ timeout = 15000 } = {}) {
+  return parseVarFile(await getText('/MAINT.SHTML', { timeout }));
+}
+
 /** The printer's clock (build.mjs CLOCK_VARS). */
 export async function readClock({ timeout = 15000 } = {}) {
   return parseVarFile(await getText('/CLOCK.SHTML', { timeout }));

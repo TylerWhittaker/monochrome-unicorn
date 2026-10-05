@@ -59,6 +59,19 @@ const STATUS_VARS = [
   'odometer.total_label_count',
 ];
 
+/** What the Maintenance card in Printer Settings shows. */
+const MAINT_VARS = [
+  'odometer.headclean',
+  'odometer.headnew',
+  'odometer.total_label_count',
+  'odometer.total_print_length',
+  'odometer.total_cuts',
+  'odometer.latch_open_count',
+  'sensor.head.temp_celsius',
+  'device.uptime',
+  'log.reboot.reason',
+];
+
 /** The printer's clock, for the Set clock dialog. */
 const CLOCK_VARS = ['rtc.exists', 'rtc.date', 'rtc.time', 'rtc.timezone', 'rtc.unix_timestamp'];
 
@@ -432,6 +445,7 @@ function helperFiles(schema) {
 
   files.push({ dest: 'E:STATUS.SHTML', contents: STATUS_VARS.map(varLine).join('\n') + '\n' });
   files.push({ dest: 'E:CLOCK.SHTML', contents: CLOCK_VARS.map(varLine).join('\n') + '\n' });
+  files.push({ dest: 'E:MAINT.SHTML', contents: MAINT_VARS.map(varLine).join('\n') + '\n' });
 
   /*
    * Every readable setting in one file, for the sweep.
