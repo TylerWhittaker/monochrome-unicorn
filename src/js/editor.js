@@ -78,6 +78,8 @@ const editorState = {
   dirty: false,
   scripts: [],
   images: [],
+  /** The name of a file opened from this computer, suggested when saving. */
+  localName: '',
   /** What /dir listed on E:, for the stored fonts. */
   driveFiles: [],
 };
@@ -525,6 +527,7 @@ async function openFile(value) {
     // a download does, so the source view is readable from the off.
     const zpl = formatZpl(await readScript({ dev, oname, otype: 'ZPL' }));
     loadDocument(zpl, { dev, oname });
+    editorState.localName = '';
     busy.close();
   } catch (err) {
     busy.update(`Could not open ${oname}: ${err.message}`, 'error');
@@ -541,7 +544,7 @@ async function saveFile({ saveAs }) {
         type: 'text',
         maxlength: '25',
         placeholder: 'LABELNAME.ZPL',
-        value: target ? `${target.oname}.${target.otype || 'ZPL'}` : '',
+        value: target ? `${target.oname}.${target.otype || 'ZPL'}` : editorState.localName,
         onkeydown: (e) => {
           if (e.key === 'Enter') close(input.value);
         },
@@ -638,6 +641,44 @@ async function deleteCurrent() {
   }
 }
 
+/*
+ * Labels kept on this computer: opened into the editor as an unsaved
+ * label (Save then suggests the file's name), and saved as the ZPL the
+ * editor holds, laid out one field to a line.
+ */
+async function openLocalFile(file) {
+  if (
+    editorState.dirty &&
+    !(await confirmDialog('Discard changes?', 'The current label has unsaved changes.', 'Discard'))
+  )
+    return;
+  let text;
+  try {
+    text = await file.text();
+  } catch (err) {
+    toast(`Could not read ${file.name}: ${err.message}`, 'error');
+    return;
+  }
+  loadDocument(formatZpl(text), null);
+  fileSelect.value = '';
+  const { oname } = parseObjectName(file.name, 'ZPL');
+  editorState.localName = oname ? `${oname}.ZPL` : '';
+  toast(`Opened ${file.name}. It is not on the printer until you save it.`, 'success');
+}
+
+function downloadLabel() {
+  const name = editorState.file
+    ? `${editorState.file.oname}.ZPL`
+    : editorState.localName || 'LABEL.ZPL';
+  const blob = new Blob([formatZpl(editorZpl())], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const link = el('a', { href: url, download: name });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
 async function newLabelDoc() {
   if (
     editorState.dirty &&
@@ -647,6 +688,7 @@ async function newLabelDoc() {
   adoptDocument(newLabel(printer.dpi, printer.labelSize));
   editorState.source = toZpl(editorState.doc);
   editorState.file = null;
+  editorState.localName = '';
   editorState.dirty = false;
   fileSelect.value = '';
   rebuildEditorView();
@@ -822,6 +864,18 @@ export function mountEditor(panel) {
 
   editorPreview = createPreview({ onPrint: () => printEditorLabel() });
 
+  const localPicker = el('input', {
+    type: 'file',
+    accept: '.zpl,.ZPL,.txt,text/plain',
+    class: 'hidden',
+    dataset: { local: 'open' },
+  });
+  localPicker.addEventListener('change', () => {
+    const file = localPicker.files && localPicker.files[0];
+    localPicker.value = '';
+    if (file) openLocalFile(file);
+  });
+
   // Digits only, and never less than one: a keystroke that is not a
   // digit does not land, and an empty or zero box goes back to the count.
   editorCountInput = el('input', {
@@ -885,6 +939,25 @@ export function mountEditor(panel) {
               el('button', { class: 'btn-danger btn-sm', onclick: () => deleteCurrent() }, [
                 'Delete',
               ]),
+              localPicker,
+              el(
+                'button',
+                {
+                  class: 'btn-secondary btn-sm',
+                  title: 'Open a .zpl file from this computer',
+                  onclick: () => localPicker.click(),
+                },
+                ['Open file…'],
+              ),
+              el(
+                'button',
+                {
+                  class: 'btn-secondary btn-sm',
+                  title: 'Save this label as a .zpl file on this computer',
+                  onclick: () => downloadLabel(),
+                },
+                ['Download'],
+              ),
               (undoBtn = el(
                 'button',
                 {

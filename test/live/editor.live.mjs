@@ -30,6 +30,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { openConsole } from './lib/browser.mjs';
 import { makePng, watchZpl } from './lib/fixtures.mjs';
 import { http, getvar, hasObject, removeFile, waitFor } from './lib/printer.mjs';
@@ -887,5 +888,34 @@ export default function register(s, ctx) {
     await ui.toast(new RegExp(`Deleted E:${LABEL}\\.ZPL`));
     assert.equal(await hasObject(cfg.ip, 'E', LABEL), false);
     ui.assertNoErrors();
+  });
+
+  s.test('a .zpl from this computer opens unsaved; Download saves the label as ZPL', async () => {
+    const local =
+      '^XA\n^PW500\n^LL300\n^FO40,40^A0N,50,50^FDFrom disk^FS\n^FO40,120^GB200,80,4^FS\n^XZ\n';
+    await panel.locator('input[data-local="open"]').setInputFiles({
+      name: 'ztestlocal.zpl',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(local),
+    });
+    await ui.toast(/Opened ztestlocal\.zpl/);
+    assert.equal(await nodes().count(), 2);
+    assert.equal(await panel.locator('select').first().inputValue(), '', 'not a stored label');
+    assert.match(await labelCard.textContent(), /500 × 300 dots/);
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      fileBar().getByRole('button', { name: 'Download', exact: true }).click(),
+    ]);
+    assert.equal(download.suggestedFilename(), 'ZTESTLOCAL.ZPL');
+    const text = readFileSync(await download.path(), 'utf8');
+    assert.match(text, /\^FO40,40\^A0N,50,50\^FH\^FDFrom disk\^FS/);
+    assert.match(text, /\^GB200,80,4,B,0\^FS/);
+
+    // Save suggests the file's name, as it is not on the printer yet.
+    await fileBar().getByRole('button', { name: 'Save', exact: true }).click();
+    const dialog = page.locator('#modal-root .card', { hasText: 'Save label' });
+    assert.equal(await dialog.locator('input').inputValue(), 'ZTESTLOCAL.ZPL');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
   });
 }
