@@ -33,6 +33,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { ZPL } from '../src/data/zpl-reference.mjs';
+import { SGD } from '../src/data/sgd-reference.mjs';
 import { readVersion } from './version.mjs';
 import { execFileSync } from 'node:child_process';
 import { resolve, join, dirname } from 'node:path';
@@ -442,6 +443,7 @@ function helperFiles(schema) {
   files.push({ dest: `E:${ALL_FILE}.SHTML`, contents: readable.map(varLine).join('\n') + '\n' });
 
   files.push({ dest: 'E:ZPLREF.SHTML', contents: zplReferenceFile() });
+  files.push({ dest: 'E:SGDREF.SHTML', contents: referenceFile(SGD) });
 
   return { files, slowFiles, branchFiles };
 }
@@ -453,7 +455,12 @@ function helperFiles(schema) {
  * gained by finding out what it makes of a 95 KB one.
  */
 export function zplReferenceFile() {
-  const lines = Object.entries(ZPL).map(
+  return referenceFile(ZPL);
+}
+
+/** A reference as JSON, one entry to a line (see zplReferenceFile). */
+export function referenceFile(reference) {
+  const lines = Object.entries(reference).map(
     ([key, entry]) => `${JSON.stringify(key)}:${JSON.stringify(entry)}`,
   );
   return `{\n${lines.join(',\n')}\n}\n`;

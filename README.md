@@ -15,7 +15,10 @@ Three modes:
   filter by name or value, sort them, edit the writable ones with a
   widget chosen from the setting's type and range, see at a glance which
   differ from their factory default. All 574 of them arrive in one
-  streamed request, painted as they land.
+  streamed request, painted as they land. Click a setting's name for
+  what it is for -- a summary written for every setting of the printers
+  this was built against (`src/data/sgd-reference.mjs`, served as
+  `SGDREF.SHTML` and read on first use) -- with its range and default.
 - **Label Editor** — create and edit stored `.ZPL` labels, either by
   dragging text, barcodes (twenty symbologies, GS1 and postal among
   them), serial numbers (`^SN`, counting from label to label), images,
@@ -191,6 +194,7 @@ src/js/
   zplhelp.js          the source view's panel: the command under the cursor
 src/data/
   zpl-reference.mjs   every ZPL command and parameter, in our words
+  sgd-reference.mjs   what each printer setting is for, likewise
 lcd_display_helper.sh copy the real LCD bitmap to the printer for the
                       LCD Viewer, each second (needs port 9100)
 tools/
@@ -200,6 +204,8 @@ tools/
   lcd-shot.mjs        save the LCD framebuffer as a PNG (needs port 9100)
   zpl-manual-extract.mjs  split the ZPL guide's text into one record per
                       command, to check zpl-reference.mjs against
+  sgd-manual-extract.mjs  the same for its SGD chapters and
+                      sgd-reference.mjs
 test/                 unit tests: the ZPL model, the helper-file
                       parser and the other pure logic
   live/               every mode, in Chrome, against a real printer
@@ -222,6 +228,8 @@ node test/build.test.mjs    # how settings branches pack into helper files
 node test/lcd.test.mjs      # reading lcd_display_helper.sh's frames
 node test/wysiwyg.test.mjs  # the designer's rulers
 node test/zplhelp.test.mjs  # the source view's command reference
+node test/sgdref.test.mjs   # the setting reference, against the catalogue
+node test/history.test.mjs  # the Label Editor's undo history
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier

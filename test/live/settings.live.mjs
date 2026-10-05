@@ -250,6 +250,30 @@ export default function register(s, ctx) {
     await page.locator('select[title^="How the settings are ordered"]').selectOption('default');
   });
 
+  s.test('clicking a setting’s name explains it; clicking again closes it', async () => {
+    const filter = page.getByPlaceholder('Filter by name or value…');
+    await filter.fill('media.speed');
+    await page.waitForTimeout(400);
+    const name = page.locator('[data-name="media.speed"] code').first();
+    await name.click();
+    const explain = page.locator('[data-explain="media.speed"]');
+    await explain.getByText(/Print speed, in inches a second/).waitFor({ timeout: 30000 });
+    assert.match(await explain.textContent(), /Range: /, 'with the catalogue’s range');
+    await name.click();
+    assert.equal(await explain.count(), 0);
+
+    // One the guide does not describe: a user's own setting.
+    await filter.fill('test_choices');
+    await page.waitForTimeout(400);
+    await row('test_choices').locator('code').first().click();
+    await page
+      .locator(`[data-explain="${full('test_choices')}"]`)
+      .getByText('The ZPL programming guide does not describe this setting.')
+      .waitFor();
+    await filter.fill('');
+    ui.assertNoErrors();
+  });
+
   s.test('a slow setting is read on request', async () => {
     const filter = page.getByPlaceholder('Filter by name or value…');
     await filter.fill('file.drive_listing');

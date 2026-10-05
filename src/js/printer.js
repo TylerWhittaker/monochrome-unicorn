@@ -278,6 +278,23 @@ export function readZplReference() {
 }
 
 /**
+ * What each setting is for (src/data/sgd-reference.mjs), served beside
+ * the page like the ZPL reference and read the first time a setting's
+ * explanation is opened.
+ */
+let sgdReference = null;
+
+export function readSgdReference() {
+  if (!sgdReference) {
+    sgdReference = getText('/SGDREF.SHTML', { timeout: 60000 }).then((text) => JSON.parse(text));
+    sgdReference.catch(() => {
+      sgdReference = null;
+    });
+  }
+  return sgdReference;
+}
+
+/**
  * The front panel's real bitmap, if lcd_display_helper.sh is running.
  *
  * The helper reads display.image over port 9100, which a page cannot,

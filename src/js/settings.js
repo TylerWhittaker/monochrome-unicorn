@@ -33,7 +33,13 @@
 
 import { el, qs, replaceChildren, toast, debounce } from './ui.js';
 import { printer, allSettings } from './state.js';
-import { readAllSettings, readSlowSetting, writeSetting, valuesMatch } from './printer.js';
+import {
+  readAllSettings,
+  readSlowSetting,
+  writeSetting,
+  valuesMatch,
+  readSgdReference,
+} from './printer.js';
 import {
   cachedDriveListing,
   driveListingLoading,
@@ -398,11 +404,60 @@ function paintEnableTag(entry) {
   node.className = `pill shrink-0 ${badge[1]}`;
 }
 
+/**
+ * What a setting is for, opened under its row by clicking its name: the
+ * reference's summary, and the range and default the printer's own
+ * catalogue gives.
+ */
+function toggleExplanation(entry) {
+  if (entry.explainNode) {
+    entry.explainNode.remove();
+    entry.explainNode = null;
+    return;
+  }
+  const { meta } = entry;
+  const facts = [
+    meta.range ? `Range: ${meta.range}` : null,
+    meta.default !== null && meta.default !== undefined
+      ? `Default: ${meta.default === '' ? '(empty)' : meta.default}`
+      : null,
+  ].filter(Boolean);
+  const text = el('p', { class: 'text-[12px] leading-snug text-ink-700' }, [
+    'Reading the setting reference…',
+  ]);
+  entry.explainNode = el(
+    'div',
+    {
+      class: 'rounded border border-ink-200 bg-white px-3 py-2 sm:col-span-2',
+      dataset: { explain: meta.name },
+    },
+    [
+      text,
+      facts.length
+        ? el('p', { class: 'mt-1 text-[11px] text-ink-400' }, [facts.join(' · ')])
+        : null,
+    ],
+  );
+  entry.row.append(entry.explainNode);
+  readSgdReference()
+    .then((reference) => {
+      text.textContent =
+        reference[meta.name] || 'The ZPL programming guide does not describe this setting.';
+      text.classList.toggle('text-ink-400', !reference[meta.name]);
+    })
+    .catch((err) => {
+      text.textContent = `The setting reference could not be read: ${err.message}`;
+    });
+}
+
 function buildRow(meta) {
   const nameNode = el(
     'code',
     {
-      class: 'break-all text-[12px] leading-tight text-ink-800',
+      class:
+        'cursor-pointer break-all text-[12px] leading-tight text-ink-800 decoration-ink-300 decoration-dotted underline-offset-2 hover:underline',
+      title: 'What is this? Click for an explanation',
+      onclick: () => toggleExplanation(rows.get(meta.name)),
     },
     [meta.name],
   );
@@ -434,6 +489,7 @@ function buildRow(meta) {
     editor: null,
     resetBtn: null,
     enableTag: null,
+    explainNode: null,
   };
   renderValueCell(entry);
   rows.set(meta.name, entry);
