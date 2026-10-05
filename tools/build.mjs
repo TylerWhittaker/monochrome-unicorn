@@ -59,6 +59,9 @@ const STATUS_VARS = [
   'odometer.total_label_count',
 ];
 
+/** The printer's clock, for the Set clock dialog. */
+const CLOCK_VARS = ['rtc.exists', 'rtc.date', 'rtc.time', 'rtc.timezone', 'rtc.unix_timestamp'];
+
 const LCD_VARS = [
   'display.text',
   'display.backlight',
@@ -428,6 +431,7 @@ function helperFiles(schema) {
   }
 
   files.push({ dest: 'E:STATUS.SHTML', contents: STATUS_VARS.map(varLine).join('\n') + '\n' });
+  files.push({ dest: 'E:CLOCK.SHTML', contents: CLOCK_VARS.map(varLine).join('\n') + '\n' });
 
   /*
    * Every readable setting in one file, for the sweep.

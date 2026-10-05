@@ -28,6 +28,7 @@
 import { el, qs, qsa, toast, confirmDialog } from './ui.js';
 import { printer, initState, parseHostStatus } from './state.js';
 import { readStatus, sendControl } from './printer.js';
+import { openClockDialog } from './clock.js';
 import { mountSettings } from './settings.js';
 import { mountEditor, onEditorShown } from './editor.js';
 import { mountFormat, onFormatShown } from './format.js';
@@ -121,6 +122,7 @@ const PRINTER_ACTIONS = [
       'Calibrate',
     ],
   },
+  { label: 'Set clock…', run: () => openClockDialog() },
   {
     label: 'Print configuration label',
     command: '~WC',
@@ -148,6 +150,10 @@ function buildPrinterMenu() {
         role: 'menuitem',
         onclick: async () => {
           menu.open = false;
+          if (action.run) {
+            action.run();
+            return;
+          }
           if (action.confirm && !(await confirmDialog(...action.confirm))) return;
           const command = typeof action.command === 'function' ? action.command() : action.command;
           try {

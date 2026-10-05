@@ -235,6 +235,11 @@ export async function readLcd({ timeout = 15000 } = {}) {
   return parseVarFile(await getText('/LCD.SHTML', { timeout, charset: 'windows-1252' }));
 }
 
+/** The printer's clock (build.mjs CLOCK_VARS). */
+export async function readClock({ timeout = 15000 } = {}) {
+  return parseVarFile(await getText('/CLOCK.SHTML', { timeout }));
+}
+
 /** The settings the header's status pill is drawn from (build.mjs STATUS_VARS). */
 export async function readStatus({ timeout = 15000 } = {}) {
   return parseVarFile(await getText('/STATUS.SHTML', { timeout }));

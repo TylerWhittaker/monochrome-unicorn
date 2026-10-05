@@ -23,7 +23,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { openConsole } from './lib/browser.mjs';
-import { http, getvar, sendZpl, waitFor } from './lib/printer.mjs';
+import { http, getvar, setvar, sendZpl, waitFor } from './lib/printer.mjs';
 import { skip } from './lib/harness.mjs';
 
 export const name = 'App shell';
@@ -141,6 +141,7 @@ export default function register(s, ctx) {
       'Pause',
       'Cancel all jobs',
       'Calibrate media',
+      'Set clock…',
       'Print configuration label',
     ]);
     await openMenu();
@@ -162,6 +163,28 @@ export default function register(s, ctx) {
     await con.page.locator('#hdr-status', { hasText: 'paused' }).waitFor({ timeout: 40000 });
     await sendZpl(cfg.ip, '~PS');
     await con.page.locator('#hdr-status', { hasText: 'ready' }).waitFor({ timeout: 40000 });
+  });
+
+  s.cleanup(
+    () => setvar(cfg.ip, 'rtc.unix_timestamp', String(Math.round(Date.now() / 1000))),
+    'put the printer’s clock right',
+  );
+
+  s.test('Set clock shows how far out the printer is, and sets it', async () => {
+    if ((await getvar(cfg.ip, 'rtc.exists')) !== 'yes') skip('this printer has no clock');
+    // An hour slow, so there is something to see and to put right.
+    await setvar(cfg.ip, 'rtc.unix_timestamp', String(Math.round(Date.now() / 1000) - 3600));
+    await openMenu();
+    await menuItem('Set clock…').click();
+    const dialog = con.page.locator('#modal-root .card', { hasText: 'Printer clock' });
+    await dialog
+      .getByText(/The printer’s clock is 1 h( \d+ s)? slow\./)
+      .waitFor({ timeout: 30000 });
+    await dialog.getByRole('button', { name: 'Set to this computer’s time' }).click();
+    await dialog.getByText('The printer’s clock is right.').waitFor({ timeout: 30000 });
+    const drift = Number(await getvar(cfg.ip, 'rtc.unix_timestamp')) - Date.now() / 1000;
+    assert.ok(Math.abs(drift) < 10, `printer clock ${drift.toFixed(1)} s out`);
+    await dialog.getByRole('button', { name: 'Close' }).click();
   });
 
   s.test('Cancel all asks first', async () => {
