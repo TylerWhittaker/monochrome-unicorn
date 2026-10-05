@@ -40,6 +40,8 @@ const {
   isStoredFont,
   storedFonts,
   SYMBOLOGIES,
+  mod10CheckDigit,
+  checkBarcodeData,
 } = mod;
 
 let failures = 0;
@@ -538,6 +540,46 @@ check('the postal codes are one command with a type', () => {
   // ^B5 is PLANET on its own.
   const { doc: back } = parseZpl('^XA^FO10,10^B5N,40,N,N^FD12345678901^FS^XZ', DPI);
   assert.equal(back.elements[0].symbology, 'planet');
+});
+
+check('the Mod 10 check digit, as the printer drew it', () => {
+  // A ZD500R rendered these: 012345678901 -> 2, and 123456789012 -> 8.
+  assert.equal(mod10CheckDigit('012345678901'), 2);
+  assert.equal(mod10CheckDigit('123456789012'), 8);
+  assert.equal(mod10CheckDigit('03600029145'), 2, 'a UPC-A');
+});
+
+check(
+  'retail data: short is padded, the check digit is the printer’s, a wrong one is replaced',
+  () => {
+    const ean = (data) => checkBarcodeData({ symbology: 'ean13', data });
+    assert.deepEqual(ean('123456789012'), {
+      level: 'ok',
+      message: 'The printer adds check digit 8.',
+    });
+    assert.equal(ean('1234567890128').level, 'ok');
+    assert.match(ean('1234567890125').message, /should be 8: the printer prints 8/);
+    assert.match(ean('12345678901').message, /pads this to 012345678901 and adds check digit 2/);
+    assert.match(ean('12345A').message, /Digits only/);
+    assert.equal(checkBarcodeData({ symbology: 'upca', data: '03600029145' }).level, 'ok');
+  },
+);
+
+check('the other symbologies’ rules', () => {
+  const c = (symbology, data, extra = {}) => checkBarcodeData({ symbology, data, ...extra });
+  assert.equal(c('code128', 'anything at all'), null);
+  assert.equal(c('code39', 'ABC-123'), null);
+  assert.equal(c('code39', 'abc').level, 'warn');
+  assert.equal(c('i2of5', '1234'), null);
+  assert.match(c('i2of5', '123').message, /adds a 0/);
+  assert.equal(c('upce', '1230000045'), null);
+  assert.equal(c('imb', '0123456709498765432101234567891'), null);
+  assert.equal(c('postnet', '1234').level, 'warn');
+  assert.equal(c('gs1_128', '(01)12345678901231'), null);
+  assert.equal(c('gs1_128', '0112345678901231').level, 'warn');
+  assert.equal(c('databar', '1234567890123'), null);
+  assert.equal(c('databar', '(01)123', { databarType: 6 }), null, 'Expanded takes AI data');
+  assert.equal(c('qr', '').level, 'warn', 'no data at all');
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

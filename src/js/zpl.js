@@ -1363,3 +1363,104 @@ export function buildFormatCall(device, name, fieldValues) {
   lines.push('^XZ');
   return lines.join('\n');
 }
+
+/* ------------------------------------------------------------------ *
+ * Barcode data checks
+ * ------------------------------------------------------------------ */
+
+/** The Mod 10 check digit EAN and UPC end with, for their data digits. */
+export function mod10CheckDigit(digits) {
+  let sum = 0;
+  [...String(digits)].reverse().forEach((d, i) => {
+    sum += Number(d) * (i % 2 === 0 ? 3 : 1);
+  });
+  return (10 - (sum % 10)) % 10;
+}
+
+/*
+ * The retail codes: how many data digits each takes. The printer pads
+ * short data with zeros on the left and always works out the check digit
+ * itself -- given one more digit, it uses the data digits and puts its
+ * own check digit last (measured on a ZD500R with EAN-13).
+ */
+const RETAIL_DIGITS = { ean13: 12, ean8: 7, upca: 11 };
+
+const CODE39_CHARS = /^[A-Z0-9 \-.$/+%]*$/;
+const CODABAR_CHARS = /^[0-9\-$:/.+]*$/;
+
+/**
+ * What the printer will make of a barcode's data, before it is sent:
+ * { level: 'ok' | 'warn', message } -- or null when there is nothing to
+ * say. A serial number is checked on its starting value.
+ */
+export function checkBarcodeData(item) {
+  const data = String(item.data ?? '');
+  const sym = item.symbology;
+  const warn = (message) => ({ level: 'warn', message });
+  const ok = (message) => ({ level: 'ok', message });
+  if (data === '') return warn('No data: the printer draws nothing.');
+
+  const wanted = RETAIL_DIGITS[sym];
+  if (wanted) {
+    if (!/^\d+$/.test(data)) return warn('Digits only: anything else is not encoded.');
+    const body = data.length > wanted ? data.slice(0, wanted) : data.padStart(wanted, '0');
+    const check = mod10CheckDigit(body);
+    if (data.length < wanted) {
+      return warn(
+        `${wanted} digits: the printer pads this to ${body} and adds check digit ${check}.`,
+      );
+    }
+    if (data.length === wanted) return ok(`The printer adds check digit ${check}.`);
+    if (data.length === wanted + 1) {
+      return data.endsWith(String(check))
+        ? ok(`Check digit ${check} is right.`)
+        : warn(`The last digit should be ${check}: the printer prints ${check} in its place.`);
+    }
+    return warn(
+      `${wanted} digits (or ${wanted + 1} with the check digit): the printer cuts this to ${body}.`,
+    );
+  }
+
+  switch (sym) {
+    case 'upce':
+      return /^\d{10}$/.test(data)
+        ? null
+        : warn(
+            'UPC-E takes exactly 10 digits: a 5-digit manufacturer code and a 5-digit product code.',
+          );
+    case 'i2of5':
+      if (!/^\d+$/.test(data)) return warn('Digits only.');
+      return data.length % 2
+        ? warn('An odd number of digits: the printer adds a 0 in front, as the code needs pairs.')
+        : null;
+    case 'code39':
+      return CODE39_CHARS.test(data)
+        ? null
+        : warn(
+            'Code 39 takes capitals, digits, space and - . $ / + % (start the data with +$ for full ASCII).',
+          );
+    case 'codabar':
+      return CODABAR_CHARS.test(data) ? null : warn('Codabar takes digits and - $ : / . + only.');
+    case 'postnet':
+      return /^(\d{5}|\d{9}|\d{11})$/.test(data) ? null : warn('POSTNET takes 5, 9 or 11 digits.');
+    case 'planet':
+      return /^(\d{11}|\d{13})$/.test(data) ? null : warn('PLANET takes 11 or 13 digits.');
+    case 'imb':
+      return /^(\d{20}|\d{25}|\d{29}|\d{31})$/.test(data)
+        ? null
+        : warn(
+            'Intelligent Mail takes 20, 25, 29 or 31 digits: the tracking code, then the routing ZIP.',
+          );
+    case 'gs1_128':
+      return /^\(\d{2,4}\)/.test(data)
+        ? null
+        : warn('GS1-128 data starts with an application identifier in brackets, e.g. (01).');
+    case 'databar':
+      if ((item.databarType || 1) <= 4 && !/^\d{13,14}$/.test(data)) {
+        return warn('This DataBar type takes a 13-digit GTIN (the printer adds the check digit).');
+      }
+      return null;
+    default:
+      return null;
+  }
+}

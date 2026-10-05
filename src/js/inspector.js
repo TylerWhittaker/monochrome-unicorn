@@ -39,6 +39,7 @@ import {
   expandClock,
   primaryClockIndicator,
   isStoredFont,
+  checkBarcodeData,
 } from './zpl.js';
 
 /* ------------------------------------------------------------------ *
@@ -844,6 +845,23 @@ export function renderElementPanel(
         ),
       ),
     ];
+    // What the printer will make of the data, before a preview shows it.
+    const verdict = checkBarcodeData(item);
+    if (verdict) {
+      fields.push(
+        el(
+          'p',
+          {
+            class:
+              verdict.level === 'warn'
+                ? 'text-[11px] text-amber-700'
+                : 'text-[11px] text-emerald-700',
+            dataset: { check: verdict.level },
+          },
+          [verdict.message],
+        ),
+      );
+    }
     if (item.symbology !== 'qr') fields.push(...serialRows(item, commit));
 
     const sizes = [];

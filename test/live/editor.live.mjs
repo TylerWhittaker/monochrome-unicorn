@@ -370,6 +370,24 @@ export default function register(s, ctx) {
     assert.match(out, /\^BCN,77,N,N,N\^/);
   });
 
+  s.test('barcode data is checked before it is sent', async () => {
+    await selectNode(1);
+    await objectCard.locator('h3', { hasText: 'Barcode' }).waitFor();
+    await ui.setField(field('Symbology'), 'ean13');
+    await ui.setField(field('Data'), '12345A');
+    assert.match(await objectCard.locator('[data-check="warn"]').textContent(), /Digits only/);
+    await ui.setField(field('Data'), '123456789012');
+    assert.match(
+      await objectCard.locator('[data-check="ok"]').textContent(),
+      /The printer adds check digit 8\./,
+    );
+    await ui.setField(field('Data'), '1234567890125');
+    assert.match(await objectCard.locator('[data-check="warn"]').textContent(), /should be 8/);
+    await ui.setField(field('Symbology'), 'code128');
+    await ui.setField(field('Data'), '12345678');
+    assert.equal(await objectCard.locator('[data-check]').count(), 0, 'nothing to say');
+  });
+
   s.test('the serial element counts, and its step can be set', async () => {
     await selectNode(2);
     await objectCard.locator('h3', { hasText: 'Text' }).waitFor();
