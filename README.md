@@ -55,8 +55,11 @@ Three modes:
   up or spaced evenly together. Ctrl+C puts them on the clipboard as
   ZPL and Ctrl+V pastes copies; ZPL copied from anywhere else pastes
   as the elements it draws.
-  Press `?` anywhere, or the editor's Shortcuts button, for every
-  keyboard shortcut.
+  A drag snaps to smart guides -- the edges and centres of the other
+  elements and of the label, drawn as blue lines while they hold --
+  unless the grid is on, when it lands on the grid instead; Alt drags
+  freely. Press `?` anywhere, or the editor's Shortcuts button, for
+  every keyboard shortcut.
 - **Stored Formats** — pick a stored format in any of the printer's
   label languages (ZPL, EPL, CPCL), fill in one box per field, preview
   and print. What is possible varies by language, because the printer's

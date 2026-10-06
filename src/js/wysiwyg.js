@@ -29,6 +29,7 @@
  */
 
 import { el } from './ui.js';
+import { guideSnap } from './arrange.js';
 import { loadStoredImage } from './printer.js';
 import { SYMBOLOGIES, expandClock, isStoredFont } from './zpl.js';
 import { printer, fromDots } from './state.js';
@@ -708,6 +709,9 @@ export function createCanvas(
   });
   document.body.append(readout);
 
+  // The smart guides of a drag in progress; above the elements.
+  const guideLayer = el('div', { class: 'pointer-events-none absolute inset-0 z-10' });
+
   /**
    * "fit" shows the whole label at once, which is what you want while
    * placing things; an explicit zoom takes over when you need detail.
@@ -848,6 +852,29 @@ export function createCanvas(
     const origins = new Map(group.map((e) => [e.id, { x: e.x, y: e.y }]));
     const leftmost = Math.min(origin.x, ...group.map((e) => e.x));
     const topmost = Math.min(origin.y, ...group.map((e) => e.y));
+    // Smart guides: the moving elements' outline as drawn, and every
+    // other element's and the label's, to line it up with.
+    let moving = null;
+    let others = [];
+    if (mode === 'move') {
+      const ids = [item.id, ...group.map((e) => e.id)];
+      const boxes = getBoxes(ids);
+      if (boxes.length) {
+        const left = Math.min(...boxes.map((b) => b.x));
+        const top = Math.min(...boxes.map((b) => b.y));
+        moving = {
+          x: left,
+          y: top,
+          w: Math.max(...boxes.map((b) => b.x + b.w)) - left,
+          h: Math.max(...boxes.map((b) => b.y + b.h)) - top,
+        };
+        const doc = getDoc();
+        others = [
+          { x: 0, y: 0, w: doc.width, h: doc.height },
+          ...getBoxes([...nodes.keys()].filter((id) => !ids.includes(id))),
+        ];
+      }
+    }
     const target = event.currentTarget;
     try {
       target.setPointerCapture(event.pointerId);
@@ -861,9 +888,20 @@ export function createCanvas(
       // With the grid showing, a drag lands on it; Alt lets go of it.
       const pitch = moveEvent.altKey ? 0 : getGrid();
       if (mode === 'move') {
-        // The one dragged lands on the grid; none goes off the label.
-        const mx = Math.max(-leftmost, snap(origin.x + dx, pitch) - origin.x);
-        const my = Math.max(-topmost, snap(origin.y + dy, pitch) - origin.y);
+        // The one dragged lands on the grid, when it is showing, or else
+        // on a smart guide nearer than 6 pixels; none goes off the label.
+        // Alt turns both off.
+        let mx = snap(origin.x + dx, pitch) - origin.x;
+        let my = snap(origin.y + dy, pitch) - origin.y;
+        const guides =
+          moving && !moveEvent.altKey && !pitch
+            ? guideSnap({ ...moving, x: moving.x + dx, y: moving.y + dy }, others, 6 / scale)
+            : null;
+        if (guides && guides.dx !== null) mx = dx + guides.dx;
+        if (guides && guides.dy !== null) my = dy + guides.dy;
+        mx = Math.max(-leftmost, mx);
+        my = Math.max(-topmost, my);
+        drawGuides(guides ? guides.lines : []);
         item.x = origin.x + mx;
         item.y = origin.y + my;
         for (const other of group) {
@@ -879,6 +917,7 @@ export function createCanvas(
     };
     const end = () => {
       readout.hidden = true;
+      drawGuides([]);
       try {
         target.releasePointerCapture(event.pointerId);
       } catch (err) {
@@ -895,6 +934,23 @@ export function createCanvas(
     target.addEventListener('pointermove', move);
     target.addEventListener('pointerup', end);
     target.addEventListener('pointercancel', end);
+  }
+
+  /** Draw the guide lines a drag is sitting on, over the label. */
+  function drawGuides(lines) {
+    guideLayer.replaceChildren(
+      ...lines.map(({ axis, at }) =>
+        el('div', {
+          class: 'absolute bg-sky-500',
+          dataset: { guide: axis },
+          style:
+            axis === 'x'
+              ? `left:${at * scale}px;top:-8px;bottom:-8px;width:1px;`
+              : `top:${at * scale}px;left:-8px;right:-8px;height:1px;`,
+        }),
+      ),
+    );
+    if (lines.length && guideLayer.parentNode !== surface) surface.append(guideLayer);
   }
 
   /** Where the element is (or how big, while resizing), by the pointer. */

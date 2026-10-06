@@ -77,3 +77,45 @@ export function distributeBoxes(boxes, axis) {
   });
   return moves;
 }
+
+/**
+ * Smart guides: where a box being dragged would line up with others.
+ *
+ * Each of the box's left, centre and right is compared with the same
+ * lines of every other box (the label's own edges and centre among
+ * them), and likewise top, middle and bottom; the nearest within
+ * `tolerance` dots wins, per axis. Answers { dx, dy, lines }: the shift
+ * that lands on it (null for an axis with nothing near), and every line
+ * the box then sits on, as { axis: "x" | "y", at } to draw.
+ */
+export function guideSnap(box, others, tolerance) {
+  const xs = (b) => [b.x, b.x + b.w / 2, b.x + b.w];
+  const ys = (b) => [b.y, b.y + b.h / 2, b.y + b.h];
+  const nearest = (mine, theirs) => {
+    let found = null;
+    for (const m of mine) {
+      for (const t of theirs) {
+        const delta = t - m;
+        if (Math.abs(delta) <= tolerance && (!found || Math.abs(delta) < Math.abs(found))) {
+          found = delta;
+        }
+      }
+    }
+    return found === null ? null : Math.round(found);
+  };
+  const theirX = others.flatMap(xs);
+  const theirY = others.flatMap(ys);
+  const dx = nearest(xs(box), theirX);
+  const dy = nearest(ys(box), theirY);
+
+  const lines = [];
+  const on = (axis, mine, theirs) => {
+    for (const t of new Set(theirs)) {
+      if (mine.some((m) => Math.abs(m - t) <= 0.5)) lines.push({ axis, at: t });
+    }
+  };
+  const placed = { ...box, x: box.x + (dx || 0), y: box.y + (dy || 0) };
+  if (dx !== null) on('x', xs(placed), theirX);
+  if (dy !== null) on('y', ys(placed), theirY);
+  return { dx, dy, lines };
+}

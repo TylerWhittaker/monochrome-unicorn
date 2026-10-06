@@ -1017,4 +1017,43 @@ export default function register(s, ctx) {
     assert.equal(await selected().count(), 3);
     assert.match(await objectCard.textContent(), /3 elements selected/);
   });
+
+  // On the three elements the test before left: a text and a box at
+  // (41,40), and a 50-dot square at (300,200).
+  s.test('a drag near another element’s edge snaps to it, with a guide; Alt does not', async () => {
+    const square = nodes().nth(2);
+    // Let go of the three the test before selected: a click on the label
+    // where nothing is.
+    const surface = nodes().first().locator('..');
+    const r = await surface.boundingBox();
+    const empty = { button: 0, pointerId: 4, clientX: r.x + r.width - 3, clientY: r.y + 3 };
+    await surface.dispatchEvent('pointerdown', empty);
+    await surface.dispatchEvent('pointerup', empty);
+    const surfaceScale = await surface.evaluate((n) => parseFloat(n.style.width));
+    // Pixels per dot: the surface is the label's width in dots, scaled.
+    const pxPerDot = surfaceScale / 500;
+    const drag = async (dots, altKey = false, check = null) => {
+      const opts = { button: 0, pointerId: 3, altKey };
+      await square.dispatchEvent('pointerdown', { ...opts, clientX: 400, clientY: 400 });
+      const to = { ...opts, clientX: 400 + dots * pxPerDot, clientY: 400 };
+      await square.dispatchEvent('pointermove', to);
+      if (check) await check();
+      await square.dispatchEvent('pointerup', to);
+      await page.waitForTimeout(300);
+    };
+    // 3 dots right of the box's left edge (41): it lands on 41.
+    let out = await generated(() =>
+      drag(44 - 300, false, async () => {
+        assert.ok(
+          (await panel.locator('[data-guide="x"]').count()) >= 1,
+          'a vertical guide while dragging',
+        );
+      }),
+    );
+    assert.match(out, /\^FO41,200\^GB50,50,50/);
+    assert.equal(await panel.locator('[data-guide]').count(), 0, 'gone on release');
+    // With Alt it goes where it is put.
+    out = await generated(() => drag(3, true));
+    assert.match(out, /\^FO44,200\^GB50,50,50/);
+  });
 }

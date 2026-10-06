@@ -44,7 +44,7 @@ export const SHORTCUTS = [
       ['Delete / Backspace', 'Delete the selection'],
       ['Arrow keys', 'Nudge the selection one dot'],
       ['Shift+arrow keys', 'Nudge it ten dots'],
-      ['Alt while dragging', 'Leave the grid'],
+      ['Alt while dragging', 'Leave the grid, or the smart guides'],
     ],
   ],
   [

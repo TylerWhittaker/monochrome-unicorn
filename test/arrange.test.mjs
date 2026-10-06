@@ -20,7 +20,7 @@
 
 /* Align and distribute maths. Run: node test/arrange.test.mjs */
 import assert from 'node:assert/strict';
-import { alignBoxes, distributeBoxes } from '../src/js/arrange.js';
+import { alignBoxes, distributeBoxes, guideSnap } from '../src/js/arrange.js';
 
 const boxes = [
   { id: 'a', x: 10, y: 50, w: 100, h: 20 },
@@ -44,5 +44,33 @@ assert.deepEqual(at(spread, 'a'), { dx: 0, dy: 0 });
 assert.deepEqual(at(spread, 'b'), { dx: 145 - 40, dy: 0 });
 assert.deepEqual(at(spread, 'c'), { dx: 0, dy: 0 });
 assert.equal(distributeBoxes(boxes.slice(0, 2), 'y').size, 0, 'two need no spacing');
+
+// Guides: the nearest line within the tolerance, per axis.
+const label = { id: 'label', x: 0, y: 0, w: 400, h: 200 };
+const other = { id: 'o', x: 100, y: 20, w: 60, h: 30 };
+let g = guideSnap({ x: 103, y: 120, w: 40, h: 20 }, [label, other], 5);
+assert.equal(g.dx, -3, 'left edge onto the other’s left');
+assert.equal(g.dy, null, 'nothing near on y');
+assert.deepEqual(g.lines, [{ axis: 'x', at: 100 }]);
+// Centre onto the label's centre (200), and bottom onto the label's (200).
+g = guideSnap({ x: 178, y: 158, w: 40, h: 40 }, [label], 5);
+assert.deepEqual([g.dx, g.dy], [2, 2]);
+assert.deepEqual(
+  g.lines.map((l) => `${l.axis}${l.at}`),
+  ['x200', 'y200'],
+);
+// The nearer of two candidates wins.
+g = guideSnap(
+  { x: 97, y: 0, w: 10, h: 10 },
+  [
+    { x: 100, y: 500, w: 1, h: 1 },
+    { x: 98, y: 500, w: 0, h: 0 },
+  ],
+  5,
+);
+assert.equal(g.dx, 1);
+// Too far: no snap, no lines.
+g = guideSnap({ x: 300, y: 300, w: 10, h: 10 }, [other], 5);
+assert.deepEqual(g, { dx: null, dy: null, lines: [] });
 
 console.log('arrange: all passing');
