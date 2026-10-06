@@ -202,6 +202,13 @@ export function elementBounds(item) {
 
 const ROTATION_DEG = { N: 0, R: 90, I: 180, B: 270 };
 
+/** How long a finger is held still for a long press, and how still. */
+const LONG_PRESS_MS = 450;
+const LONG_PRESS_SLOP = 8;
+/** The zoom a pinch can reach. */
+const PINCH_MIN = 0.1;
+const PINCH_MAX = 3;
+
 /** A position or size on the grid: the nearest multiple of `pitch` dots. */
 export function snap(value, pitch) {
   return pitch > 0 ? Math.round(value / pitch) * pitch : value;
@@ -540,7 +547,7 @@ function drawRuler(canvas, { lengthDots, scale, vertical }) {
  */
 export function createCanvas(
   container,
-  { getDoc, onChange, onSelect, getGrid = () => 0, getRulers = () => false },
+  { getDoc, onChange, onSelect, onZoom = () => {}, getGrid = () => 0, getRulers = () => false },
 ) {
   /** The selected element ids, in the order they were picked. */
   const selection = new Set();
@@ -625,6 +632,9 @@ export function createCanvas(
     {
       class:
         'min-h-0 min-w-0 w-fit max-w-full max-h-[70vh] self-center overflow-auto bg-ink-100 p-4',
+      // One finger scrolls; two are a pinch, which zooms the label, not
+      // the page.
+      style: 'touch-action:pan-x pan-y;',
     },
     [frame],
   );
@@ -644,6 +654,18 @@ export function createCanvas(
   const onBackgroundDown = (event) => {
     if (![container, scroller, surface, frame].includes(event.target)) return;
     if (event.button !== 0) return;
+    // A finger on empty space scrolls, as anywhere else on a phone; only
+    // a tap there (no movement) lets go of the selection.
+    if (event.pointerType === 'touch') {
+      const x0 = event.clientX;
+      const y0 = event.clientY;
+      const up = (e) => {
+        container.removeEventListener('pointerup', up);
+        if (touches.size < 2 && Math.hypot(e.clientX - x0, e.clientY - y0) < 10) setSelection([]);
+      };
+      container.addEventListener('pointerup', up);
+      return;
+    }
     // A press on the scroller's own scrollbars scrolls, and nothing else.
     if (
       event.target === scroller &&
@@ -706,6 +728,54 @@ export function createCanvas(
     container.addEventListener('pointercancel', end);
   };
   container.addEventListener('pointerdown', onBackgroundDown);
+
+  /*
+   * Two fingers pinch the zoom, wherever they land -- on the grey, the
+   * label or an element (whose drag the second finger cancels). Watched
+   * in the capture phase, before an element's own handlers.
+   */
+  const touches = new Map();
+  let pinch = null;
+  let activeDrag = null;
+  let pinchFrame = 0;
+  const spread = () => {
+    const [a, b] = [...touches.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  };
+  const onTouchDown = (event) => {
+    if (event.pointerType !== 'touch') return;
+    touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (touches.size === 2) {
+      if (activeDrag) activeDrag.cancel();
+      pinch = { distance: spread(), scale };
+    }
+  };
+  const onTouchMove = (event) => {
+    if (!touches.has(event.pointerId)) return;
+    touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (!pinch || touches.size < 2) return;
+    event.preventDefault();
+    const next = Math.min(
+      PINCH_MAX,
+      Math.max(PINCH_MIN, (pinch.scale * spread()) / pinch.distance),
+    );
+    if (pinchFrame) return;
+    pinchFrame = requestAnimationFrame(() => {
+      pinchFrame = 0;
+      const rounded = Math.round(next * 100) / 100;
+      if (rounded === scale) return;
+      setZoom(rounded);
+      onZoom(rounded);
+    });
+  };
+  const onTouchUp = (event) => {
+    touches.delete(event.pointerId);
+    if (touches.size < 2) pinch = null;
+  };
+  container.addEventListener('pointerdown', onTouchDown, true);
+  container.addEventListener('pointermove', onTouchMove, true);
+  container.addEventListener('pointerup', onTouchUp, true);
+  container.addEventListener('pointercancel', onTouchUp, true);
 
   // Where a drag has got to, beside the pointer.
   const readout = el('div', {
@@ -842,7 +912,7 @@ export function createCanvas(
 
   /* -- dragging ---------------------------------------------------- */
 
-  function beginDrag(event, item, mode) {
+  function beginDrag(event, item, mode, before = null) {
     event.preventDefault();
     event.stopPropagation();
     // A resize changes what the text looks like; it is refitted after.
@@ -888,7 +958,43 @@ export function createCanvas(
       /* mouse without capture support */
     }
 
+    let cancelled = false;
+    // Put everything back and stop: a pinch began, or a long press.
+    const cancel = () => {
+      cancelled = true;
+      clearTimeout(longPress);
+      Object.assign(item, { x: origin.x, y: origin.y });
+      for (const other of group) Object.assign(other, origins.get(other.id));
+      if (mode === 'resize') applyResize(item, origin, 0, 0);
+      readout.hidden = true;
+      drawGuides([]);
+      detach();
+      activeDrag = null;
+      render();
+    };
+    activeDrag = { cancel };
+
+    // A finger held still on an element adds it to the selection, or
+    // takes it out: touch's Shift-click.
+    let longPress = null;
+    if (mode === 'move' && event.pointerType === 'touch' && before) {
+      longPress = setTimeout(() => {
+        cancel();
+        const had = before.includes(item.id);
+        setSelection(had ? before.filter((id) => id !== item.id) : [...before, item.id]);
+        if (navigator.vibrate) navigator.vibrate(15);
+      }, LONG_PRESS_MS);
+    }
+
     const move = (moveEvent) => {
+      if (cancelled) return;
+      if (
+        longPress &&
+        Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > LONG_PRESS_SLOP
+      ) {
+        clearTimeout(longPress);
+        longPress = null;
+      }
       const dx = Math.round((moveEvent.clientX - startX) / scale);
       const dy = Math.round((moveEvent.clientY - startY) / scale);
       // With the grid showing, a drag lands on it; Alt lets go of it.
@@ -921,9 +1027,7 @@ export function createCanvas(
       reposition(item);
       showReadout(moveEvent, item, mode);
     };
-    const end = () => {
-      readout.hidden = true;
-      drawGuides([]);
+    const detach = () => {
       try {
         target.releasePointerCapture(event.pointerId);
       } catch (err) {
@@ -932,6 +1036,14 @@ export function createCanvas(
       target.removeEventListener('pointermove', move);
       target.removeEventListener('pointerup', end);
       target.removeEventListener('pointercancel', end);
+    };
+    const end = () => {
+      if (cancelled) return;
+      clearTimeout(longPress);
+      activeDrag = null;
+      readout.hidden = true;
+      drawGuides([]);
+      detach();
       // A resize can change how the element is drawn, not just its box.
       render();
       onChange('drag');
@@ -1042,6 +1154,9 @@ export function createCanvas(
             (item.locked ? 'cursor:default;' : 'cursor:move;'),
           dataset: { id: item.id },
           onpointerdown: (event) => {
+            // A second finger is a pinch, not a press on this element.
+            if (event.pointerType === 'touch' && touches.size > 1) return;
+            const before = [...selection];
             if (event.shiftKey || event.ctrlKey || event.metaKey) {
               const ids = [...selection];
               const without = ids.filter((id) => id !== item.id);
@@ -1058,7 +1173,7 @@ export function createCanvas(
               event.preventDefault();
               return;
             }
-            beginDrag(event, item, 'move');
+            beginDrag(event, item, 'move', before);
           },
         },
         [body],
@@ -1164,6 +1279,10 @@ export function createCanvas(
       band.remove();
       scroller.remove();
       container.removeEventListener('pointerdown', onBackgroundDown);
+      container.removeEventListener('pointerdown', onTouchDown, true);
+      container.removeEventListener('pointermove', onTouchMove, true);
+      container.removeEventListener('pointerup', onTouchUp, true);
+      container.removeEventListener('pointercancel', onTouchUp, true);
       container.classList.remove('bg-ink-100');
     },
   };

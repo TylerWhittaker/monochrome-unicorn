@@ -131,4 +131,20 @@
     background-size: 16px 16px;
     background-position: 0 0, 8px 8px;
   }
+
+  /*
+   * Fingers are blunter than a mouse: on a touch screen the designer's
+   * resize handle and the small buttons get bigger targets.
+   */
+  @media (pointer: coarse) {
+    .preview-surface [data-handle] {
+      width: 1.25rem;
+      height: 1.25rem;
+      right: -0.625rem;
+      bottom: -0.625rem;
+    }
+    .btn-sm {
+      min-height: 2.25rem;
+    }
+  }
 }

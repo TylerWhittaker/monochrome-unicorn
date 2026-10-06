@@ -110,6 +110,24 @@ let addBar = null;
 let viewBar = null;
 let editorCountInput = null;
 let gridSizeInput = null;
+let zoomSelect = null;
+
+/** Put a pinched zoom in the zoom list, as an entry of its own if need be. */
+function showZoom(zoom) {
+  if (!zoomSelect) return;
+  const value = String(zoom);
+  let option = [...zoomSelect.options].find((o) => o.value === value);
+  if (!option) {
+    option = zoomSelect.querySelector('option[data-pinched]');
+    if (!option) {
+      option = el('option', { dataset: { pinched: '1' } });
+      zoomSelect.append(option);
+    }
+    option.value = value;
+    option.textContent = `${Math.round(zoom * 100)}%`;
+  }
+  zoomSelect.value = value;
+}
 
 /*
  * The canvas grid: on or off, and its pitch in dots; and whether the
@@ -388,6 +406,7 @@ function rebuildEditorView() {
         markDirty();
       },
       onSelect: () => renderEditorInspector(),
+      onZoom: (zoom) => showZoom(zoom),
       getGrid: () => (editorGrid.on ? editorGrid.dots : 0),
       getRulers: () => editorGrid.rulers,
     });
@@ -933,7 +952,7 @@ export function mountEditor(panel) {
     ],
   );
 
-  const zoomSelect = el('select', { class: 'field w-24 py-1 text-[12px]' });
+  zoomSelect = el('select', { class: 'field w-24 py-1 text-[12px]' });
   for (const [value, text] of [
     ['fit', 'Fit'],
     ['0.25', '25%'],
@@ -1002,7 +1021,7 @@ export function mountEditor(panel) {
     syncGridInput();
   });
 
-  const zoomGroup = el('div', { class: 'ml-auto flex items-center gap-2' }, [
+  const zoomGroup = el('div', { class: 'ml-auto flex flex-wrap items-center gap-2' }, [
     el('label', { class: 'flex items-center gap-1.5 text-ink-600' }, [rulerToggle, 'Rulers']),
     el(
       'label',

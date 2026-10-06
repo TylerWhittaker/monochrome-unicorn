@@ -63,8 +63,11 @@ Three modes:
   rows or use To front / Forward / Backward / To back to change the
   order the ZPL draws them in, and Hide (off the canvas, still printed)
   or Lock (not dragged or nudged) any of them -- those two are the
-  editor's own and not saved with the label. Press `?` anywhere, or the
-  editor's `?` button, for every keyboard shortcut.
+  editor's own and not saved with the label. On a touch screen two
+  fingers pinch the zoom, a long press adds an element to the
+  selection, a finger on empty space scrolls rather than drawing a band,
+  and the resize handle and buttons are bigger. Press `?` anywhere, or
+  the editor's `?` button, for every keyboard shortcut.
 - **Stored Formats** — pick a stored format in any of the printer's
   label languages (ZPL, EPL, CPCL), fill in one box per field, preview
   and print. What is possible varies by language, because the printer's

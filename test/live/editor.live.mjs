@@ -1102,4 +1102,70 @@ export default function register(s, ctx) {
     await textRow.locator('[data-flag="locked"]').click();
     assert.equal(await nodes().count(), 3);
   });
+
+  s.test(
+    'touch: pinch zooms, a long press adds to the selection, a finger on empty space scrolls',
+    async () => {
+      const surface = nodes().first().locator('..');
+      const selected = () => panel.locator('.preview-surface > div[data-id].outline-sky-500');
+      const touch = (id, x, y) => ({
+        pointerId: id,
+        pointerType: 'touch',
+        button: 0,
+        clientX: x,
+        clientY: y,
+        isPrimary: id === 11,
+      });
+      const zoomSelect = panel.locator('select', {
+        has: page.locator('option', { hasText: 'Fit' }),
+      });
+
+      // Two fingers 100 px apart move to 200: twice the zoom.
+      const width = async () => surface.evaluate((n) => parseFloat(n.style.width));
+      const before = await width();
+      const r = await surface.boundingBox();
+      const x = r.x + 20;
+      const y = r.y + 20;
+      await surface.dispatchEvent('pointerdown', touch(11, x, y));
+      await surface.dispatchEvent('pointerdown', touch(12, x + 100, y));
+      await surface.dispatchEvent('pointermove', touch(12, x + 200, y));
+      await page.waitForTimeout(300);
+      await surface.dispatchEvent('pointerup', touch(12, x + 200, y));
+      await surface.dispatchEvent('pointerup', touch(11, x, y));
+      const after = await width();
+      assert.ok(Math.abs(after / before - 2) < 0.05, `zoom ${before} -> ${after} px wide`);
+      assert.match(await zoomSelect.locator('option:checked').textContent(), /^\d+%$/);
+      await zoomSelect.selectOption('fit');
+
+      // One selected by mouse, a second held by a finger: both selected,
+      // and nothing moved.
+      await selectNode(0);
+      assert.equal(await selected().count(), 1);
+      const second = nodes().nth(1);
+      const b = await second.boundingBox();
+      const held = touch(13, b.x + 5, b.y + 5);
+      // Settled first, so a preview from before is not taken for a move.
+      await page.waitForTimeout(1200);
+      const zplBefore = zpl.last('preview').data;
+      await second.dispatchEvent('pointerdown', held);
+      await page.waitForTimeout(700);
+      await second.dispatchEvent('pointerup', held);
+      assert.equal(await selected().count(), 2, 'the long press added it');
+      assert.match(await objectCard.textContent(), /2 elements selected/);
+
+      // A finger dragged across empty label scrolls: the selection stays.
+      const s2 = await surface.boundingBox();
+      const corner = (dx) => touch(14, s2.x + s2.width - 4 - dx, s2.y + 4);
+      await surface.dispatchEvent('pointerdown', corner(0));
+      await surface.dispatchEvent('pointermove', corner(60));
+      await surface.dispatchEvent('pointerup', corner(60));
+      assert.equal(await selected().count(), 2, 'no band from a finger');
+      // A tap there lets go.
+      await surface.dispatchEvent('pointerdown', corner(0));
+      await surface.dispatchEvent('pointerup', corner(0));
+      assert.equal(await selected().count(), 0);
+      await page.waitForTimeout(1200);
+      assert.equal(zpl.last('preview').data, zplBefore, 'nothing moved');
+    },
+  );
 }

@@ -45,6 +45,8 @@ export const SHORTCUTS = [
       ['Arrow keys', 'Nudge the selection one dot'],
       ['Shift+arrow keys', 'Nudge it ten dots'],
       ['Alt while dragging', 'Leave the grid, or the smart guides'],
+      ['Pinch', 'Zoom the label (touch screens)'],
+      ['Long-press', 'Add an element to the selection, or take it out (touch screens)'],
     ],
   ],
   [
