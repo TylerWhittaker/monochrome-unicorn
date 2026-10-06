@@ -163,6 +163,26 @@ check('CSV: quoted fields, doubled quotes, line breaks inside quotes, CRLF', () 
   ]);
 });
 
+check('a batch: blank cells and unmatched fields are found, fixed fields ignored', () => {
+  const fields = [
+    { key: 'a', label: 'NAME' },
+    { key: 'b', label: 'CITY' },
+    { key: 'c', label: 'SKU', fixed: true },
+    { key: 'd', label: 'NOTE' },
+  ];
+  const rows = [
+    ['Ada', 'London'],
+    ['Grace', ' '],
+    ['', ''],
+  ];
+  assert.deepEqual(f.batchGaps(rows, fields, { a: 0, b: 1, c: -1, d: -1 }), [
+    { key: 'a', label: 'NAME', unmapped: false, rows: [2] },
+    { key: 'b', label: 'CITY', unmapped: false, rows: [1, 2] },
+    { key: 'd', label: 'NOTE', unmapped: true, rows: [] },
+  ]);
+  assert.deepEqual(f.batchGaps(rows.slice(0, 1), fields.slice(0, 2), { a: 0, b: 1 }), []);
+});
+
 check('CSV: semicolons or tabs, whichever the header line uses', () => {
   assert.deepEqual(f.parseCsv('a;b\n1;2').rows, [['1', '2']]);
   assert.deepEqual(f.parseCsv('a\tb\n1,5\t2').rows, [['1,5', '2']]);

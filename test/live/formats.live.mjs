@@ -212,6 +212,21 @@ export default function register(s, ctx) {
     assert.match(post.data, /\^FN2\^FH\^FDArlington\^FS/);
     assert.doesNotMatch(post.data, /\^FN3/);
     assert.match(await panel.textContent(), /Print 3 labels/);
+
+    // Next and the arrow keys step through the rows, previewing each.
+    const rowOf = panel.locator('[data-row-of]');
+    const previewed = (pattern) =>
+      waitFor(() => pattern.test((zpl.last('preview') || {}).data || ''), {
+        what: `a preview matching ${pattern}`,
+      });
+    await panel.getByRole('button', { name: 'Next ›' }).click();
+    assert.equal(await rowOf.textContent(), 'Row 3 of 3');
+    await previewed(/\^FDAlan\^FS/);
+    assert.equal(await panel.getByRole('button', { name: 'Next ›' }).isDisabled(), true);
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowUp');
+    assert.equal(await rowOf.textContent(), 'Row 1 of 3');
+    await previewed(/\^FDAda\^FS/);
   });
 
   s.test('a CSV batch prints every row', async () => {
@@ -225,6 +240,26 @@ export default function register(s, ctx) {
     const sent = zpl.posts.filter((p) => p.action === 'print' && p.at >= since);
     assert.equal(sent.length, 1, 'three rows fit one request');
     assert.equal((sent[0].data.match(/\^XF/g) || []).length, 3);
+    await panel.getByRole('button', { name: 'Clear', exact: true }).click();
+  });
+
+  s.test('a CSV batch says which rows leave a field empty', async () => {
+    await panel.getByRole('button', { name: 'Batch from CSV…' }).click();
+    const dialog = page.locator('#modal-root .card', { hasText: 'Batch from CSV' });
+    // A blank NAME in row 2, and no column called CITY.
+    await dialog.locator('textarea').fill('NAME,TOWN\nAda,x\n,y\nAlan,z\n');
+    await dialog.getByRole('button', { name: 'Use these rows' }).click();
+    await panel.getByText('Batch: 3 rows from pasted CSV').waitFor();
+    const notes = await panel.locator('[data-gap]').allTextContents();
+    assert.ok(
+      notes.some((n) => /^CITY\b.* has no column/.test(n)),
+      `CITY unmatched: ${notes.join(' | ')}`,
+    );
+    const nameGap = panel.locator('[data-gap]', {
+      hasText: /^1 row leaves NAME\b.* empty \(first: row 2\)\.$/,
+    });
+    await nameGap.click();
+    assert.equal(await panel.locator('[data-row-of]').textContent(), 'Row 2 of 3');
     await panel.getByRole('button', { name: 'Clear', exact: true }).click();
   });
 

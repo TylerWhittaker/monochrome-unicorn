@@ -57,6 +57,7 @@ import {
   parseCsv,
   matchColumns,
   rowValues,
+  batchGaps,
 } from './formats.js';
 import { createPreview } from './preview.js';
 
@@ -651,7 +652,8 @@ function batchRecall(row) {
 function previewBatchRow(index) {
   const batch = formatState.batch;
   if (!batch) return;
-  batch.selected = index;
+  batch.selected = Math.min(batch.rows.length - 1, Math.max(0, index));
+  index = batch.selected;
   renderBatch();
   if (formatState.lang.previewable) formatPreview.update(batchRecall(batch.rows[index]));
 }
@@ -688,6 +690,7 @@ async function printBatch() {
 
 function renderBatch() {
   const batch = formatState.batch;
+  const refocus = batchHost && document.activeElement && batchHost.contains(document.activeElement);
   if (!batch || !formatState.current) {
     replaceChildren(batchHost, []);
     return;
@@ -720,7 +723,10 @@ function renderBatch() {
       ]);
     });
 
-  const shown = batch.rows.slice(0, BATCH_ROWS_SHOWN);
+  // The table shows up to BATCH_ROWS_SHOWN rows, sliding along to keep the
+  // one being previewed among them.
+  const first = batch.selected >= BATCH_ROWS_SHOWN ? batch.selected - BATCH_ROWS_SHOWN + 1 : 0;
+  const shown = batch.rows.slice(first, first + BATCH_ROWS_SHOWN);
   const table = el('table', { class: 'w-full text-[12px]' }, [
     el('thead', {}, [
       el('tr', { class: 'text-left text-ink-500' }, [
@@ -731,7 +737,8 @@ function renderBatch() {
     el(
       'tbody',
       {},
-      shown.map((row, index) => {
+      shown.map((row, offset) => {
+        const index = first + offset;
         const values = rowValues(row, fields, batch.mapping);
         return el(
           'tr',
@@ -752,13 +759,68 @@ function renderBatch() {
   ]);
 
   const total = batch.rows.length * formatState.copies;
+  const step = (by) => previewBatchRow(batch.selected + by);
+  const tableBox = el(
+    'div',
+    {
+      class: 'max-h-64 overflow-auto rounded border border-ink-200',
+      tabindex: '0',
+      title: 'Arrow keys step through the rows',
+      onkeydown: (event) => {
+        const by = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+        if (!by) return;
+        event.preventDefault();
+        step(by);
+      },
+    },
+    [table],
+  );
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const gaps = batchGaps(batch.rows, fields, batch.mapping).map((gap) =>
+    el(
+      'button',
+      {
+        class: 'block text-left text-[11px] text-amber-700 hover:underline',
+        dataset: { gap: gap.key },
+        onclick: () => (gap.unmapped ? null : previewBatchRow(gap.rows[0])),
+      },
+      [
+        gap.unmapped
+          ? `${gap.label} has no column: every label leaves it empty.`
+          : `${plural(gap.rows.length, 'row')} leave${gap.rows.length === 1 ? 's' : ''} ` +
+            `${gap.label} empty (first: row ${gap.rows[0] + 1}).`,
+      ],
+    ),
+  );
   replaceChildren(batchHost, [
     el('div', { class: 'space-y-3 border-t border-ink-200 px-3 py-3' }, [
       el('div', { class: 'flex flex-wrap items-center gap-3' }, [
         el('span', { class: 'text-[12px] font-medium text-ink-700' }, [
           `Batch: ${batch.rows.length} row${batch.rows.length === 1 ? '' : 's'} from ${batch.name}`,
         ]),
-        el('span', { class: 'text-[11px] text-ink-400' }, ['Click a row to preview it.']),
+        el('div', { class: 'flex items-center gap-1' }, [
+          el(
+            'button',
+            {
+              class: 'btn-secondary btn-sm',
+              disabled: batch.selected <= 0,
+              onclick: () => step(-1),
+            },
+            ['‹ Previous'],
+          ),
+          el('span', { class: 'px-1 text-[11px] text-ink-500', dataset: { rowOf: '1' } }, [
+            `Row ${batch.selected + 1} of ${batch.rows.length}`,
+          ]),
+          el(
+            'button',
+            {
+              class: 'btn-secondary btn-sm',
+              disabled: batch.selected >= batch.rows.length - 1,
+              onclick: () => step(1),
+            },
+            ['Next ›'],
+          ),
+        ]),
         el('div', { class: 'ml-auto flex items-center gap-2' }, [
           batch.printing
             ? el('span', { class: 'text-[11px] text-ink-500' }, [
@@ -796,14 +858,19 @@ function renderBatch() {
         ]),
       ]),
       el('div', { class: 'grid gap-1.5 sm:grid-cols-2' }, mappingRows),
-      el('div', { class: 'max-h-64 overflow-auto rounded border border-ink-200' }, [table]),
+      gaps.length ? el('div', { class: 'space-y-0.5' }, gaps) : null,
+      tableBox,
       batch.rows.length > BATCH_ROWS_SHOWN
         ? el('p', { class: 'text-[11px] text-ink-400' }, [
-            `Showing the first ${BATCH_ROWS_SHOWN}; all ${batch.rows.length} print.`,
+            `Showing rows ${first + 1}–${first + shown.length}; all ${batch.rows.length} print.`,
           ])
         : null,
     ]),
   ]);
+  const current = batchHost.querySelector(`tr[data-row="${batch.selected}"]`);
+  if (current) current.scrollIntoView({ block: 'nearest' });
+  // Stepping by key re-renders the table; keep the keys going to it.
+  if (refocus) tableBox.focus({ preventScroll: true });
 }
 
 /* ------------------------------------------------------------------ *

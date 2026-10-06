@@ -57,7 +57,9 @@ Three modes:
   so rather than pretending otherwise. CPCL formats only show up in the
   drive listing (below), so they join the list when it lands, with a
   note beside the list while it is being read. A batch from CSV prints
-  one label per row, the columns matched to fields by name. A field the
+  one label per row, the columns matched to fields by name; Previous,
+  Next and the arrow keys step the preview through the rows, and a note
+  says which rows leave a field empty, or which field has no column. A field the
   format itself fills in (`^FN3^FD12345`) is shown but fixed: printers
   ignore data sent for it.
 - **File System** — every stored object on every drive, with what can

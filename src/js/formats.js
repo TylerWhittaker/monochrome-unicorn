@@ -354,3 +354,27 @@ export function rowValues(row, fields, mapping) {
     fields.map((f) => [f.key, mapping[f.key] >= 0 ? (row[mapping[f.key]] ?? '') : '']),
   );
 }
+
+/**
+ * What a batch would leave blank, field by field: { key, label, unmapped,
+ * rows } for each field the format does not fix that has no column
+ * (unmapped) or is empty in some rows (their indexes).
+ */
+export function batchGaps(rows, fields, mapping) {
+  const gaps = [];
+  for (const field of fields) {
+    if (field.fixed) continue;
+    const column = mapping[field.key];
+    if (!(column >= 0)) {
+      gaps.push({ key: field.key, label: field.label, unmapped: true, rows: [] });
+      continue;
+    }
+    const empty = [];
+    rows.forEach((row, i) => {
+      if (!String(row[column] ?? '').trim()) empty.push(i);
+    });
+    if (empty.length)
+      gaps.push({ key: field.key, label: field.label, unmapped: false, rows: empty });
+  }
+  return gaps;
+}
