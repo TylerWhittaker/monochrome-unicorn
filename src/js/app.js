@@ -29,6 +29,7 @@ import { el, qs, qsa, toast, confirmDialog } from './ui.js';
 import { printer, initState, parseHostStatus } from './state.js';
 import { readStatus, sendControl } from './printer.js';
 import { openClockDialog } from './clock.js';
+import { installShortcutKey } from './shortcuts.js';
 import { mountSettings } from './settings.js';
 import { mountEditor, onEditorShown } from './editor.js';
 import { mountFormat, onFormatShown } from './format.js';
@@ -262,6 +263,7 @@ function start() {
   qs('#hdr-status').after(buildPrinterMenu());
   renderHeader();
   startStatusPolling();
+  installShortcutKey();
 
   for (const btn of qsa('.tab-btn')) {
     btn.addEventListener('click', () => showTab(btn.dataset.tab));

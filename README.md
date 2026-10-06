@@ -48,6 +48,8 @@ Three modes:
   up or spaced evenly together. Ctrl+C puts them on the clipboard as
   ZPL and Ctrl+V pastes copies; ZPL copied from anywhere else pastes
   as the elements it draws.
+  Press `?` anywhere, or the editor's Shortcuts button, for every
+  keyboard shortcut.
 - **Stored Formats** — pick a stored format in any of the printer's
   label languages (ZPL, EPL, CPCL), fill in one box per field, preview
   and print. What is possible varies by language, because the printer's
@@ -206,6 +208,7 @@ src/js/
   preview.js          the preview pane (htmx round-trip to /zpl)
   ui.js               DOM helpers, toasts, modals, password prompt
   zplhelp.js          the source view's panel: the command under the cursor
+  shortcuts.js        the ? sheet: every keyboard shortcut, in one list
 src/data/
   zpl-reference.mjs   every ZPL command and parameter, in our words
   sgd-reference.mjs   what each printer setting is for, likewise
@@ -244,6 +247,7 @@ node test/wysiwyg.test.mjs  # the designer's rulers
 node test/zplhelp.test.mjs  # the source view's command reference
 node test/sgdref.test.mjs   # the setting reference, against the catalogue
 node test/history.test.mjs  # the Label Editor's undo history
+node test/shortcuts.test.mjs # the shortcut sheet's list
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier

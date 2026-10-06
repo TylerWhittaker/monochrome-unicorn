@@ -70,7 +70,12 @@ export default function register(s, ctx) {
   s.test('opens on Printer Settings with the header filled in', async () => {
     con = await openConsole(ctx.browser, cfg, 'settings');
     const { page } = con;
-    const friendly = await getvar(cfg.ip, 'device.friendly_name');
+    // Read again if it comes back empty: just after a deploy port 9100
+    // can answer before the printer has its settings to hand.
+    let friendly = '';
+    await waitFor(async () => (friendly = await getvar(cfg.ip, 'device.friendly_name')) !== '', {
+      what: 'device.friendly_name over port 9100',
+    });
     await page.locator('#hdr-name', { hasText: friendly }).waitFor();
     assert.equal((await page.locator('#hdr-ip').textContent()).trim(), cfg.ip);
     const meta = await page.locator('#hdr-meta').textContent();
@@ -185,6 +190,33 @@ export default function register(s, ctx) {
     const drift = Number(await getvar(cfg.ip, 'rtc.unix_timestamp')) - Date.now() / 1000;
     assert.ok(Math.abs(drift) < 10, `printer clock ${drift.toFixed(1)} s out`);
     await dialog.getByRole('button', { name: 'Close' }).click();
+  });
+
+  s.test('? shows every shortcut, but not while typing', async () => {
+    const { page } = con;
+    const sheet = page.locator('#modal-root [data-shortcuts]');
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    await page.keyboard.press('?');
+    await sheet.waitFor();
+    assert.match(await sheet.textContent(), /Ctrl\+V.*Paste/);
+    await page.keyboard.press('Escape');
+    await sheet.waitFor({ state: 'detached' });
+
+    // A ? typed into the settings filter is just a character.
+    const filter = page.locator('[data-panel="settings"] input').first();
+    await filter.click();
+    await page.keyboard.press('?');
+    await page.waitForTimeout(300);
+    assert.equal(await sheet.count(), 0);
+    assert.equal(await filter.inputValue(), '?');
+    await filter.fill('');
+
+    // And the Label Editor has a button for it.
+    await page.locator('.tab-btn[data-tab="editor"]').click();
+    await page.locator('[data-panel="editor"]').getByRole('button', { name: 'Shortcuts' }).click();
+    await sheet.waitFor();
+    await page.locator('#modal-root').getByRole('button', { name: 'Close' }).click();
+    await page.locator('.tab-btn[data-tab="settings"]').click();
   });
 
   s.test('Cancel all asks first', async () => {

@@ -75,6 +75,7 @@ import { cachedDriveListing, onDriveListing } from './drives.js';
 import { createCodeEditor } from './codeeditor.js';
 import { createHistory } from './history.js';
 import { createPreview } from './preview.js';
+import { openShortcuts } from './shortcuts.js';
 import { parseCopies } from './formats.js';
 
 const editorState = {
@@ -969,7 +970,18 @@ export function mountEditor(panel) {
     el('span', { class: 'ml-2 text-[11px] uppercase tracking-wide text-ink-500' }, ['Zoom']),
     zoomSelect,
   ]);
-  viewBar = el('div', { class: 'toolbar' }, [zoomGroup]);
+  viewBar = el('div', { class: 'toolbar' }, [
+    zoomGroup,
+    el(
+      'button',
+      {
+        class: 'btn-secondary btn-sm',
+        title: 'Every keyboard shortcut (?)',
+        onclick: () => openShortcuts(),
+      },
+      ['Shortcuts'],
+    ),
+  ]);
 
   editorHost = el('div', { class: EDITOR_HOST_CLASS.visual });
   inspectorHost = el('div');
