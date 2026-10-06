@@ -34,6 +34,7 @@
 import { el, qs, replaceChildren, toast, debounce, modal } from './ui.js';
 import { printer, allSettings } from './state.js';
 import { createMaintenanceCard } from './maintenance.js';
+import { createSensorCard } from './sensor.js';
 import { buildBackup, compareBackup } from './backup.js';
 import {
   readAllSettings,
@@ -1148,12 +1149,15 @@ export function mountSettings(panel) {
     ]),
   );
 
-  // Below the table, and read once the sweep is done so it does not hold
-  // the printer up for the settings.
+  // Below the table, one above the other, and read once the sweep is
+  // done so they do not hold the printer up for the settings.
   const maintenance = createMaintenanceCard();
-  panel.append(el('div', { class: 'mt-3' }, [maintenance.node]));
+  const sensor = createSensorCard();
+  panel.append(el('div', { class: 'mt-3 space-y-3' }, [maintenance.node, sensor.node]));
 
   onDriveListing(paintDriveListing);
   applyFilter();
-  refresh().then(() => maintenance.refresh());
+  refresh()
+    .then(() => maintenance.refresh())
+    .then(() => sensor.refresh());
 }

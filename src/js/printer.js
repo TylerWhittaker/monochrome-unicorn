@@ -240,6 +240,11 @@ export async function readMaintenance({ timeout = 15000 } = {}) {
   return parseVarFile(await getText('/MAINT.SHTML', { timeout }));
 }
 
+/** The media sensor's readings (build.mjs SENSOR_VARS). */
+export async function readSensor({ timeout = 15000 } = {}) {
+  return parseVarFile(await getText('/SENSOR.SHTML', { timeout }));
+}
+
 /** The printer's clock (build.mjs CLOCK_VARS). */
 export async function readClock({ timeout = 15000 } = {}) {
   return parseVarFile(await getText('/CLOCK.SHTML', { timeout }));

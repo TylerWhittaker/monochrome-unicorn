@@ -310,6 +310,50 @@ export default function register(s, ctx) {
     ui.assertNoErrors();
   });
 
+  s.test(
+    'the Media sensor card shows the printer’s readings, and Watch keeps reading',
+    async () => {
+      const card = page.locator('#media-sensor');
+      await card.locator('[data-gauge]').first().waitFor({ timeout: 60000 });
+      const mode = await getvar(cfg.ip, 'media.sense_mode');
+      assert.match(await card.textContent(), new RegExp(`finds labels by ${mode}`));
+      for (const prefix of ['gap', 'back_bar']) {
+        const gauge = card.locator(`[data-gauge="${prefix}"]`);
+        if (!(await gauge.count())) continue;
+        const thold = await getvar(cfg.ip, `sensor.${prefix}.thold`);
+        assert.match(
+          await gauge.textContent(),
+          new RegExp(`label threshold ${thold}(?!\\d)`),
+          prefix,
+        );
+      }
+      const inUse = { gap: 'gap', web: 'gap', bar: 'back_bar', mark: 'back_bar' }[mode];
+      if (inUse) {
+        assert.match(await card.locator(`[data-gauge="${inUse}"]`).textContent(), /in use/);
+      }
+
+      await card.getByRole('button', { name: 'Watch' }).click();
+      const reads = card.locator('[data-reads]');
+      await waitFor(async () => Number(await reads.getAttribute('data-reads')) >= 3, {
+        timeout: 15000,
+        what: 'three reads while watching',
+      });
+      await card.getByRole('button', { name: 'Stop watching' }).click();
+      await card.getByRole('button', { name: 'Refresh' }).waitFor();
+
+      // Both media-moving buttons ask first; Cancel sends nothing.
+      for (const [button, title] of [
+        ['Calibrate…', 'Calibrate the media sensor?'],
+        ['Print sensor profile…', 'Print the sensor profile?'],
+      ]) {
+        await card.getByRole('button', { name: button }).click();
+        const dialog = page.locator('#modal-root .card', { hasText: title });
+        await dialog.getByRole('button', { name: 'Cancel' }).click();
+        await dialog.waitFor({ state: 'detached' });
+      }
+    },
+  );
+
   let userP1 = null;
   s.cleanup(async () => {
     if (userP1 !== null) await setvar(cfg.ip, 'device.user_p1', userP1);

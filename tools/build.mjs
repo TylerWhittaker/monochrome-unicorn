@@ -72,6 +72,22 @@ const MAINT_VARS = [
   'log.reboot.reason',
 ];
 
+/** The media sensor card: which sensor, its readings and thresholds. */
+const SENSOR_VARS = [
+  'media.sense_mode',
+  'device.sensor_select',
+  'media.type',
+  'media.status',
+  'head.latch',
+  'zpl.label_length',
+  'sensor.gap.cur',
+  'sensor.gap.thold',
+  'sensor.gap.ppr_out_thold',
+  'sensor.back_bar.cur',
+  'sensor.back_bar.thold',
+  'sensor.back_bar.ppr_out_thold',
+];
+
 /** The printer's clock, for the Set clock dialog. */
 const CLOCK_VARS = ['rtc.exists', 'rtc.date', 'rtc.time', 'rtc.timezone', 'rtc.unix_timestamp'];
 
@@ -446,6 +462,7 @@ function helperFiles(schema) {
   files.push({ dest: 'E:STATUS.SHTML', contents: STATUS_VARS.map(varLine).join('\n') + '\n' });
   files.push({ dest: 'E:CLOCK.SHTML', contents: CLOCK_VARS.map(varLine).join('\n') + '\n' });
   files.push({ dest: 'E:MAINT.SHTML', contents: MAINT_VARS.map(varLine).join('\n') + '\n' });
+  files.push({ dest: 'E:SENSOR.SHTML', contents: SENSOR_VARS.map(varLine).join('\n') + '\n' });
 
   /*
    * Every readable setting in one file, for the sweep.

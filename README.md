@@ -22,6 +22,13 @@ Three modes:
   Below the table, a Maintenance card shows the odometers -- media run
   since the head was cleaned and since it was replaced, labels, cuts,
   head temperature, uptime -- with buttons to reset the head counters.
+  Under it, a Media sensor card shows which sensor finds the labels
+  (gap or black mark), each sensor's reading against its label and
+  paper-out thresholds, and Watch re-reads them every second for two
+  minutes, so moving the media by hand shows the reading change; with
+  Calibrate (`~JC`) and Print sensor profile (`~JG`) beside it. The
+  profile graph itself only exists on paper: the printer prints it and
+  hands nothing back.
   **Back up…** downloads the settings that differ from their default
   (or every writable one) as JSON; **Restore…** reads one back, shows
   it against this printer with the differing ones ticked, and writes
@@ -215,6 +222,8 @@ src/js/
   zplhelp.js          the source view's panel: the command under the cursor
   shortcuts.js        the ? sheet: every keyboard shortcut, in one list
   gallery.js          stored pictures as thumbnails; rename
+  maintenance.js      the Maintenance card: odometers
+  sensor.js           the Media sensor card: readings and thresholds
 src/data/
   zpl-reference.mjs   every ZPL command and parameter, in our words
   sgd-reference.mjs   what each printer setting is for, likewise
@@ -255,6 +264,7 @@ node test/sgdref.test.mjs   # the setting reference, against the catalogue
 node test/history.test.mjs  # the Label Editor's undo history
 node test/shortcuts.test.mjs # the shortcut sheet's list
 node test/gallery.test.mjs  # what a rename may call a picture
+node test/sensor.test.mjs   # the media sensor gauges
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier
