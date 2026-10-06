@@ -58,8 +58,13 @@ Three modes:
   A drag snaps to smart guides -- the edges and centres of the other
   elements and of the label, drawn as blue lines while they hold --
   unless the grid is on, when it lands on the grid instead; Alt drags
-  freely. Press `?` anywhere, or the editor's Shortcuts button, for
-  every keyboard shortcut.
+  freely. A Layers card under the canvas lists the elements top-most
+  first: click one to select it (even one buried under others), drag
+  rows or use To front / Forward / Backward / To back to change the
+  order the ZPL draws them in, and Hide (off the canvas, still printed)
+  or Lock (not dragged or nudged) any of them -- those two are the
+  editor's own and not saved with the label. Press `?` anywhere, or the
+  editor's `?` button, for every keyboard shortcut.
 - **Stored Formats** — pick a stored format in any of the printer's
   label languages (ZPL, EPL, CPCL), fill in one box per field, preview
   and print. What is possible varies by language, because the printer's
@@ -225,6 +230,7 @@ src/js/
   zplhelp.js          the source view's panel: the command under the cursor
   shortcuts.js        the ? sheet: every keyboard shortcut, in one list
   gallery.js          stored pictures as thumbnails; rename
+  layers.js           the Label Editor's Layers card: order, hide, lock
   maintenance.js      the Maintenance card: odometers
   sensor.js           the Media sensor card: readings and thresholds
 src/data/
@@ -268,6 +274,7 @@ node test/history.test.mjs  # the Label Editor's undo history
 node test/shortcuts.test.mjs # the shortcut sheet's list
 node test/gallery.test.mjs  # what a rename may call a picture
 node test/sensor.test.mjs   # the media sensor gauges
+node test/layers.test.mjs   # reordering layers
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier

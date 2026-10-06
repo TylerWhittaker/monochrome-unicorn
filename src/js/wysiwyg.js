@@ -679,7 +679,13 @@ export function createCanvas(
       });
       band.hidden = false;
       const touched = [];
+      const locked = new Set(
+        getDoc()
+          .elements.filter((e) => e.locked)
+          .map((e) => e.id),
+      );
       for (const [id, node] of nodes) {
+        if (locked.has(id)) continue;
         const b = node.getBoundingClientRect();
         if (b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top) {
           touched.push(id);
@@ -806,7 +812,7 @@ export function createCanvas(
         : ' hover:outline hover:outline-1 hover:outline-sky-300');
 
     const existing = node.querySelector('[data-handle]');
-    if (selected && selection.size === 1 && item.type !== 'image') {
+    if (selected && selection.size === 1 && item.type !== 'image' && !item.locked) {
       if (!existing) {
         node.append(
           el('div', {
@@ -847,7 +853,7 @@ export function createCanvas(
     // Moving one of several selected moves them all, keeping their offsets.
     const group =
       mode === 'move' && selection.has(item.id)
-        ? getDoc().elements.filter((e) => selection.has(e.id) && e !== item)
+        ? getDoc().elements.filter((e) => selection.has(e.id) && e !== item && !e.locked)
         : [];
     const origins = new Map(group.map((e) => [e.id, { x: e.x, y: e.y }]));
     const leftmost = Math.min(origin.x, ...group.map((e) => e.x));
@@ -1008,6 +1014,8 @@ export function createCanvas(
     fitted.clear();
 
     for (const item of doc.elements) {
+      // Hidden in the Layers panel: not drawn here, though it prints.
+      if (item.hidden) continue;
       const bounds = elementBounds(item);
 
       let body;
@@ -1031,7 +1039,7 @@ export function createCanvas(
             // ^FR inverts whatever is beneath the field, as the printer
             // does: black on a blank label, white across a filled box.
             (item.reverse ? 'mix-blend-mode:difference;' : '') +
-            'cursor:move;',
+            (item.locked ? 'cursor:default;' : 'cursor:move;'),
           dataset: { id: item.id },
           onpointerdown: (event) => {
             if (event.shiftKey || event.ctrlKey || event.metaKey) {
@@ -1044,6 +1052,11 @@ export function createCanvas(
               }
             } else if (!selection.has(item.id)) {
               setSelection([item.id]);
+            }
+            // Locked in the Layers panel: it can be picked, not moved.
+            if (item.locked) {
+              event.preventDefault();
+              return;
             }
             beginDrag(event, item, 'move');
           },
@@ -1091,7 +1104,8 @@ export function createCanvas(
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
     const doc = getDoc();
-    const items = doc.elements.filter((e) => selection.has(e.id));
+    // Locked elements stay where they are, and are not deleted by a key.
+    const items = doc.elements.filter((e) => selection.has(e.id) && !e.locked);
     if (!items.length) return;
 
     const step = event.shiftKey ? 10 : 1;
@@ -1116,8 +1130,9 @@ export function createCanvas(
     }
     if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault();
-      doc.elements = doc.elements.filter((e) => !selection.has(e.id));
-      selection.clear();
+      const gone = new Set(items.map((e) => e.id));
+      doc.elements = doc.elements.filter((e) => !gone.has(e.id));
+      for (const id of gone) selection.delete(id);
       onChange('delete');
     }
   };

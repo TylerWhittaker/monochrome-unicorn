@@ -77,6 +77,7 @@ import { createHistory } from './history.js';
 import { createPreview } from './preview.js';
 import { openShortcuts } from './shortcuts.js';
 import { chooseStoredImage, isPicture } from './gallery.js';
+import { renderLayers } from './layers.js';
 import { parseCopies } from './formats.js';
 
 const editorState = {
@@ -99,6 +100,8 @@ let codeEditor = null;
 let editorPreview = null;
 let editorHost = null;
 let inspectorHost = null;
+/** The Layers card under the designer. */
+let layersHost = null;
 /** The heading over inspectorHost, which says what it is showing. */
 let inspectorHeadingHost = null;
 let labelPanelHost = null;
@@ -449,7 +452,39 @@ function showZplHelp() {
   });
 }
 
+/** The Layers card: shown with the visual editor, in step with the canvas. */
+function refreshLayers() {
+  if (!layersHost) return;
+  const visual = editorState.view === 'visual' && canvas;
+  layersHost.hidden = !visual;
+  if (!visual) return;
+  renderLayers(layersHost, {
+    doc: editorState.doc,
+    selection: canvas.getSelection(),
+    onSelect: (id, adding) => {
+      const now = canvas.getSelection();
+      canvas.setSelection(
+        adding ? (now.includes(id) ? now.filter((x) => x !== id) : [...now, id]) : [id],
+      );
+      // setSelection says nothing if the selection did not change.
+      refreshLayers();
+    },
+    onOrder: (elements) => {
+      editorState.doc.elements = elements;
+      onDocChanged();
+    },
+    onFlag: (id, flag, on) => {
+      const item = editorState.doc.elements.find((e) => e.id === id);
+      if (!item) return;
+      if (on) item[flag] = true;
+      else delete item[flag];
+      onDocChanged();
+    },
+  });
+}
+
 function renderEditorInspector() {
+  refreshLayers();
   const selectedId = canvas ? canvas.getSelected() : null;
   const item = selectedId ? editorState.doc.elements.find((e) => e.id === selectedId) : null;
   const several = canvas && editorState.view === 'visual' ? canvas.getSelection() : [];
@@ -471,7 +506,7 @@ function renderEditorInspector() {
     const move = (moves) => {
       for (const element of editorState.doc.elements) {
         const m = moves.get(element.id);
-        if (!m) continue;
+        if (!m || element.locked) continue;
         element.x = Math.max(0, element.x + m.dx);
         element.y = Math.max(0, element.y + m.dy);
       }
@@ -539,6 +574,9 @@ function pasteElements(items, offset) {
   for (const item of items) {
     const copy = JSON.parse(JSON.stringify(item));
     copy.id = elementId();
+    // A copy starts visible and free to move, whatever the original was.
+    delete copy.hidden;
+    delete copy.locked;
     copy.x = Math.min(Math.max(0, doc.width - 8), Math.max(0, copy.x + offset));
     copy.y = Math.min(Math.max(0, doc.height - 8), Math.max(0, copy.y + offset));
     // Two fields sharing a ^FN number are one field as far as the
@@ -979,20 +1017,10 @@ export function mountEditor(panel) {
     el('span', { class: 'ml-2 text-[11px] uppercase tracking-wide text-ink-500' }, ['Zoom']),
     zoomSelect,
   ]);
-  viewBar = el('div', { class: 'toolbar' }, [
-    zoomGroup,
-    el(
-      'button',
-      {
-        class: 'btn-secondary btn-sm',
-        title: 'Every keyboard shortcut (?)',
-        onclick: () => openShortcuts(),
-      },
-      ['Shortcuts'],
-    ),
-  ]);
+  viewBar = el('div', { class: 'toolbar' }, [zoomGroup]);
 
   editorHost = el('div', { class: EDITOR_HOST_CLASS.visual });
+  layersHost = el('div', { class: 'card overflow-hidden', id: 'layers' });
   inspectorHost = el('div');
   inspectorHeadingHost = el('div', {}, [panelHeading('Object options', 'The selected element')]);
   labelPanelHost = el('div');
@@ -1050,10 +1078,8 @@ export function mountEditor(panel) {
         // self-start, or a grid item stretches to the tallest column and the
         // card keeps a band of white below the canvas whenever the label is
         // shorter than the rails beside it.
-        el(
-          'div',
-          { class: 'card min-w-0 self-start overflow-hidden lg:col-span-2 xl:col-span-1' },
-          [
+        el('div', { class: 'min-w-0 space-y-3 self-start lg:col-span-2 xl:col-span-1' }, [
+          el('div', { class: 'card min-w-0 overflow-hidden' }, [
             // Which label, and which view of it.
             el('div', { class: 'toolbar' }, [fileSelect, viewToggle]),
             // What to do with it: the file operations, then Print at the far end.
@@ -1113,6 +1139,16 @@ export function mountEditor(panel) {
                 },
                 ['Redo'],
               )),
+              el(
+                'button',
+                {
+                  class: 'btn-secondary btn-sm w-7 px-0',
+                  title: 'Every keyboard shortcut (?)',
+                  'aria-label': 'Shortcuts',
+                  onclick: () => openShortcuts(),
+                },
+                ['?'],
+              ),
               el('label', { class: 'ml-auto flex items-center gap-1.5 text-ink-600' }, [
                 'Count',
                 editorCountInput,
@@ -1124,8 +1160,9 @@ export function mountEditor(panel) {
             addBar,
             viewBar,
             editorHost,
-          ],
-        ),
+          ]),
+          layersHost,
+        ]),
         // Object properties sit immediately right of the designer, since
         // that is what you are looking at while you place things; the label
         // as a whole is set up once, so it stays in the far rail under the

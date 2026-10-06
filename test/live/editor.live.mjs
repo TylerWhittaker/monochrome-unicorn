@@ -1056,4 +1056,50 @@ export default function register(s, ctx) {
     out = await generated(() => drag(3, true));
     assert.match(out, /\^FO44,200\^GB50,50,50/);
   });
+
+  // Still the three: text and box at (41,40), the square at (41,200).
+  s.test('Layers: pick one from under another, reorder, lock and hide', async () => {
+    const layers = panel.locator('#layers');
+    const rows = layers.locator('[data-layer]');
+    assert.equal(await rows.count(), 3);
+    // The square was pasted last, so it is drawn last: the top row. (A
+    // solid ^GB50,50,50 reads back as a 50-dot line 50 thick.)
+    const listed = (await rows.allTextContents()).join(' | ');
+    assert.match(await rows.first().textContent(), /50/, `top of the list: ${listed}`);
+    const squareId = await rows.first().getAttribute('data-layer');
+    assert.match(await rows.last().textContent(), /Text “From disk”/);
+
+    // The text sits under the box; its row reaches it.
+    await rows.last().click();
+    assert.equal(await field('Content').inputValue(), 'From disk');
+
+    let out = await generated(() =>
+      layers.getByRole('button', { name: 'To front', exact: true }).click(),
+    );
+    assert.ok(
+      out.indexOf('From disk') > out.indexOf('^GB200,80'),
+      'the text is now written after the box',
+    );
+    assert.match(await rows.first().textContent(), /From disk/);
+
+    // Locked, the arrow keys leave it where it is.
+    const textRow = rows.filter({ hasText: 'From disk' });
+    await textRow.locator('[data-flag="locked"]').click();
+    assert.equal(
+      await textRow.locator('[data-flag="locked"]').getAttribute('aria-pressed'),
+      'true',
+    );
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    out = await generated(() => page.keyboard.press('ArrowRight'));
+    assert.match(out, /\^FO41,40\^A0N/);
+
+    // Hidden: off the canvas, still in the label.
+    const squareRow = layers.locator(`[data-layer="${squareId}"]`);
+    out = await generated(() => squareRow.locator('[data-flag="hidden"]').click());
+    assert.equal(await nodes().count(), 2);
+    assert.match(out, /\^GB50,50,50/);
+    await squareRow.locator('[data-flag="hidden"]').click();
+    await textRow.locator('[data-flag="locked"]').click();
+    assert.equal(await nodes().count(), 3);
+  });
 }
