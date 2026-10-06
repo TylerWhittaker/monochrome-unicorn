@@ -76,6 +76,7 @@ import { createCodeEditor } from './codeeditor.js';
 import { createHistory } from './history.js';
 import { createPreview } from './preview.js';
 import { openShortcuts } from './shortcuts.js';
+import { chooseStoredImage, isPicture } from './gallery.js';
 import { parseCopies } from './formats.js';
 
 const editorState = {
@@ -492,6 +493,14 @@ function renderEditorInspector() {
     images: editorState.images,
     onChange: onDocChanged,
     onUploadImage: (target) => uploadImageForElement(target),
+    onChooseImage: async (target) => {
+      const file = await chooseStoredImage(editorState.images, target.source);
+      if (!file || file.name === target.source) return;
+      target.source = file.name;
+      delete target.naturalWidth;
+      delete target.naturalHeight;
+      onDocChanged();
+    },
     onDelete: () => deleteSelected(),
     onDuplicate: () => pasteElements([item], 20),
   });
@@ -598,7 +607,7 @@ async function refreshFileList() {
   try {
     const files = await listFiles({ dev: 'E', otype: '*  ' });
     editorState.scripts = files.filter((f) => f.otype === 'ZPL');
-    editorState.images = files.filter((f) => ['PNG', 'GRF', 'BMP', 'PCX'].includes(f.otype));
+    editorState.images = files.filter(isPicture);
     editorState.driveFiles = files;
     takeStoredFonts();
   } catch (err) {

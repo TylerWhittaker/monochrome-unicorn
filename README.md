@@ -68,7 +68,10 @@ Three modes:
   edit a `.ZPL` in the Label Editor, print a stored format, run a
   `.BAT`, delete, and upload. Which buttons a row gets is decided by the
   type, because the printer's web server treats types very differently;
-  a button that is off says why. The listing is one read of
+  a button that is off says why. **Pictures** shows every graphic as a
+  thumbnail instead, with Rename (`^TO` copies it, and only once the
+  copy is listed does `^ID` remove the original); the Label Editor's
+  Choose… picks an image from the same thumbnails. The listing is one read of
   `file.drive_listing` — about nine seconds, with the header saying so
   — which is the only place the real extensions live. Settings reads it
   once its own sweep is done and keeps one copy for the whole console,
@@ -211,6 +214,7 @@ src/js/
   ui.js               DOM helpers, toasts, modals, password prompt
   zplhelp.js          the source view's panel: the command under the cursor
   shortcuts.js        the ? sheet: every keyboard shortcut, in one list
+  gallery.js          stored pictures as thumbnails; rename
 src/data/
   zpl-reference.mjs   every ZPL command and parameter, in our words
   sgd-reference.mjs   what each printer setting is for, likewise
@@ -250,6 +254,7 @@ node test/zplhelp.test.mjs  # the source view's command reference
 node test/sgdref.test.mjs   # the setting reference, against the catalogue
 node test/history.test.mjs  # the Label Editor's undo history
 node test/shortcuts.test.mjs # the shortcut sheet's list
+node test/gallery.test.mjs  # what a rename may call a picture
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier

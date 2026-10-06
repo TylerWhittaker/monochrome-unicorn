@@ -250,6 +250,38 @@ export default function register(s, ctx) {
     });
   });
 
+  s.test('Choose… picks a stored picture from thumbnails', async () => {
+    const own = `E:${IMAGE}.GRF`;
+    const choose = async () => {
+      await objectCard.getByRole('button', { name: 'Choose…' }).click();
+      const gallery = page.locator('#modal-root [data-gallery]');
+      await gallery.waitFor();
+      return gallery;
+    };
+    let gallery = await choose();
+    const mine = gallery.locator(`[data-picture="${own}"]`);
+    await waitFor(() => mine.locator('img').evaluate((n) => n.complete && n.naturalWidth > 0), {
+      what: 'its thumbnail',
+    });
+    assert.match(await mine.locator('button').getAttribute('class'), /outline-sky-500/, 'marked');
+    const others = await gallery
+      .locator('[data-picture]')
+      .evaluateAll((nodes) => nodes.map((n) => n.dataset.picture));
+    const other = others.find((n) => n !== own);
+    if (!other) {
+      await page.locator('#modal-root').getByRole('button', { name: 'Cancel' }).click();
+      return;
+    }
+    // Another picture, then back to this one.
+    let out = await generated(() =>
+      gallery.locator(`[data-picture="${other}"] button`).first().click(),
+    );
+    assert.match(out, new RegExp(`\\^(XG|IM)${other.replace('.', '\\.')}`));
+    gallery = await choose();
+    out = await generated(() => gallery.locator(`[data-picture="${own}"] button`).first().click());
+    assert.match(out, ADDED.image);
+  });
+
   s.test('the source view holds the same label, every element in it', async () => {
     const source = await readSource();
     for (const [type, re] of Object.entries(ADDED)) assert.match(source, re, type);

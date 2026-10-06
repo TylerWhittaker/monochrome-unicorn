@@ -522,6 +522,23 @@ export function loadStoredImage({ dev, oname, otype }) {
 }
 
 /** Forget a cached graphic, so the next render re-reads it. */
+/**
+ * Give a stored object a new name on the same drive: ^TO copies it and,
+ * once a listing shows the copy, ^ID removes the old one -- never the
+ * other way round, so a copy that failed cannot cost the original.
+ * Neither command reports anything; the listing is the proof.
+ */
+export async function renameStoredObject({ dev, oname, otype }, newOname) {
+  const from = `${dev}:${oname}.${otype}`;
+  await sendControl(`^XA^TO${from},${dev}:${newOname}.${otype}^FS^XZ`);
+  const listed = await listFiles({ dev, otype: '*  ' });
+  if (!listed.some((f) => f.oname === newOname && f.otype === otype)) {
+    throw new Error(`the printer did not make ${dev}:${newOname}.${otype}`);
+  }
+  await sendControl(`^XA^ID${from}^FS^XZ`);
+  forgetStoredImage(from);
+}
+
 export function forgetStoredImage(name) {
   const pending = imageCache.get(name);
   if (!pending) return;

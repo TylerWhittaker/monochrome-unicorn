@@ -86,7 +86,9 @@ import {
   deleteStoredFile,
   deleteFile,
   parseObjectName,
+  renameStoredObject,
 } from './printer.js';
+import { pictureGrid, isPicture, askRename } from './gallery.js';
 import { languageOf, parseFields } from './formats.js';
 import { formatZpl } from './zpl.js';
 import { openInEditor } from './editor.js';
@@ -121,6 +123,8 @@ const fsState = {
   loaded: false,
   /** When the listing shown was read, so a copy already taken is not retaken. */
   listedAt: 0,
+  /** Showing the pictures as thumbnails rather than every file as a row. */
+  pictures: false,
 };
 
 let fsListNode = null;
@@ -129,6 +133,7 @@ let fsNoticeNode = null;
 let fsLoadingNode = null;
 let fsDriveSelect = null;
 let fsRefreshBtn = null;
+let fsPicturesBtn = null;
 
 /* ------------------------------------------------------------------ *
  * What a file is, and what can be done with it
@@ -315,6 +320,7 @@ function fsVisibleFiles() {
   const needle = fsState.filter.toLowerCase();
   return fsState.files.filter((file) => {
     if (fsState.drive !== '*' && file.dev !== fsState.drive) return false;
+    if (fsState.pictures && !isPicture(file)) return false;
     return !needle || file.name.toLowerCase().includes(needle);
   });
 }
@@ -324,9 +330,11 @@ function fsRenderList() {
   const total = fsState.files.length;
   fsCountNode.textContent = !fsState.loaded
     ? ''
-    : files.length === total
-      ? `${total} file${total === 1 ? '' : 's'}`
-      : `${files.length} of ${total} files`;
+    : fsState.pictures
+      ? `${files.length} picture${files.length === 1 ? '' : 's'}`
+      : files.length === total
+        ? `${total} file${total === 1 ? '' : 's'}`
+        : `${files.length} of ${total} files`;
 
   if (!files.length) {
     // "No files" is a fact about a drive, not about a listing that has
@@ -336,11 +344,20 @@ function fsRenderList() {
       ? 'Reading the drive listing…'
       : !fsState.loaded
         ? 'The drive listing has not been read yet.'
-        : total
-          ? 'No files match this filter.'
-          : 'This drive holds no files.';
+        : fsState.pictures
+          ? 'No pictures here.'
+          : total
+            ? 'No files match this filter.'
+            : 'This drive holds no files.';
     replaceChildren(fsListNode, [
       el('p', { class: 'px-3 py-6 text-center text-ink-400' }, [empty]),
+    ]);
+    return;
+  }
+
+  if (fsState.pictures) {
+    replaceChildren(fsListNode, [
+      el('div', { class: 'p-3' }, [pictureGrid(files, { actions: fsPictureActions })]),
     ]);
     return;
   }
@@ -348,6 +365,47 @@ function fsRenderList() {
   replaceChildren(fsListNode, [
     el('div', { class: 'divide-y divide-ink-100' }, files.map(fsBuildRow)),
   ]);
+}
+
+/** The buttons under a picture: what its row would offer, and Rename. */
+function fsPictureActions(file) {
+  const caps = fsCapabilities(file);
+  const button = (label, reason, onclick, cls = 'btn-secondary btn-sm') =>
+    el(
+      'button',
+      { class: `${cls} px-2`, disabled: Boolean(reason), title: reason || undefined, onclick },
+      [label],
+    );
+  return [
+    button('Download', caps.download, () => fsDownloadFile(file)),
+    button('Rename', caps.delete, () => fsRenameFile(file)),
+    button('Delete', caps.delete, () => fsDeleteFile(file), 'btn-danger btn-sm'),
+  ];
+}
+
+/** Rename a stored object, and show what the printer then lists. */
+async function fsRenameFile(file) {
+  fsNoteWait();
+  const target = await askRename(file, fsState.files);
+  if (!target) return;
+  const busy = toast(`Renaming ${file.name}…`, 'busy', { timeout: 0 });
+  try {
+    await renameStoredObject(file, target.oname);
+    const old = { ...file };
+    file.oname = target.oname;
+    file.name = target.name;
+    staleDriveListing();
+    fsRenderList();
+    // renameStoredObject saw the copy; this checks the original went.
+    if (await fsStillThere(old)) {
+      busy.update(`Copied to ${target.name}, but the printer kept ${old.name} too.`, 'error');
+      fsRefresh({ force: true });
+      return;
+    }
+    busy.update(`Renamed ${old.name} to ${target.name}.`, 'success');
+  } catch (err) {
+    busy.update(`Could not rename it: ${err.message}`, 'error');
+  }
 }
 
 function fsBuildRow(file) {
@@ -966,6 +1024,21 @@ export function mountFiles(panel) {
     },
     ['Refresh'],
   );
+  fsPicturesBtn = el(
+    'button',
+    {
+      class: 'btn-secondary btn-sm',
+      'aria-pressed': 'false',
+      title: 'Show the pictures as thumbnails',
+      onclick: () => {
+        fsState.pictures = !fsState.pictures;
+        fsPicturesBtn.setAttribute('aria-pressed', String(fsState.pictures));
+        fsPicturesBtn.className = fsState.pictures ? 'btn-primary btn-sm' : 'btn-secondary btn-sm';
+        fsRenderList();
+      },
+    },
+    ['Pictures'],
+  );
   fsCountNode = el('span', { class: 'text-[11px] text-ink-500' });
   fsLoadingNode = el('span', { class: 'flex items-center gap-1.5' });
   fsNoticeNode = el('div');
@@ -976,6 +1049,7 @@ export function mountFiles(panel) {
       el('div', { class: 'toolbar' }, [
         fsDriveSelect,
         filterInput,
+        fsPicturesBtn,
         picker,
         el('div', { class: 'ml-auto flex items-center gap-3' }, [
           fsLoadingNode,

@@ -580,7 +580,7 @@ export function renderLabelPanel(host, { doc, onChange }) {
 /** Panel for the selected element, or a hint when nothing is selected. */
 export function renderElementPanel(
   host,
-  { doc, item, images, onChange, onDelete, onDuplicate, onUploadImage },
+  { doc, item, images, onChange, onDelete, onDuplicate, onUploadImage, onChooseImage },
 ) {
   if (!item) {
     replaceChildren(host, [
@@ -1026,14 +1026,25 @@ export function renderElementPanel(
           }),
         ),
       ),
-      el(
-        'button',
-        {
-          class: 'btn-secondary btn-sm w-full',
-          onclick: () => onUploadImage(item),
-        },
-        ['Upload an image…'],
-      ),
+      el('div', { class: 'grid grid-cols-2 gap-2' }, [
+        el(
+          'button',
+          {
+            class: 'btn-secondary btn-sm',
+            title: 'Pick from thumbnails of the pictures on the printer',
+            onclick: () => onChooseImage(item),
+          },
+          ['Choose…'],
+        ),
+        el(
+          'button',
+          {
+            class: 'btn-secondary btn-sm',
+            onclick: () => onUploadImage(item),
+          },
+          ['Upload an image…'],
+        ),
+      ]),
     ];
 
     if (isGrf) {

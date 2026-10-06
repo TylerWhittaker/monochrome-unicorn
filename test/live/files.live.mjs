@@ -71,6 +71,7 @@ export default function register(s, ctx) {
   s.cleanup(async () => {
     await removeFile(cfg.ip, `E:${TEXT_FILE}.ZPL`);
     await removeFile(cfg.ip, `E:${IMAGE_FILE}.GRF`);
+    await removeFile(cfg.ip, `E:${IMAGE_FILE}2.GRF`);
     await removeFile(cfg.ip, `E:${BATCH_FILE}.BAT`);
   }, 'remove the test files');
   s.cleanup(() => con && con.close());
@@ -222,6 +223,46 @@ export default function register(s, ctx) {
       what: 'the graphic to load',
     });
     await view.getByRole('button', { name: 'Close' }).click();
+  });
+
+  s.test('Pictures shows thumbnails; Rename gives one a new name on the printer', async () => {
+    const toggle = panel.locator('.toolbar').getByRole('button', { name: 'Pictures' });
+    await toggle.click();
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+    assert.equal(await row(`E:${TEXT_FILE}.ZPL`).count(), 0, 'only pictures');
+    const tile = (name) => panel.locator(`[data-picture="${name}"]`);
+    const img = tile(`E:${IMAGE_FILE}.GRF`).locator('img');
+    await waitFor(() => img.evaluate((n) => n.complete && n.naturalWidth > 0), {
+      what: 'the thumbnail to load',
+    });
+    assert.match(await tile(`E:${IMAGE_FILE}.GRF`).textContent(), /120 × 60/);
+
+    const rename = async (from, to) => {
+      await tile(from).getByRole('button', { name: 'Rename' }).click();
+      const ask = dialog(`Rename ${from}`);
+      await ask.locator('input').fill(to);
+      await ask.getByRole('button', { name: 'Rename' }).click();
+      await ui.toast(new RegExp(`Renamed ${from.replace('.', '\\.')} to E:${to}\\.GRF`), {
+        timeout: 60000,
+      });
+    };
+    await rename(`E:${IMAGE_FILE}.GRF`, `${IMAGE_FILE}2`);
+    assert.equal(await hasObject(cfg.ip, 'E', `${IMAGE_FILE}2`), true, 'the new name');
+    assert.equal(await hasObject(cfg.ip, 'E', IMAGE_FILE), false, 'not the old');
+    await tile(`E:${IMAGE_FILE}2.GRF`).waitFor();
+
+    // A name already taken is refused before anything is sent.
+    await tile(`E:${IMAGE_FILE}2.GRF`).getByRole('button', { name: 'Rename' }).click();
+    const ask = dialog(`Rename E:${IMAGE_FILE}2.GRF`);
+    await ask.locator('input').fill(`${IMAGE_FILE}2`);
+    await ask.getByRole('button', { name: 'Rename' }).click();
+    await ask.getByText('That is its name already.').waitFor();
+    await ask.getByRole('button', { name: 'Cancel' }).click();
+
+    await rename(`E:${IMAGE_FILE}2.GRF`, IMAGE_FILE);
+    assert.equal(await hasObject(cfg.ip, 'E', IMAGE_FILE), true);
+    await toggle.click();
+    await row(`E:${IMAGE_FILE}.GRF`).waitFor();
   });
 
   s.test('a type the web server cannot store says how to upload it instead', async () => {
