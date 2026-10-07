@@ -46,8 +46,8 @@ export default function register(s, ctx) {
 
   s.test('the page stays near its size budget', async () => {
     const page = await http(cfg.ip, '/INDEX.SHTML');
-    // ~56 KB/s: README keeps the total near 200 KB; well past 400 KB is a regression.
-    assert.ok(page.bytes.length < 450 * 1024, `INDEX.SHTML is ${page.bytes.length} bytes`);
+    // Packed (gzip + base64) it is about 170 KB; well past 250 KB is a regression.
+    assert.ok(page.bytes.length < 250 * 1024, `INDEX.SHTML is ${page.bytes.length} bytes`);
   });
 
   s.test('the ZPL command reference is served beside the page, as JSON', async () => {
@@ -84,6 +84,21 @@ export default function register(s, ctx) {
     const status = (await page.locator('#hdr-status').textContent()).trim();
     assert.ok(['ready', 'paper out', 'paused', 'unknown'].includes(status), `status "${status}"`);
     assert.equal(await page.title(), `${friendly} — Printer Console`);
+  });
+
+  s.test('the packed page unpacks: styles, catalogue, htmx and app all in place', async () => {
+    const state = await con.page.evaluate(() => ({
+      unpacking: document.documentElement.classList.contains('unpacking'),
+      packed: Boolean(document.getElementById('packed')),
+      schema: Boolean(document.getElementById('sgd-schema')),
+      htmx: typeof window.htmx,
+      header: getComputedStyle(document.querySelector('header')).backgroundColor,
+      fatal: Boolean(document.getElementById('fatal')),
+    }));
+    assert.deepEqual(
+      { ...state, header: state.header !== 'rgba(0, 0, 0, 0)' },
+      { unpacking: false, packed: false, schema: true, htmx: 'object', header: true, fatal: false },
+    );
   });
 
   s.test('the footer carries this build’s version', async () => {

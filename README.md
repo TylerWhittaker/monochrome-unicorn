@@ -148,11 +148,17 @@ them. The measurements behind each are in
 **No custom CGI, and one page.** Only the built-in endpoints exist, and
 the page cannot reference assets it did not bring with it. So the build
 inlines the CSS, htmx, the app and the setting catalogue into a single
-file.
+file -- packed: gzipped together and carried as base64, which a short
+script in the page unpacks with the browser's own `DecompressionStream`
+before starting the app. That takes the page from about 440 KB to about
+170 KB. It needs a browser from 2023 or later (Chrome 80, Safari 16.4,
+Firefox 113); an older one is told so on the page. What the printer's
+preprocessor fills in (`boot-vars`) and the footer stay outside the
+pack, as plain text.
 
 **~56 KB/s.** That makes page weight the main budget — a 480 KB page
-takes 8.3 s to serve. The build prints the breakdown and keeps the total
-near 200 KB. Ace (~400 KB) is the one thing loaded from a CDN, on demand,
+takes 8.3 s to serve. The build prints the breakdown, packed and not,
+and the live tests fail a page over 250 KB. Ace (~400 KB) is the one thing loaded from a CDN, on demand,
 the first time you open the source view; when the client has no internet
 the editor falls back to a textarea with its own ZPL highlighting, so the
 console still works on an isolated network.
@@ -243,7 +249,7 @@ lcd_display_helper.sh copy the real LCD bitmap to the printer for the
                       LCD Viewer, each second (needs port 9100)
 tools/
   fetch-schema.mjs    read the SGD catalogue over port 9100
-  build.mjs           bundle and inline everything
+  build.mjs           bundle, inline and pack everything
   upload.mjs          CISDFCRC16 file upload
   lcd-shot.mjs        save the LCD framebuffer as a PNG (needs port 9100)
   zpl-manual-extract.mjs  split the ZPL guide's text into one record per
@@ -268,7 +274,7 @@ printer taken from `test/live/config.json` when `IP` is not given.
 node test/zpl.test.mjs      # ZPL generation/parsing round-trips
 node test/printer.test.mjs  # helper-file parsing and entity decoding
 node test/state.test.mjs    # which interface's IP the header shows
-node test/build.test.mjs    # how settings branches pack into helper files
+node test/build.test.mjs    # helper-file packing, and the packed page
 node test/lcd.test.mjs      # reading lcd_display_helper.sh's frames
 node test/wysiwyg.test.mjs  # the designer's rulers
 node test/zplhelp.test.mjs  # the source view's command reference
@@ -326,9 +332,10 @@ settings in `.prettierrc.json` — the sources, the tools and the tests,
 and the JS the build embeds in `INDEX.SHTML` too: the build strips the
 comments from the bundled app, then runs it and the page shell's inline
 `<script>` back through prettier. The embedded copy is indented with tabs
-rather than two spaces, which is still prettier's layout but about 20 KB
-lighter to serve. The one exception is `vendor/htmx.min.js`, which is
-inlined minified as it ships; laying it out would roughly double its 50 KB.
+rather than two spaces, which is still prettier's layout; packed, the
+layout costs next to nothing, and the code is as readable in devtools as
+in the source. The one exception is `vendor/htmx.min.js`, which is
+inlined minified as it ships.
 The pre-commit hook refuses a staged `.js` or `.mjs` that prettier would
 change.
 

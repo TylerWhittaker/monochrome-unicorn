@@ -551,3 +551,10 @@ a plain `.ZPL` file — it does not have to have been stored with `^DF`.
 About 56 KB/s, whether or not the file goes through the preprocessor
 (a 480 KB page takes 8.3 s). This is the reason the built page is kept
 near 200 KB and Ace is loaded from a CDN instead of inlined.
+
+The server sends no `Content-Encoding`, and there is no way to give an
+`.SHTML` one, so the build compresses the page itself: CSS, htmx, the
+app and the catalogue gzipped together and carried as base64 (wrapped at
+120 characters, in case the preprocessor minds long lines), unpacked in
+the browser with `DecompressionStream`. 437 KB became 167 KB; on a wired
+ZD500R the page went from 1.1 s to 0.6 s.

@@ -18,12 +18,16 @@
 
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
-<HTML lang="en">
+<HTML lang="en" class="unpacking">
 <HEAD>
 <META HTTP-EQUIV="content-type" CONTENT="text/html; charset=UTF-8">
 <META NAME="viewport" CONTENT="width=device-width, initial-scale=1">
 <TITLE>Zebra Printer Console</TITLE>
-<STYLE>{{STYLES}}</STYLE>
+<!--
+  Hidden until the packed styles below are unpacked, so the bare shell is
+  never seen.
+-->
+<STYLE>html.unpacking body{visibility:hidden}</STYLE>
 </HEAD>
 <BODY class="min-h-screen">
 
@@ -36,7 +40,6 @@
 {{BOOT_VARS}}
 </script>
 
-<script type="application/json" id="sgd-schema">{{SGD_SCHEMA}}</script>
 
 <header class="bg-ink-900 text-white">
   <div class="mx-auto max-w-6xl px-4 pt-3">
@@ -100,6 +103,8 @@
       (document.body || document.documentElement).appendChild(box);
     }
     box.textContent += (box.textContent ? '\n\n' : '') + what + ': ' + detail;
+    // A failure while unpacking must not stay hidden with the page.
+    document.documentElement.classList.remove('unpacking');
   }
   window.addEventListener('error', function (e) {
     show(
@@ -116,7 +121,57 @@
 })();
 </script>
 
-<script>{{HTMX}}</script>
-<script>{{APP_JS}}</script>
+<!--
+  The styles, the settings catalogue, htmx and the app, gzipped and in
+  base64: about a third of their size, and page weight is what the
+  printer's web server is slow at. tools/build.mjs packs them; the script
+  after unpacks them with the browser's own DecompressionStream.
+-->
+<script type="text/plain" id="packed">
+{{PACKED}}
+</script>
+<script>
+(function () {
+  var root = document.documentElement;
+  if (!window.DecompressionStream) {
+    root.classList.remove('unpacking');
+    throw new Error(
+      'This browser cannot unpack the console (it has no DecompressionStream). ' +
+        'Open it in a current Chrome, Edge, Firefox or Safari.',
+    );
+  }
+  var packed = document.getElementById('packed');
+  var binary = atob(packed.textContent.replace(/\s+/g, ''));
+  var bytes = new Uint8Array(binary.length);
+  for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  var text = new Response(
+    new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')),
+  ).text();
+  // htmx starts on DOMContentLoaded, or at once if the page has finished
+  // loading; run between the two, it would wait for an event already gone.
+  var loaded = new Promise(function (resolve) {
+    if (document.readyState === 'complete') resolve();
+    else window.addEventListener('load', resolve, { once: true });
+  });
+  Promise.all([text, loaded]).then(function (results) {
+    var parts = JSON.parse(results[0]);
+    var style = document.createElement('style');
+    style.textContent = parts.css;
+    document.head.appendChild(style);
+    var schema = document.createElement('script');
+    schema.type = 'application/json';
+    schema.id = 'sgd-schema';
+    schema.textContent = parts.schema;
+    document.body.appendChild(schema);
+    [parts.htmx, parts.app].forEach(function (code) {
+      var script = document.createElement('script');
+      script.textContent = code;
+      document.body.appendChild(script);
+    });
+    packed.remove();
+    root.classList.remove('unpacking');
+  });
+})();
+</script>
 </BODY>
 </HTML>

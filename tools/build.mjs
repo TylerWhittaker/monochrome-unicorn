@@ -36,6 +36,7 @@ import { ZPL } from '../src/data/zpl-reference.mjs';
 import { SGD } from '../src/data/sgd-reference.mjs';
 import { readVersion } from './version.mjs';
 import { execFileSync } from 'node:child_process';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -502,6 +503,29 @@ export function referenceFile(reference) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Packing
+ * ------------------------------------------------------------------ */
+
+/**
+ * The page's styles and scripts as one gzipped, base64 blob for
+ * src/index.html's unpacker: about a third of their size, which is what
+ * the printer's slow web server cares about. Wrapped in short lines, in
+ * case the SSI preprocessor that serves the page has a limit; atob in the
+ * browser ignores the line breaks.
+ */
+export function packPayload(parts, width = 120) {
+  const base64 = gzipSync(Buffer.from(JSON.stringify(parts)), { level: 9 }).toString('base64');
+  const lines = [];
+  for (let i = 0; i < base64.length; i += width) lines.push(base64.slice(i, i + width));
+  return lines.join('\n');
+}
+
+/** The other way, for tests: the parts a packed blob holds. */
+export function unpackPayload(packed) {
+  return JSON.parse(gunzipSync(Buffer.from(packed.replace(/\s+/g, ''), 'base64')).toString());
+}
+
+/* ------------------------------------------------------------------ *
  * Main
  * ------------------------------------------------------------------ */
 
@@ -534,11 +558,10 @@ export function build({ schemaPath, outDir }) {
   const htmx = readFileSync(join(ROOT, 'vendor/htmx.min.js'), 'utf8').trim();
   const app = prettify(JS_BANNER + '\n' + squeeze(bundle(join(ROOT, 'src/js/app.js'))));
 
+  const schemaJson = JSON.stringify(schema);
+  const packed = packPayload({ css, schema: schemaJson, htmx, app });
   const replacements = {
-    '{{STYLES}}': css,
-    '{{HTMX}}': htmx,
-    '{{APP_JS}}': app,
-    '{{SGD_SCHEMA}}': JSON.stringify(schema),
+    '{{PACKED}}': packed,
     '{{BOOT_VARS}}': bootVarsBlock(),
     '{{VERSION}}': readVersion(),
     '{{BUILD_STAMP}}': buildStamp(),
@@ -577,7 +600,8 @@ export function build({ schemaPath, outDir }) {
       css: css.length,
       htmx: htmx.length,
       app: app.length,
-      schema: replacements['{{SGD_SCHEMA}}'].length,
+      schema: schemaJson.length,
+      packed: packed.length,
     },
   };
 }
@@ -601,6 +625,7 @@ function main() {
   console.log(`  app js       ${kb(result.parts.app)}`);
   console.log(`  sgd schema   ${kb(result.parts.schema)}`);
   console.log(`  ------------------------`);
+  console.log(`  packed       ${kb(result.parts.packed)}   (all four, gzipped, base64)`);
   console.log(
     `  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / 56320).toFixed(1)}s to serve at 56 KB/s)`,
   );
