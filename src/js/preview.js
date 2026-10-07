@@ -46,7 +46,7 @@ let seq = 0;
 export function labelSizeOf(zpl) {
   const last = (re) => {
     const all = [...String(zpl).matchAll(re)];
-    return all.length ? parseInt(all.at(-1)[1], 10) || null : null;
+    return all.length ? parseInt(all[all.length - 1][1], 10) || null : null;
   };
   return { width: last(/\^PW(\d+)/g), height: last(/\^LL(\d+)/g) };
 }

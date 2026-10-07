@@ -529,7 +529,7 @@ export function unpackPayload(packed) {
  * Main
  * ------------------------------------------------------------------ */
 
-export function build({ schemaPath, outDir }) {
+export function build({ schemaPath, outDir, packed = true }) {
   mkdirSync(outDir, { recursive: true });
 
   // The catalogue is captured from a printer rather than kept in the
@@ -559,12 +559,31 @@ export function build({ schemaPath, outDir }) {
   const app = prettify(JS_BANNER + '\n' + squeeze(bundle(join(ROOT, 'src/js/app.js'))));
 
   const schemaJson = JSON.stringify(schema);
-  const packed = packPayload({ css, schema: schemaJson, htmx, app });
+  // Packed (the default): everything gzipped in one blob, and
+  // src/unpack.js to unpack it. Unpacked: each inlined as it is, for a
+  // browser without DecompressionStream (see README).
+  const blob = packed ? packPayload({ css, schema: schemaJson, htmx, app }) : '';
+  const payload = packed
+    ? [
+        '<script type="text/plain" id="packed">',
+        blob,
+        '</script>',
+        '<script>',
+        prettify(squeeze(readFileSync(join(ROOT, 'src/unpack.js'), 'utf8'))),
+        '</script>',
+      ].join('\n')
+    : [
+        `<script type="application/json" id="sgd-schema">${schemaJson}</script>`,
+        `<script>${htmx}</script>`,
+        `<script>${app}</script>`,
+      ].join('\n');
   const replacements = {
-    '{{PACKED}}': packed,
+    '{{HTML_CLASS}}': packed ? ' class="unpacking"' : '',
+    '{{HEAD_STYLE}}': packed ? 'html.unpacking body{visibility:hidden}' : css,
+    '{{PAYLOAD}}': payload,
     '{{BOOT_VARS}}': bootVarsBlock(),
     '{{VERSION}}': readVersion(),
-    '{{BUILD_STAMP}}': buildStamp(),
+    '{{BUILD_STAMP}}': buildStamp() + (packed ? '' : ' &middot; unpacked'),
   };
 
   let html = template;
@@ -601,8 +620,9 @@ export function build({ schemaPath, outDir }) {
       htmx: htmx.length,
       app: app.length,
       schema: schemaJson.length,
-      packed: packed.length,
+      packed: blob.length,
     },
+    packed,
   };
 }
 
@@ -616,6 +636,7 @@ function main() {
   const result = build({
     schemaPath: resolve(flag('--schema', 'data/sgd-schema.json')),
     outDir: resolve(flag('--out', 'dist')),
+    packed: !args.includes('--unpacked'),
   });
 
   const kb = (n) => (n / 1024).toFixed(1).padStart(6) + ' KB';
@@ -625,7 +646,11 @@ function main() {
   console.log(`  app js       ${kb(result.parts.app)}`);
   console.log(`  sgd schema   ${kb(result.parts.schema)}`);
   console.log(`  ------------------------`);
-  console.log(`  packed       ${kb(result.parts.packed)}   (all four, gzipped, base64)`);
+  if (result.packed) {
+    console.log(`  packed       ${kb(result.parts.packed)}   (all four, gzipped, base64)`);
+  } else {
+    console.log('  unpacked     (each inlined as it is: --unpacked)');
+  }
   console.log(
     `  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / 56320).toFixed(1)}s to serve at 56 KB/s)`,
   );

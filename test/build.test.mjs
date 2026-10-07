@@ -118,6 +118,25 @@ if (existsSync(schemaPath)) {
       rmSync(out, { recursive: true, force: true });
     }
   });
+  check('the unpacked build inlines each part as it is, for older browsers', () => {
+    const out = mkdtempSync(join(tmpdir(), 'zebra-build-'));
+    try {
+      build({ schemaPath, outDir: out, packed: false });
+      const html = readFileSync(join(out, 'INDEX.SHTML'), 'utf8');
+      assert.ok(!html.includes('{{'), 'every placeholder filled');
+      assert.ok(!html.includes('id="packed"'), 'nothing packed');
+      assert.ok(!html.includes('class="unpacking"'), 'not hidden waiting to unpack');
+      assert.ok(!html.includes('html.unpacking'), 'no rule hiding it');
+      assert.ok(!html.includes('DecompressionStream'), 'no unpacker');
+      assert.match(html, /<STYLE>[^<]{1000,}<\/STYLE>/, 'the styles in the head');
+      assert.match(html, /<script type="application\/json" id="sgd-schema">\{/);
+      assert.match(html, /function start\(\)/);
+      assert.match(html, /id="boot-vars">[\s\S]*<!--#exec/);
+      assert.match(html, /Built [^<]*unpacked/, 'the footer says which build');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
 } else {
   console.log('  skip the built page (no data/sgd-schema.json yet)');
 }

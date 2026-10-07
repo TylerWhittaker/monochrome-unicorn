@@ -32,6 +32,9 @@
 #                   would otherwise be asked for JSON
 #     --allconfig   force the JSON catalogue, skipping the ~HI check
 #     --no-upload   build only, leave the printer alone
+#     --unpacked    the plain page, about 440 KB, for browsers without
+#                   DecompressionStream (before Chrome 80, Safari 16.4,
+#                   Firefox 113); by default it is packed, about 170 KB
 #     --no-clean    keep the helper files a previous deploy installed.
 #                   By default they (E:V_*, E:S_* and E:LCD .SHTML) are
 #                   removed before the new set goes up, so a build that
@@ -49,11 +52,13 @@ FETCH_SCHEMA=1
 UPLOAD=1
 CLEAN=1
 SCHEMA_ARGS=()
+BUILD_ARGS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-schema) FETCH_SCHEMA=0 ;;
     --no-upload) UPLOAD=0 ;;
+    --unpacked)  BUILD_ARGS+=(--unpacked) ;;
     --clean)     CLEAN=1 ;;  # the default; kept so old command lines work
     --no-clean)  CLEAN=0 ;;
     --allcv)     SCHEMA_ARGS+=(--allcv) ;;
@@ -68,7 +73,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$IP" ] && { [ "$UPLOAD" = 1 ] || [ "$FETCH_SCHEMA" = 1 ]; }; then
-  echo "usage: ./deploy.sh <printer-ip> [--no-schema] [--no-upload] [--no-clean] [--allcv|--allconfig]" >&2
+  echo "usage: ./deploy.sh <printer-ip> [--no-schema] [--no-upload] [--no-clean] [--unpacked] [--allcv|--allconfig]" >&2
   exit 2
 fi
 
@@ -82,7 +87,7 @@ else
   echo "Using cached data/sgd-schema.json"
 fi
 
-node tools/build.mjs
+node tools/build.mjs ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}
 
 if [ "$UPLOAD" = 0 ]; then
   echo "Skipping upload."
