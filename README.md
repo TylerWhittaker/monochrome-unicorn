@@ -159,8 +159,9 @@ packed page back, so deploy the unpacked one again after it.
 Needs `node`, `nc` (OpenBSD netcat, for `-C`) and `curl`.
 
 Saving and deleting labels from the UI need the printer's 4-digit
-password — factory default `1234`. The page asks once per browser
-session and keeps it in `sessionStorage`.
+password. The page tries the factory default, `1234`, first and only
+asks if the printer rejects it; a password that works is kept in
+`sessionStorage` for the rest of the browser session.
 
 ## Why it is built this way
 
