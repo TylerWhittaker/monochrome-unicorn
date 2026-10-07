@@ -101,7 +101,7 @@ if (existsSync(schemaPath)) {
   check('the built page keeps the SSI lines plain and packs the rest', () => {
     const out = mkdtempSync(join(tmpdir(), 'zebra-build-'));
     try {
-      build({ schemaPath, outDir: out });
+      build({ schemaPath, outDir: out, packed: true });
       const html = readFileSync(join(out, 'INDEX.SHTML'), 'utf8');
       assert.ok(!html.includes('{{'), 'every placeholder filled');
       assert.match(html, /id="boot-vars">[\s\S]*<!--#exec/, 'boot-vars left for the preprocessor');
@@ -114,14 +114,15 @@ if (existsSync(schemaPath)) {
       assert.match(parts.htmx, /htmx/);
       assert.ok(parts.css.length > 1000);
       assert.ok(html.length < 250 * 1024, `the page is ${html.length} bytes`);
+      assert.match(html, /Built [^<]*packed/, 'the footer says which build');
     } finally {
       rmSync(out, { recursive: true, force: true });
     }
   });
-  check('the unpacked build inlines each part as it is, for older browsers', () => {
+  check('the default build inlines each part as it is, unpacked', () => {
     const out = mkdtempSync(join(tmpdir(), 'zebra-build-'));
     try {
-      build({ schemaPath, outDir: out, packed: false });
+      build({ schemaPath, outDir: out });
       const html = readFileSync(join(out, 'INDEX.SHTML'), 'utf8');
       assert.ok(!html.includes('{{'), 'every placeholder filled');
       assert.ok(!html.includes('id="packed"'), 'nothing packed');
@@ -132,7 +133,7 @@ if (existsSync(schemaPath)) {
       assert.match(html, /<script type="application\/json" id="sgd-schema">\{/);
       assert.match(html, /function start\(\)/);
       assert.match(html, /id="boot-vars">[\s\S]*<!--#exec/);
-      assert.match(html, /Built [^<]*unpacked/, 'the footer says which build');
+      assert.doesNotMatch(html, /Built [^<]*packed/, 'the footer names only the packed build');
     } finally {
       rmSync(out, { recursive: true, force: true });
     }

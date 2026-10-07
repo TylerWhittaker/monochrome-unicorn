@@ -529,7 +529,7 @@ export function unpackPayload(packed) {
  * Main
  * ------------------------------------------------------------------ */
 
-export function build({ schemaPath, outDir, packed = true }) {
+export function build({ schemaPath, outDir, packed = false }) {
   mkdirSync(outDir, { recursive: true });
 
   // The catalogue is captured from a printer rather than kept in the
@@ -559,9 +559,10 @@ export function build({ schemaPath, outDir, packed = true }) {
   const app = prettify(JS_BANNER + '\n' + squeeze(bundle(join(ROOT, 'src/js/app.js'))));
 
   const schemaJson = JSON.stringify(schema);
-  // Packed (the default): everything gzipped in one blob, and
-  // src/unpack.js to unpack it. Unpacked: each inlined as it is, for a
-  // browser without DecompressionStream (see README).
+  // Unpacked (the default): each part inlined as it is. Packed (--packed):
+  // everything gzipped in one blob, and src/unpack.js to unpack it --
+  // about 170 KB instead of 440, for a slow link, but it needs a browser
+  // with DecompressionStream (see README).
   const blob = packed ? packPayload({ css, schema: schemaJson, htmx, app }) : '';
   const payload = packed
     ? [
@@ -583,7 +584,7 @@ export function build({ schemaPath, outDir, packed = true }) {
     '{{PAYLOAD}}': payload,
     '{{BOOT_VARS}}': bootVarsBlock(),
     '{{VERSION}}': readVersion(),
-    '{{BUILD_STAMP}}': buildStamp() + (packed ? '' : ' &middot; unpacked'),
+    '{{BUILD_STAMP}}': buildStamp() + (packed ? ' &middot; packed' : ''),
   };
 
   let html = template;
@@ -636,7 +637,8 @@ function main() {
   const result = build({
     schemaPath: resolve(flag('--schema', 'data/sgd-schema.json')),
     outDir: resolve(flag('--out', 'dist')),
-    packed: !args.includes('--unpacked'),
+    // --unpacked is the default now, and still accepted.
+    packed: args.includes('--packed'),
   });
 
   const kb = (n) => (n / 1024).toFixed(1).padStart(6) + ' KB';
@@ -649,7 +651,7 @@ function main() {
   if (result.packed) {
     console.log(`  packed       ${kb(result.parts.packed)}   (all four, gzipped, base64)`);
   } else {
-    console.log('  unpacked     (each inlined as it is: --unpacked)');
+    console.log('  unpacked     (each inlined as it is; --packed gzips them)');
   }
   console.log(
     `  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / (250 * 1024)).toFixed(1)}s to serve at 250 KB/s, the slowest measured)`,

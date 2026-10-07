@@ -131,30 +131,31 @@ than checked in: a fresh clone has none until a deploy -- or
 --no-upload   build only
 --no-clean    keep previously installed helper files (by default
               they are removed before the new set is uploaded)
---unpacked    the plain page (about 440 KB) for older browsers; below
+--packed      gzip the page, about 170 KB instead of 440; below
 ```
 
-The page is normally packed -- gzipped, about 170 KB -- and unpacked in
-the browser. Unpacking needs `DecompressionStream`, so the packed page
-needs Safari 16.4 or Firefox 113 or later (and Chrome 86, which the app
-itself needs either way; see below). For a printer whose Safari or
-Firefox clients are older than that, install the plain page instead:
+The page is plain by default: the styles, htmx, the app and the
+catalogue inlined as they are, about 440 KB. Measured, the printers
+serve it in about a second over Wi-Fi (docs/printer-notes.md), and it
+runs in Chrome 86, Safari 14 or Firefox 78 and later. For a printer
+whose clients are on a slow link, pack it instead:
 
 ```sh
-make build-unpacked                    # dist/INDEX.SHTML, unpacked
-make deploy-unpacked IP=192.168.1.81   # or ./deploy.sh <ip> --unpacked
+make build-packed                    # dist/INDEX.SHTML, packed
+make deploy-packed IP=192.168.1.81   # or ./deploy.sh <ip> --packed
 ```
 
-It is the same console, about 440 KB, and its footer says "unpacked".
-It reaches back to Safari 14 and Firefox 78. It does nothing for
-Chrome: both pages need Chrome 86, for `replaceChildren`, which the app
-uses throughout, and Chrome had `DecompressionStream` (80) before that.
-Older than these, the app's own JavaScript is too new and would need
-transpiling, which this build does not do. One thing degrades rather
-than fails: before Chrome 87 and Firefox 116, the canvas's text outlines
-are not fitted to the drawn text (`fontBoundingBoxAscent`). A deploy without
-`--unpacked` -- `make deploy`, or the post-commit hook -- puts the
-packed page back, so deploy the unpacked one again after it.
+Packed, it is the same console at about 170 KB -- gzipped together,
+carried as base64, and unpacked in the browser with `DecompressionStream`
+-- and its footer says "packed". That needs Safari 16.4 or Firefox 113
+or later (Chrome 86 either way); an older browser is told so on the
+page. Older than the plain page's versions, the app's own JavaScript
+(`??`, `?.`, `replaceChildren`) is too new and would need transpiling,
+which this build does not do. One thing degrades rather than fails:
+before Chrome 87 and Firefox 116, the canvas's text outlines are not
+fitted to the drawn text (`fontBoundingBoxAscent`). A deploy without
+`--packed` -- `make deploy`, or the post-commit hook -- puts the plain
+page back, so deploy the packed one again after it.
 
 Needs `node`, `nc` (OpenBSD netcat, for `-C`) and `curl`.
 
@@ -172,21 +173,19 @@ them. The measurements behind each are in
 **No custom CGI, and one page.** Only the built-in endpoints exist, and
 the page cannot reference assets it did not bring with it. So the build
 inlines the CSS, htmx, the app and the setting catalogue into a single
-file -- packed: gzipped together and carried as base64, which a short
-script in the page unpacks with the browser's own `DecompressionStream`
-before starting the app. That takes the page from about 440 KB to about
-170 KB. It needs Chrome 86, Safari 16.4 or Firefox 113 or later; an
-older browser is told so on the page if it cannot unpack, and `--unpacked`
-builds the plain page for it (Deploying, above). What the printer's
-preprocessor fills in (`boot-vars`) and the footer stay outside the
-pack, as plain text.
+file, about 440 KB. `--packed` gzips those four together into base64
+that a short script in the page (`src/unpack.js`) unpacks with the
+browser's own `DecompressionStream`, about 170 KB, for a slow link or an
+old printer; see Deploying, above. What the printer's preprocessor fills
+in (`boot-vars`) and the footer stay plain text either way.
 
 **A few hundred KB/s.** Measured, the printers serve 260-390 KB/s over
-Wi-Fi and 370-560 KB/s wired (docs/printer-notes.md), so the packed page
-loads in about half a second; a phone on a weak link will be slower.
-Page weight is still the budget that matters most. The build prints the
-breakdown, packed and not, and the live tests fail a page over 250 KB. Ace (~400 KB) is the one thing loaded from a CDN, on demand,
-the first time you open the source view; when the client has no internet
+Wi-Fi and 370-560 KB/s wired (docs/printer-notes.md), so the plain page
+loads in about a second and the packed one in about half that; a phone
+on a weak link will be slower. Page weight is still watched: the build
+prints the breakdown, and the live tests fail a plain page over 500 KB
+or a packed one over 250 KB. Ace (~400 KB) is the one thing loaded from
+a CDN, on demand, the first time you open the source view; when the client has no internet
 the editor falls back to a textarea with its own ZPL highlighting, so the
 console still works on an isolated network.
 
@@ -244,7 +243,7 @@ good enough to position things — while the preview shows the truth.
 
 ```
 src/index.html        page shell, with the {{...}} slots the build fills
-src/unpack.js         the packed page's first script: unpacks the rest
+src/unpack.js         the packed page's first script (--packed): unpacks the rest
 src/css/app.css       Tailwind input plus a few component classes
 src/js/
   app.js              entry point: header, tab bar, mode mounting

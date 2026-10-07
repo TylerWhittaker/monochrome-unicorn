@@ -46,10 +46,10 @@ export default function register(s, ctx) {
 
   s.test('the page stays near its size budget', async () => {
     const page = await http(cfg.ip, '/INDEX.SHTML');
-    // Packed (gzip + base64) it is about 170 KB; unpacked (deploy.sh
-    // --unpacked) about 440 KB. Well past either is a regression.
+    // Unpacked (the default) it is about 440 KB; packed (deploy.sh
+    // --packed) about 170 KB. Well past either is a regression.
     const packed = Buffer.from(page.bytes).toString('latin1').includes('id="packed"');
-    const budget = (packed ? 250 : 450) * 1024;
+    const budget = (packed ? 250 : 500) * 1024;
     assert.ok(
       page.bytes.length < budget,
       `INDEX.SHTML (${packed ? 'packed' : 'unpacked'}) is ${page.bytes.length} bytes`,
@@ -95,7 +95,7 @@ export default function register(s, ctx) {
   s.test('the packed page unpacks: styles, catalogue, htmx and app all in place', async () => {
     const served = await http(cfg.ip, '/INDEX.SHTML');
     if (!Buffer.from(served.bytes).toString('latin1').includes('id="packed"')) {
-      skip('the printer has the unpacked page (deploy.sh --unpacked)');
+      skip('the printer has the unpacked page, the default (deploy.sh --packed packs it)');
     }
     const state = await con.page.evaluate(() => ({
       unpacking: document.documentElement.classList.contains('unpacking'),

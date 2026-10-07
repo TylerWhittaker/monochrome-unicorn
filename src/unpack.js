@@ -26,7 +26,8 @@
  * a third of their size, and page weight is what the printer's web server
  * is slow at. This unpacks them with the browser's own DecompressionStream
  * and puts each where the unpacked page has it. Plain ES5, inlined as it
- * is; the unpacked build (build.mjs --unpacked) leaves it out.
+ * is, and only in the packed build (build.mjs --packed); the default,
+ * unpacked page has no need of it.
  */
 
 (function () {

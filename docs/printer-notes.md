@@ -571,7 +571,8 @@ slower than this -- which is why the page is packed and Ace comes from
 a CDN, but a second or so, not eight, is the cost of a heavy page here.
 
 The server sends no `Content-Encoding`, and there is no way to give an
-`.SHTML` one, so the build compresses the page itself: CSS, htmx, the
+`.SHTML` one, so `build.mjs --packed` compresses the page itself (the
+default, since these measurements, is the plain page): CSS, htmx, the
 app and the catalogue gzipped together and carried as base64 (wrapped at
 120 characters, in case the preprocessor minds long lines), unpacked in
 the browser with `DecompressionStream`. 437 KB became 167 KB; on the

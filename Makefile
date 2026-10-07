@@ -17,7 +17,7 @@ PRINTERS ?= 192.168.1.220 192.168.1.81
 ARGS ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help install build build-unpacked deploy deploy-quick deploy-unpacked deploy-all \
+.PHONY: help install build build-packed deploy deploy-quick deploy-packed deploy-all \
         schema test test-live \
         test-live-quick format format-check check lcd-helper lcd-shot version \
         bump-patch bump-minor bump-major clean need-ip
@@ -36,8 +36,8 @@ install: ## install the dev dependencies and the git hooks
 build: ## build dist/INDEX.SHTML without touching a printer
 	node tools/build.mjs
 
-build-unpacked: ## the same, unpacked: ~440 KB, for browsers before 2023
-	node tools/build.mjs --unpacked
+build-packed: ## the same, gzipped: ~170 KB for a slow link (Safari 16.4+, Firefox 113+)
+	node tools/build.mjs --packed
 
 deploy: need-ip ## read the printer's catalogue, build and install on IP
 	./deploy.sh $(IP)
@@ -45,8 +45,8 @@ deploy: need-ip ## read the printer's catalogue, build and install on IP
 deploy-quick: need-ip ## build and install on IP, reusing data/sgd-schema.json
 	./deploy.sh $(IP) --no-schema
 
-deploy-unpacked: need-ip ## install the unpacked page on IP (the next commit's deploy packs it again)
-	./deploy.sh $(IP) --no-schema --unpacked
+deploy-packed: need-ip ## install the packed page on IP (the next commit's deploy unpacks it again)
+	./deploy.sh $(IP) --no-schema --packed
 
 deploy-all: ## build and install on every printer in PRINTERS
 	@for p in $(PRINTERS); do echo "== $$p"; ./deploy.sh $$p || exit 1; done
