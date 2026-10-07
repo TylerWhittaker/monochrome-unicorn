@@ -71,11 +71,11 @@ Object.assign(SGD, {
   'appl.link_os_version': 'The Link-OS feature level the firmware supports.',
   'appl.name': 'The firmware version, e.g. V74.20.23Z.',
   'appl.version': 'The firmware version number.',
-  'bluetooth.address': 'The printer’s Bluetooth address.',
+  'bluetooth.address': 'The printer’s Bluetooth address (BD_ADDR).',
   'bluetooth.allow_non_display_numeric_comparison':
     'For printers without a display: whether Bluetooth numeric-comparison pairing is allowed, and whether the passkey is printed for it.',
   'bluetooth.bluetooth_pin':
-    'The PIN a device must give to connect, when bluetooth.authentication is "setpin". Write-only.',
+    'The PIN a device must provide to connect if bluetooth.minimum_security_mode > 1.  Only applicable for clients using BT 2.0 (or older), BT 2.1+ uses Secure Simple Pairing instead of a PIN.  PIN is usually a 4-digit number, but the BT spec allows alphanumeric PINs up to 16 chars in length.  Default PIN is 1234. Write-only.',
   'bluetooth.bonding': 'Whether paired devices are remembered (bonded) so they can reconnect.',
   'bluetooth.clear_bonding_cache': 'Forgets every Bluetooth device the printer has been paired with.',
   'bluetooth.connected': 'Whether a Bluetooth device is connected now.',
