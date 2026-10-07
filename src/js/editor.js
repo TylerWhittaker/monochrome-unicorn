@@ -79,8 +79,22 @@ import { openShortcuts } from './shortcuts.js';
 import { chooseStoredImage, isPicture } from './gallery.js';
 import { renderLayers } from './layers.js';
 import { parseCopies } from './formats.js';
+import { createStore } from './store.js';
 
-const editorState = {
+/*
+ * The editor's state, and the views that follow it (store.js). What
+ * changed is said with a reason, and each view listens for the ones it
+ * cares about (subscribeEditorViews):
+ *
+ *   edit    the label changed through the inspector, layers, a paste...
+ *   canvas  a drag, nudge or Delete the canvas has already drawn
+ *   select  the selection changed
+ *   load    a different label: opened or new (history starts again)
+ *   undo    a different label: a step back or forward in the history
+ *   view    Visual and Source swapped
+ *   count   the Count box
+ */
+const editorStore = createStore({
   doc: null,
   /** Authoritative ZPL while the source view is showing. */
   source: '',
@@ -93,7 +107,8 @@ const editorState = {
   localName: '',
   /** What /dir listed on E:, for the stored fonts. */
   driveFiles: [],
-};
+});
+const editorState = editorStore.state;
 
 let canvas = null;
 let codeEditor = null;
@@ -205,14 +220,36 @@ function markDirty() {
   scheduleEditorPreview();
 }
 
-/** Called after any change made through the canvas or the inspector. */
+/** The label was changed through a panel, or by a paste, an add... */
 function onDocChanged() {
-  syncGridInput();
-  if (canvas) canvas.render();
-  renderEditorInspector();
-  renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
-  recordHistory();
-  markDirty();
+  editorStore.update('edit');
+}
+
+/** Every view's subscription to the editor's state, made once. */
+function subscribeEditorViews() {
+  const on = editorStore.on;
+  on(['load', 'undo', 'view'], () => rebuildEditorView());
+  on('edit', () => {
+    syncGridInput();
+    if (canvas) canvas.render();
+  });
+  on(['edit', 'canvas', 'select'], () => renderEditorInspector());
+  // The panel edits the document it was drawn for, so it follows a new one.
+  on(['edit', 'load', 'undo', 'view'], () =>
+    renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged }),
+  );
+  on(['edit', 'canvas', 'count'], () => recordHistory());
+  // Whatever was typed in the source view comes back as one step.
+  on('view', () => {
+    if (editorState.view === 'visual') recordHistory();
+    syncHistoryButtons();
+  });
+  on('load', () => {
+    resetHistory();
+    refreshEditorPreview();
+  });
+  on('undo', () => syncHistoryButtons());
+  on(['edit', 'canvas', 'count', 'undo'], () => markDirty());
 }
 
 /*
@@ -250,16 +287,12 @@ function stepHistory(direction) {
   const state = direction < 0 ? labelHistory.undo() : labelHistory.redo();
   if (state === null) return;
   const selected = canvas ? canvas.getSelection() : [];
-  adoptDocument(JSON.parse(state));
-  editorState.source = toZpl(editorState.doc);
-  rebuildEditorView();
-  renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
-  if (selected.length && canvas) {
-    canvas.setSelection(selected, { quiet: true });
-    renderEditorInspector();
-  }
-  syncHistoryButtons();
-  markDirty();
+  editorStore.update('undo', (st) => {
+    adoptDocument(JSON.parse(state));
+    st.source = toZpl(st.doc);
+  });
+  // What was selected stays selected, where it still exists.
+  if (selected.length && canvas) canvas.setSelection(selected);
 }
 
 /** Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, while the visual editor is on screen. */
@@ -293,7 +326,6 @@ function loadDocument(zpl, file) {
   adoptDocument(doc);
   editorState.source = zpl;
   editorState.file = file || null;
-  editorState.dirty = false;
 
   if (unsupported.length) {
     toast(
@@ -303,10 +335,9 @@ function loadDocument(zpl, file) {
       { timeout: 9000 },
     );
   }
-  renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
-  rebuildEditorView();
-  resetHistory();
-  refreshEditorPreview();
+  editorStore.update('load', (st) => {
+    st.dirty = false;
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -331,18 +362,13 @@ async function setView(next) {
     }
     adoptDocument(doc);
     editorState.source = text;
-    // The panel edits the document it was drawn for, so it follows the
-    // new one -- otherwise its size boxes would change the old one.
-    renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
   } else {
     editorState.source = toZpl(editorState.doc);
   }
 
-  editorState.view = next;
-  rebuildEditorView();
-  // Whatever was typed in the source view comes back as one step.
-  if (next === 'visual') recordHistory();
-  syncHistoryButtons();
+  editorStore.update('view', (st) => {
+    st.view = next;
+  });
 }
 
 /**
@@ -399,13 +425,9 @@ function rebuildEditorView() {
     canvas = createCanvas(editorHost, {
       getDoc: () => editorState.doc,
       // A drag, a nudge or the Delete key: the canvas has changed the
-      // label itself, so only the panels and the history need telling.
-      onChange: () => {
-        renderEditorInspector();
-        recordHistory();
-        markDirty();
-      },
-      onSelect: () => renderEditorInspector(),
+      // label and drawn it; the rest still need telling.
+      onChange: () => editorStore.update('canvas'),
+      onSelect: () => editorStore.update('select'),
       onZoom: (zoom) => showZoom(zoom),
       getGrid: () => (editorGrid.on ? editorGrid.dots : 0),
       getRulers: () => editorGrid.rulers,
@@ -866,16 +888,14 @@ async function newLabelDoc() {
     !(await confirmDialog('Discard changes?', 'The current label has unsaved changes.', 'Discard'))
   )
     return;
-  adoptDocument(newLabel(printer.dpi, printer.labelSize));
-  editorState.source = toZpl(editorState.doc);
-  editorState.file = null;
-  editorState.localName = '';
-  editorState.dirty = false;
   fileSelect.value = '';
-  rebuildEditorView();
-  renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
-  resetHistory();
-  refreshEditorPreview();
+  editorStore.update('load', (st) => {
+    adoptDocument(newLabel(printer.dpi, printer.labelSize));
+    st.source = toZpl(st.doc);
+    st.file = null;
+    st.localName = '';
+    st.dirty = false;
+  });
 }
 
 function addElement(type) {
@@ -1075,9 +1095,9 @@ export function mountEditor(panel) {
     const count = parseCopies(editorCountInput.value, editorState.doc.copies || 1);
     editorCountInput.value = String(count);
     if (count === editorState.doc.copies) return;
-    editorState.doc.copies = count;
-    recordHistory();
-    markDirty();
+    editorStore.update('count', (st) => {
+      st.doc.copies = count;
+    });
   });
   editorCountInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') editorCountInput.blur();
@@ -1200,14 +1220,12 @@ export function mountEditor(panel) {
       ],
     ),
   );
-  renderLabelPanel(labelPanelHost, { doc: editorState.doc, onChange: onDocChanged });
-  rebuildEditorView();
+  subscribeEditorViews();
+  editorStore.update('load');
   refreshFileList();
-  refreshEditorPreview();
   drainPendingOpen();
 
   onDriveListing(takeStoredFonts);
-  resetHistory();
   document.addEventListener('keydown', onHistoryKey);
   document.addEventListener('copy', onCopy);
   document.addEventListener('cut', onCut);

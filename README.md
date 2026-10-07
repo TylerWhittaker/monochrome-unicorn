@@ -256,6 +256,7 @@ src/js/
   codeeditor.js       Ace loader, ZPL syntax mode, offline fallback
   preview.js          the preview pane (htmx round-trip to /zpl)
   ui.js               DOM helpers, toasts, modals, password prompt
+  store.js            a mode's state, and the views told when it changes
   zplhelp.js          the source view's panel: the command under the cursor
   shortcuts.js        the ? sheet: every keyboard shortcut, in one list
   gallery.js          stored pictures as thumbnails; rename
@@ -304,6 +305,7 @@ node test/shortcuts.test.mjs # the shortcut sheet's list
 node test/gallery.test.mjs  # what a rename may call a picture
 node test/sensor.test.mjs   # the media sensor gauges
 node test/layers.test.mjs   # reordering layers
+node test/store.test.mjs    # the state store
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier
@@ -366,6 +368,17 @@ of emitting something subtly wrong. Because every module ends up sharing
 one scope, it also **rejects duplicate top-level names across modules** —
 without that check a collision only shows up as a `SyntaxError` in a
 browser you may not have devtools on.
+
+There is no UI framework: panels are built with `el()` (`ui.js`) and
+redrawn whole. What keeps them in step is `store.js`, about 70 lines: a
+mode keeps its state in a store, says what changed with a reason
+(`editorStore.update('edit')`), and each view subscribes once to the
+reasons it cares about -- so a new way of changing the label cannot
+forget to tell the layers, the history or the preview. The Label Editor
+and Stored Formats work this way; the other modes have one panel each
+and redraw it directly. (React was considered and left out: about 45 KB
+gzipped and a JSX compiler, for what this gives at no cost, and the
+canvas's drags would still be hand-written DOM code.)
 
 For the same reason the page installs an `error` and
 `unhandledrejection` handler that renders failures into the DOM: this
