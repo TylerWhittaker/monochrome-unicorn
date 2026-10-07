@@ -60,8 +60,20 @@ import {
   batchGaps,
 } from './formats.js';
 import { createPreview } from './preview.js';
+import { createStore } from './store.js';
 
-const formatState = {
+/*
+ * The mode's state, and the views that follow it (store.js), by reason:
+ *
+ *   format  a format chosen or cleared, or its source read or pasted
+ *   fields  the fields themselves: their count, or all cleared
+ *   values  one field typed in (the field list is not redrawn: focus)
+ *   copies  the Copies box
+ *   batch   the CSV batch: loaded, a row chosen, printing
+ *   unbatch the batch cleared, so the preview is the form's again
+ *   list    the list of formats, or the drive listing behind it
+ */
+const formatStore = createStore({
   formats: [],
   /** What /dir last listed; the CPCL formats are added from the drive listing. */
   dirFormats: [],
@@ -75,7 +87,8 @@ const formatState = {
   copies: 1,
   /** A CSV batch: { name, headers, rows, mapping, selected, printing, stop }. */
   batch: null,
-};
+});
+const formatState = formatStore.state;
 
 let formatSelect = null;
 /** A format another mode asked for, waiting for this one to exist. */
@@ -107,6 +120,34 @@ function recallZpl() {
 const scheduleFormatPreview = debounce(() => {
   if (formatState.current && formatState.lang.previewable) formatPreview.update(recallZpl());
 }, 600);
+
+/** The preview for a format just chosen: drawn at once, or why it cannot be. */
+function showFormatPreview() {
+  const { current, lang } = formatState;
+  if (!current) formatPreview.idle('Choose a format to see it rendered.');
+  else if (lang.previewable) formatPreview.update(recallZpl());
+  else {
+    formatPreview.idle(
+      `The printer only renders ZPL previews, so there is none for ${lang.label}.`,
+    );
+  }
+}
+
+/** Every view's subscription to the mode's state, made once. */
+function subscribeFormatViews() {
+  const on = formatStore.on;
+  on('format', () => renderNotice());
+  on(['format', 'fields'], () => renderFields());
+  on('format', () => renderSource());
+  on(['format', 'fields'], () => renderSummary());
+  on(['format', 'batch', 'unbatch', 'copies'], () => renderBatch());
+  on('format', () => showFormatPreview());
+  on(['values', 'fields', 'copies', 'unbatch'], () => scheduleFormatPreview());
+  on('list', () => {
+    renderFormatOptions();
+    renderScanState();
+  });
+}
 
 /* ------------------------------------------------------------------ *
  * Rendering
@@ -175,11 +216,11 @@ function countInput() {
   input.addEventListener('change', () => {
     const count = Math.min(99, Math.max(0, Math.round(Number(input.value) || 0)));
     input.value = String(count);
-    const previous = formatState.values;
-    formatState.fields = blankFields(formatState.lang, count);
-    formatState.values = new Map(formatState.fields.map((f) => [f.key, previous.get(f.key) ?? '']));
-    renderFields();
-    renderSummary();
+    formatStore.update('fields', (st) => {
+      const previous = st.values;
+      st.fields = blankFields(st.lang, count);
+      st.values = new Map(st.fields.map((f) => [f.key, previous.get(f.key) ?? '']));
+    });
   });
   return input;
 }
@@ -267,8 +308,7 @@ function renderFields() {
     if (field.maxLength) input.maxLength = field.maxLength;
 
     input.addEventListener('input', () => {
-      formatState.values.set(field.key, input.value);
-      scheduleFormatPreview();
+      formatStore.update('values', (st) => st.values.set(field.key, input.value));
     });
     input.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter') return;
@@ -297,13 +337,12 @@ function renderFields() {
           'button',
           {
             class: 'btn-secondary btn-sm',
-            onclick: () => {
-              for (const field of formatState.fields) {
-                if (!field.fixed) formatState.values.set(field.key, '');
-              }
-              renderFields();
-              scheduleFormatPreview();
-            },
+            onclick: () =>
+              formatStore.update('fields', (st) => {
+                for (const field of st.fields) {
+                  if (!field.fixed) st.values.set(field.key, '');
+                }
+              }),
           },
           ['Clear fields'],
         ),
@@ -362,11 +401,7 @@ async function pasteSourceDialog() {
   });
 
   if (pasted === null) return;
-  applySource(pasted, false);
-  renderNotice();
-  renderFields();
-  renderSource();
-  renderSummary();
+  formatStore.update('format', () => applySource(pasted, false));
   toast(`Found ${formatState.fields.length} ${lang.fieldNoun}(s).`, 'success');
 }
 
@@ -458,8 +493,9 @@ function mergeFormats() {
       cpclTypes.includes(f.otype) &&
       !formatState.dirFormats.some((x) => x.name === f.name),
   );
-  formatState.formats = [...formatState.dirFormats, ...cpcl];
-  renderFormatOptions();
+  formatStore.update('list', (st) => {
+    st.formats = [...st.dirFormats, ...cpcl];
+  });
 }
 
 /** The word beside the list while the drive listing is being read. */
@@ -490,7 +526,6 @@ function renderScanState() {
 
 function syncDriveListing() {
   mergeFormats();
-  renderScanState();
 }
 
 /** List the formats, then read the drive listing for the CPCL ones. */
@@ -508,17 +543,14 @@ async function loadFormats() {
 
 async function selectFormat(value, preloaded = null) {
   if (!value) {
-    formatState.current = null;
-    formatState.lang = null;
-    formatState.fields = [];
-    formatState.source = '';
-    formatState.sourceRead = false;
-    formatState.values.clear();
-    renderNotice();
-    renderFields();
-    renderSource();
-    renderSummary();
-    formatPreview.idle('Choose a format to see it rendered.');
+    formatStore.update('format', (st) => {
+      st.current = null;
+      st.lang = null;
+      st.fields = [];
+      st.source = '';
+      st.sourceRead = false;
+      st.values.clear();
+    });
     return;
   }
 
@@ -528,10 +560,12 @@ async function selectFormat(value, preloaded = null) {
   const otype = rest.slice(dot + 1);
   const lang = languageOf(otype);
 
-  formatState.current = { dev, oname, otype };
-  formatState.lang = lang;
-  formatState.batch = null;
-  renderBatch();
+  // The batch goes at once; the rest follows when the source is read.
+  formatStore.update('batch', (st) => {
+    st.current = { dev, oname, otype };
+    st.lang = lang;
+    st.batch = null;
+  });
 
   // A mode that has already read the file hands the source over with it,
   // which is the only way an EPL or CPCL format ever gets its fields
@@ -552,17 +586,7 @@ async function selectFormat(value, preloaded = null) {
   } else {
     applySource('', false);
   }
-
-  renderNotice();
-  renderFields();
-  renderSource();
-  renderSummary();
-
-  if (lang.previewable) formatPreview.update(recallZpl());
-  else
-    formatPreview.idle(
-      `The printer only renders ZPL previews, so there is none for ${lang.label}.`,
-    );
+  formatStore.update('format');
 
   const first = fieldsHost.querySelector('input[type="text"]');
   if (first) first.focus();
@@ -638,7 +662,6 @@ async function openBatchDialog() {
     printing: false,
     stop: false,
   };
-  renderBatch();
   previewBatchRow(0);
 }
 
@@ -652,9 +675,10 @@ function batchRecall(row) {
 function previewBatchRow(index) {
   const batch = formatState.batch;
   if (!batch) return;
-  batch.selected = Math.min(batch.rows.length - 1, Math.max(0, index));
+  formatStore.update('batch', () => {
+    batch.selected = Math.min(batch.rows.length - 1, Math.max(0, index));
+  });
   index = batch.selected;
-  renderBatch();
   if (formatState.lang.previewable) formatPreview.update(batchRecall(batch.rows[index]));
 }
 
@@ -663,16 +687,18 @@ async function printBatch() {
   const { current, lang } = formatState;
   const total = batch.rows.length * formatState.copies;
   if (!(await confirmPrint(total, `${current.oname}.${current.otype} (${lang.label})`))) return;
-  batch.printing = true;
-  batch.stop = false;
-  batch.sent = 0;
-  renderBatch();
+  formatStore.update('batch', () => {
+    batch.printing = true;
+    batch.stop = false;
+    batch.sent = 0;
+  });
   try {
     for (let i = 0; i < batch.rows.length && !batch.stop; i += BATCH_ROWS_PER_REQUEST) {
       const chunk = batch.rows.slice(i, i + BATCH_ROWS_PER_REQUEST);
       await sendControl(chunk.map(batchRecall).join(lang.id === 'zpl' ? '\n' : ''));
-      batch.sent = i + chunk.length;
-      renderBatch();
+      formatStore.update('batch', () => {
+        batch.sent = i + chunk.length;
+      });
     }
     toast(
       batch.stop
@@ -683,8 +709,9 @@ async function printBatch() {
   } catch (err) {
     toast(`Batch stopped after ${batch.sent} rows: ${err.message}`, 'error');
   } finally {
-    batch.printing = false;
-    renderBatch();
+    formatStore.update('batch', () => {
+      batch.printing = false;
+    });
   }
 }
 
@@ -842,11 +869,10 @@ function renderBatch() {
                 'button',
                 {
                   class: 'btn-secondary btn-sm',
-                  onclick: () => {
-                    formatState.batch = null;
-                    renderBatch();
-                    scheduleFormatPreview();
-                  },
+                  onclick: () =>
+                    formatStore.update('unbatch', (st) => {
+                      st.batch = null;
+                    }),
                 },
                 ['Clear'],
               ),
@@ -891,10 +917,10 @@ export function mountFormat(panel) {
     inputmode: 'numeric',
   });
   copiesInput.addEventListener('change', () => {
-    formatState.copies = parseCopies(copiesInput.value, formatState.copies);
+    formatStore.update('copies', (st) => {
+      st.copies = parseCopies(copiesInput.value, st.copies);
+    });
     copiesInput.value = String(formatState.copies);
-    scheduleFormatPreview();
-    renderBatch();
   });
 
   scanNode = el('span', { class: 'flex items-center gap-1.5' });
@@ -940,10 +966,10 @@ export function mountFormat(panel) {
     ]),
   );
 
-  renderFields();
-  formatPreview.idle('Choose a format to see it rendered.');
+  subscribeFormatViews();
+  formatStore.update('format');
   onDriveListing(syncDriveListing);
-  renderScanState();
+  formatStore.update('list');
   loadFormats();
 }
 
@@ -987,8 +1013,9 @@ function drainPendingFormat() {
       },
     ];
   }
-  formatState.current = { dev: file.dev, oname: file.oname, otype: file.otype };
-  renderFormatOptions();
+  formatStore.update('list', (st) => {
+    st.current = { dev: file.dev, oname: file.oname, otype: file.otype };
+  });
   formatSelect.value = value;
   selectFormat(value, source);
 }
