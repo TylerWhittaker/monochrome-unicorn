@@ -21,8 +21,8 @@
 /*
  * codeeditor.js -- the ZPL source editor.
  *
- * Ace is ~400 KB, which at the printer's ~56 KB/s would dominate the page
- * load, so it is fetched from cdnjs the first time the source view opens.
+ * Ace is ~400 KB, which inlined would more than double the packed page,
+ * so it is fetched from cdnjs the first time the source view opens.
  * That means it is unavailable whenever the browser has no internet --
  * common for a printer on an isolated network -- so there is a real
  * fallback: a textarea with a syntax-highlighted layer behind it.

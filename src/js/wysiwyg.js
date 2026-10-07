@@ -40,7 +40,7 @@ const FONT_ASPECT = 0.58;
 /*
  * ZPL font 0 (CG Triumvirate Bold Condensed) is drawn in Inter Bold,
  * fetched from jsdelivr the first time a canvas is shown -- like Ace, it
- * is not worth its weight in a page served at 56 KB/s -- and Helvetica
+ * is not worth its weight in a page served by the printer -- and Helvetica
  * or Arial until then, or for good on a network with no internet.
  *
  * Fitted to the printer's own render of ^A0N,100,100: capitals 75 dots

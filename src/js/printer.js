@@ -505,7 +505,7 @@ export function repairPng(bytes) {
 
 /**
  * Fetch a stored graphic as something an <img> will accept. Cached: the
- * canvas re-renders often and these run to 160 KB over a 56 KB/s link.
+ * canvas re-renders often and these run to 160 KB each.
  */
 export function loadStoredImage({ dev, oname, otype }) {
   const key = `${dev}:${oname}.${otype}`;

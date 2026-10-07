@@ -548,13 +548,31 @@ a plain `.ZPL` file — it does not have to have been stored with `^DF`.
 
 ## Throughput
 
-About 56 KB/s, whether or not the file goes through the preprocessor
-(a 480 KB page takes 8.3 s). This is the reason the built page is kept
-near 200 KB and Ace is loaded from a CDN instead of inlined.
+A few hundred KB/s. Measured 2026-10-07 with curl from a wired PC, five
+fetches of each file:
+
+| | ZD620 (.220), wired | ZD500R (.81), Wi-Fi 802.11n, 5 GHz, signal 97 |
+|---|---|---|
+| `INDEX.SHTML`, 170 KB, ~20 `#exec`s | 0.45 s, 373 KB/s | 0.65 s, 258 KB/s |
+| `ZPLREF.SHTML`, 95 KB, no `#exec` | 0.17 s, 561 KB/s | 0.24 s, 394 KB/s |
+| a stored `.PNG`, 160–215 KB | -- | 0.45–0.54 s, 350–390 KB/s |
+
+The first byte comes in 0.05-0.06 s (0.15 s for a stored picture).
+What the preprocessor costs is its `#exec`s, not the bytes: the page,
+with the `getvar`s that fill `boot-vars`, is about a third slower per
+KB than a helper file of the same type with none.
+
+An earlier note gave 56 KB/s, "whether or not the file goes through the
+preprocessor (a 480 KB page takes 8.3 s)", from a single measurement on
+2026-09-18 whose network was not recorded; it could not be reproduced on
+either printer, wired or wireless, and was five to seven times too low.
+Page weight still matters -- a phone on a weak 2.4 GHz link will be
+slower than this -- which is why the page is packed and Ace comes from
+a CDN, but a second or so, not eight, is the cost of a heavy page here.
 
 The server sends no `Content-Encoding`, and there is no way to give an
 `.SHTML` one, so the build compresses the page itself: CSS, htmx, the
 app and the catalogue gzipped together and carried as base64 (wrapped at
 120 characters, in case the preprocessor minds long lines), unpacked in
-the browser with `DecompressionStream`. 437 KB became 167 KB; on a wired
-ZD500R the page went from 1.1 s to 0.6 s.
+the browser with `DecompressionStream`. 437 KB became 167 KB; on the
+ZD500R over Wi-Fi the page went from 1.1 s to 0.6 s.

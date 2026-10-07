@@ -32,7 +32,7 @@ import { printer, toDots, fromDots, unitStep } from './state.js';
 import { uploadGraphic } from './printer.js';
 import { loadImageFile, prepareGraphic, objectNameFrom } from './imageprep.js';
 
-/** Hex doubles the byte count, and it all goes over a ~56 KB/s link. */
+/** Hex doubles the byte count, and it all goes over the printer's slow link. */
 function describeCost(totalBytes) {
   const kb = (totalBytes * 2) / 1024;
   const seconds = kb / 56;

@@ -23,7 +23,7 @@
  * build.mjs -- assemble dist/INDEX.SHTML and the V_*.SHTML helper files.
  *
  * The printer will not serve a page that references local assets we cannot
- * upload alongside it, and its web server pushes about 56 KB/s, so the
+ * upload alongside it, and its web server pushes a few hundred KB/s, so the
  * build has two jobs: fold every asset into one file, and keep that file
  * small. Ace is the one exception -- it is pulled from cdnjs on demand,
  * with a plain-textarea fallback when the client has no internet.
@@ -322,8 +322,8 @@ const PRETTIER = join(ROOT, 'node_modules/.bin/prettier');
  * project's JS is.
  *
  * The page's copy uses tabs rather than the sources' two spaces: prettier's
- * layout either way, but one byte per level of indent instead of two,
- * which at ~56 KB/s is about 0.4 s of every page load.
+ * layout either way, but one byte per level of indent instead of two --
+ * about 20 KB unpacked, next to nothing once packed.
  */
 function prettify(js) {
   if (!existsSync(PRETTIER)) {
@@ -652,7 +652,7 @@ function main() {
     console.log('  unpacked     (each inlined as it is: --unpacked)');
   }
   console.log(
-    `  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / 56320).toFixed(1)}s to serve at 56 KB/s)`,
+    `  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / (250 * 1024)).toFixed(1)}s to serve at 250 KB/s, the slowest measured)`,
   );
   console.log(`  ${result.helpers.length} helper files in dist/helpers/`);
   if (!result.lcd) console.log('  no display.* settings: LCD Viewer left out');

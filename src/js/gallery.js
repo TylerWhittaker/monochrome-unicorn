@@ -23,9 +23,9 @@
  *
  * The Label Editor's Choose… and File System's Pictures view both draw
  * the printer's graphics as a grid of tiles. Each picture comes from
- * /png, one at a time (the printer serves one request at a time, at
- * 56 KB/s), in the order shown, and is cached for the rest of the visit,
- * so a second look is instant.
+ * /png, one at a time (the printer serves one request at a time), in the
+ * order shown, and is cached for the rest of the visit, so a second look
+ * is instant.
  */
 
 import { el, modal, formatBytes } from './ui.js';

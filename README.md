@@ -181,9 +181,11 @@ builds the plain page for it (Deploying, above). What the printer's
 preprocessor fills in (`boot-vars`) and the footer stay outside the
 pack, as plain text.
 
-**~56 KB/s.** That makes page weight the main budget — a 480 KB page
-takes 8.3 s to serve. The build prints the breakdown, packed and not,
-and the live tests fail a page over 250 KB. Ace (~400 KB) is the one thing loaded from a CDN, on demand,
+**A few hundred KB/s.** Measured, the printers serve 260-390 KB/s over
+Wi-Fi and 370-560 KB/s wired (docs/printer-notes.md), so the packed page
+loads in about half a second; a phone on a weak link will be slower.
+Page weight is still the budget that matters most. The build prints the
+breakdown, packed and not, and the live tests fail a page over 250 KB. Ace (~400 KB) is the one thing loaded from a CDN, on demand,
 the first time you open the source view; when the client has no internet
 the editor falls back to a textarea with its own ZPL highlighting, so the
 console still works on an isolated network.
