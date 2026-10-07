@@ -32,9 +32,10 @@
 #                   would otherwise be asked for JSON
 #     --allconfig   force the JSON catalogue, skipping the ~HI check
 #     --no-upload   build only, leave the printer alone
-#     --unpacked    the plain page, about 440 KB, for browsers without
-#                   DecompressionStream (before Chrome 80, Safari 16.4,
-#                   Firefox 113); by default it is packed, about 170 KB
+#     --unpacked    the plain page, about 440 KB, for Safari before 16.4
+#                   and Firefox before 113, which cannot unpack the packed
+#                   one (about 170 KB, the default). Chrome needs 86 for
+#                   either
 #     --no-clean    keep the helper files a previous deploy installed.
 #                   By default they (E:V_*, E:S_* and E:LCD .SHTML) are
 #                   removed before the new set goes up, so a build that

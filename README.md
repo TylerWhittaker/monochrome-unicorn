@@ -135,9 +135,10 @@ than checked in: a fresh clone has none until a deploy -- or
 ```
 
 The page is normally packed -- gzipped, about 170 KB -- and unpacked in
-the browser, which needs Chrome 80, Safari 16.4 or Firefox 113 or later
-(see below). For a printer whose clients are older than that, install
-the plain page instead:
+the browser. Unpacking needs `DecompressionStream`, so the packed page
+needs Safari 16.4 or Firefox 113 or later (and Chrome 86, which the app
+itself needs either way; see below). For a printer whose Safari or
+Firefox clients are older than that, install the plain page instead:
 
 ```sh
 make build-unpacked                    # dist/INDEX.SHTML, unpacked
@@ -145,9 +146,13 @@ make deploy-unpacked IP=192.168.1.81   # or ./deploy.sh <ip> --unpacked
 ```
 
 It is the same console, about 440 KB, and its footer says "unpacked".
-It reaches back to Chrome 86, Safari 14 and Firefox 78; older than that
-the app's own JavaScript (`??`, `?.`, `replaceChildren`) is too new, and
-would need transpiling, which this build does not do. A deploy without
+It reaches back to Safari 14 and Firefox 78. It does nothing for
+Chrome: both pages need Chrome 86, for `replaceChildren`, which the app
+uses throughout, and Chrome had `DecompressionStream` (80) before that.
+Older than these, the app's own JavaScript is too new and would need
+transpiling, which this build does not do. One thing degrades rather
+than fails: before Chrome 87 and Firefox 116, the canvas's text outlines
+are not fitted to the drawn text (`fontBoundingBoxAscent`). A deploy without
 `--unpacked` -- `make deploy`, or the post-commit hook -- puts the
 packed page back, so deploy the unpacked one again after it.
 
@@ -169,8 +174,8 @@ inlines the CSS, htmx, the app and the setting catalogue into a single
 file -- packed: gzipped together and carried as base64, which a short
 script in the page unpacks with the browser's own `DecompressionStream`
 before starting the app. That takes the page from about 440 KB to about
-170 KB. It needs a browser from 2023 or later (Chrome 80, Safari 16.4,
-Firefox 113); an older one is told so on the page, and `--unpacked`
+170 KB. It needs Chrome 86, Safari 16.4 or Firefox 113 or later; an
+older browser is told so on the page if it cannot unpack, and `--unpacked`
 builds the plain page for it (Deploying, above). What the printer's
 preprocessor fills in (`boot-vars`) and the footer stay outside the
 pack, as plain text.
