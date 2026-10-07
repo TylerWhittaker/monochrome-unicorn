@@ -29,7 +29,8 @@
 #
 # usage: ./lcd_display_helper.sh <printer-ip> [--interval 1] [--out lcd.bmp]
 #
-# Needs bash, nc (OpenBSD netcat), od, awk and GNU head.
+# Needs bash (for /dev/tcp), dd, od and awk -- nothing to install on
+# Linux or macOS.
 
 set -u
 
@@ -53,20 +54,84 @@ if [ -z "$IP" ]; then
   exit 2
 fi
 
-for tool in nc od awk; do
+for tool in dd od awk; do
   command -v "$tool" >/dev/null || { echo "$0: needs $tool" >&2; exit 1; }
 done
 
 TMP=$OUT.part
 
-# Send ZPL (or a getvar) to the raw port and print whatever comes back.
-send() {
-  printf '%s\r\n' "$1" | nc -q 0 -w 5 "$IP" 9100
+# The raw port, through bash's own /dev/tcp, on file descriptor 3. The
+# printer keeps the connection open after it answers, so nothing here
+# reads until the printer closes: each reply is read to its known length
+# or its closing quote, under a time limit.
+open_port() {
+  { exec 3<>"/dev/tcp/$IP/9100"; } 2>/dev/null
+}
+close_port() {
+  exec 3<&- 3>&-
 }
 
-# One getvar; the reply is the value wrapped in double quotes.
-getvar() {
-  printf '! U1 getvar "%s"\r\n' "$1" | nc -q 0 -w 5 -C "$IP" 9100
+# Run a command for at most $1 seconds (there is no portable timeout(1)).
+within() {
+  local secs=$1 pid watchdog status
+  shift
+  # Said outright: a background job's input is otherwise /dev/null.
+  "$@" <&0 &
+  pid=$!
+  (sleep "$secs" && kill "$pid" 2>/dev/null) &
+  watchdog=$!
+  wait "$pid"
+  status=$?
+  kill "$watchdog" 2>/dev/null
+  wait "$watchdog" 2>/dev/null
+  return $status
+}
+
+# Send ZPL to the raw port; nothing comes back.
+send() {
+  open_port || return 1
+  printf '%s\r\n' "$1" >&3
+  close_port
+}
+
+# One getvar with a short text value: the reply is it in double quotes.
+getvar_text() {
+  local before value status
+  open_port || return 1
+  printf '! U1 getvar "%s"\r\n' "$1" >&3
+  IFS= read -r -t 5 -d '"' before <&3 && IFS= read -r -t 5 -d '"' value <&3
+  status=$?
+  close_port
+  [ "$status" = 0 ] && printf '%s' "$value"
+}
+
+# display.image into $1: a quote, the BMP, a quote. The BMP's size field
+# says how much to read -- and the printer sends one byte more than it
+# says, so up to two more bytes are read after it, the last a quote.
+read_bitmap() {
+  local out=$1 bytes size
+  open_port || return 1
+  printf '! U1 getvar "display.image"\r\n' >&3
+  within 5 dd bs=1 count=7 <&3 >"$out.head" 2>/dev/null
+  # shellcheck disable=SC2046
+  set -- $(od -An -v -tu1 "$out.head")
+  if [ $# -lt 7 ] || [ "$1" != 34 ] || [ "$2" != 66 ] || [ "$3" != 77 ]; then
+    close_port
+    rm -f "$out.head"
+    return 1
+  fi
+  size=$(($4 + 256 * $5 + 65536 * $6 + 16777216 * $7))
+  dd bs=1 skip=1 if="$out.head" of="$out" 2>/dev/null
+  within 5 dd bs=1 count=$((size - 6)) <&3 >>"$out" 2>/dev/null
+  within 0.5 dd bs=1 count=2 <&3 >"$out.tail" 2>/dev/null
+  close_port
+  # shellcheck disable=SC2046
+  set -- $(od -An -v -tu1 "$out.tail")
+  # Keep what the size field left out; drop the closing quote.
+  if [ $# -ge 1 ] && [ "$1" != 34 ]; then dd bs=1 count=1 if="$out.tail" >>"$out" 2>/dev/null; fi
+  rm -f "$out.head" "$out.tail"
+  bytes=$(wc -c <"$out")
+  [ "$bytes" -ge "$size" ]
 }
 
 # Turn a 1-bit BMP into a ~DG command for R:LCD.GRF: rows top-down, a set
@@ -103,7 +168,7 @@ bmp_to_dg() {
 }
 
 cleanup() {
-  rm -f "$TMP"
+  rm -f "$TMP" "$TMP.head" "$TMP.tail"
   # Take the picture off the printer, so the page falls back at once.
   send '^XA^IDR:LCD.GRF^FS^XZ' >/dev/null 2>&1
 }
@@ -117,17 +182,14 @@ echo "Open the LCD Viewer: it switches to the real screen on its own. Ctrl-C to 
 seq=0
 last_error=
 while :; do
-  # The quotes are the first and last byte; everything between is the BMP.
-  getvar display.image | tail -c +2 | head -c -1 >"$TMP"
-
   error=
-  if [ "$(head -c 2 "$TMP" 2>/dev/null)" != BM ] || [ "$(wc -c <"$TMP")" -le 62 ]; then
+  if ! read_bitmap "$TMP" || [ "$(wc -c <"$TMP")" -le 62 ]; then
     error="no bitmap from $IP:9100 (is it on, and is this the right address?)"
   else
     mv -f "$TMP" "$OUT"
     seq=$(((seq + 1) % 4294967296))
     lit=1
-    [ "$(getvar display.backlight | tr -d '"\r\n')" = off ] && lit=0
+    [ "$(getvar_text display.backlight)" = off ] && lit=0
     if dg=$(bmp_to_dg "$OUT" "$seq" "$lit"); then
       send "$dg" >/dev/null || error="could not store R:LCD.GRF on $IP"
     else

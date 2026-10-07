@@ -40,8 +40,9 @@
 #                   removed before the new set goes up, so a build that
 #                   packs the settings differently leaves nothing stale
 #
-# The printer is reached two ways: port 9100 for raw file writes (nc -C,
-# CISDFCRC16 header) and port 80 to verify what it now serves.
+# The printer is reached two ways: port 9100 for raw file writes (a
+# socket from tools/upload.mjs, CISDFCRC16 header) and port 80 to verify
+# what it now serves. Needs node and curl.
 
 set -euo pipefail
 
@@ -78,7 +79,7 @@ if [ -z "$IP" ] && { [ "$UPLOAD" = 1 ] || [ "$FETCH_SCHEMA" = 1 ]; }; then
   exit 2
 fi
 
-for tool in node nc curl; do
+for tool in node curl; do
   command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 1; }
 done
 
@@ -98,10 +99,10 @@ fi
 if [ "$CLEAN" = 1 ]; then
   echo "Removing previously installed helper files..."
   # ^ID takes a wildcard, and one object pattern per format; one
-  # connection carries all three. Only .SHTML goes, so a user's own
+  # connection carries them all. Only .SHTML goes, so a user's own
   # V_ or S_ label or graphic is left alone.
-  printf '^XA^IDE:V_*.SHTML^FS^XZ\r\n^XA^IDE:S_*.SHTML^FS^XZ\r\n^XA^IDE:LCD.SHTML^FS^XZ\r\n^XA^IDE:STATUS.SHTML^FS^XZ\r\n^XA^IDE:CLOCK.SHTML^FS^XZ\r\n^XA^IDE:MAINT.SHTML^FS^XZ\r\n^XA^IDE:SENSOR.SHTML^FS^XZ\r\n' \
-    | nc -C -q 3 "$IP" 9100 || true
+  node tools/upload.mjs "$IP" --delete 'E:V_*.SHTML' 'E:S_*.SHTML' 'E:LCD.SHTML' \
+    'E:STATUS.SHTML' 'E:CLOCK.SHTML' 'E:MAINT.SHTML' 'E:SENSOR.SHTML' || true
 fi
 
 echo "Uploading to $IP ..."

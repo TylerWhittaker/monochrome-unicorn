@@ -38,32 +38,32 @@
  *   node tools/lcd-shot.mjs <printer-ip> [--out lcd.png] [--bmp lcd.bmp]
  */
 
-import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
+import { readFromPrinter } from './fetch-schema.mjs';
 
-/** Ask the raw port for one SGD and return every byte it sends back. */
-export function getvarRaw(ip, name, { timeout = 20000, quiet = 2 } = {}) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const nc = spawn('nc', ['-C', '-q', String(quiet), ip, '9100']);
-    const chunks = [];
-    const timer = setTimeout(() => {
-      nc.kill('SIGKILL');
-      rejectPromise(new Error(`Timed out waiting for ${ip}:9100`));
-    }, timeout);
+/**
+ * Whether a getvar reply holding a BMP has all arrived: the printer keeps
+ * the connection open afterwards, so the BMP's own size field says when.
+ * The bytes sent run one past that field (a printer quirk), and a quote
+ * closes the reply; one that gets the size right just waits a little
+ * longer, for the idle timeout.
+ */
+export function bmpReplyComplete(text) {
+  if (text.length < 7 || text[0] !== '"' || text.slice(1, 3) !== 'BM') return false;
+  const size = Buffer.from(text.slice(3, 7), 'latin1').readUInt32LE(0);
+  return text.length >= size + 3;
+}
 
-    nc.stdout.on('data', (d) => chunks.push(d));
-    nc.on('error', (err) => {
-      clearTimeout(timer);
-      rejectPromise(new Error(`Could not run nc: ${err.message}`));
-    });
-    nc.on('close', () => {
-      clearTimeout(timer);
-      resolvePromise(Buffer.concat(chunks));
-    });
-
-    nc.stdin.end(`! U1 getvar "${name}"\r\n`);
+/** Ask the raw port for display.image and return every byte it sends back. */
+export async function getvarRaw(ip, name, { timeout = 20000 } = {}) {
+  const reply = await readFromPrinter(ip, `! U1 getvar "${name}"\r\n`, {
+    isComplete: bmpReplyComplete,
+    settleMs: 200,
+    idleMs: 1500,
+    timeout,
   });
+  return Buffer.from(reply, 'latin1');
 }
 
 /**

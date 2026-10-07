@@ -421,7 +421,7 @@ function buildHelperHelp() {
         'It copies the screen into the printer\u2019s RAM every second, where this page ' +
           'picks it up \u2014 there is nothing to set here, and it switches over on its own. ' +
           'It also saves each frame as lcd.bmp. Ctrl-C stops it and takes the copy away. ' +
-          'Needs bash, nc, od and awk.',
+          'Needs only bash, dd, od and awk.',
       ]),
     ]),
   ]);

@@ -33,14 +33,19 @@
  *     <checksum>   4 hex digits, 0000 disables the check
  *     <data>
  *
- * The payload is normalized to CRLF before <size> is computed, because
- * `nc -C` rewrites bare LFs on the wire and a size that disagrees with the
- * bytes actually delivered leaves a truncated file on the printer.
+ * The payload is normalized to CRLF before <size> is computed: the files
+ * are stored with CRLF line ends, as they always have been, and <size>
+ * must count exactly the bytes sent -- a size that disagrees with them
+ * leaves a truncated file on the printer.
+ *
+ * Sent over a plain socket (node:net), not netcat: no tool to install,
+ * and nothing rewrites the bytes on the way.
  *
  *   node tools/upload.mjs <printer-ip> <local-file> <E:NAME.EXT> [...more pairs]
+ *   node tools/upload.mjs <printer-ip> --delete <E:NAME.EXT> [...]   (^ID; wildcards work)
  */
 
-import { spawn } from 'node:child_process';
+import net from 'node:net';
 import { readFileSync } from 'node:fs';
 
 /** CRLF-normalize and wrap a payload in a CISDFCRC16 header. */
@@ -58,36 +63,40 @@ export function buildPayload(contents, destName) {
   return { payload: Buffer.concat([header, normalized]), bytes: normalized.length };
 }
 
-/** Pipe a buffer to the printer's raw port through `nc -C`. */
-export function sendRaw(ip, buffer, { timeout = 120000, quiet = 3 } = {}) {
+/**
+ * Send a buffer to the printer's raw port, then close our side and wait:
+ * until the printer closes its own, or `quiet` seconds pass -- it keeps
+ * the connection open after it has taken what it was sent, so the wait
+ * is what gives it time to finish reading (as `nc -q` used to).
+ */
+export function sendRaw(ip, buffer, { timeout = 120000, quiet = 3, port = 9100 } = {}) {
   return new Promise((resolvePromise, rejectPromise) => {
-    const nc = spawn('nc', ['-C', '-q', String(quiet), ip, '9100']);
-    const errChunks = [];
-    const timer = setTimeout(() => {
-      nc.kill('SIGKILL');
-      rejectPromise(new Error(`Timed out sending to ${ip}:9100`));
-    }, timeout);
-
-    nc.stderr.on('data', (d) => errChunks.push(d));
-    nc.stdout.resume();
-    nc.on('error', (err) => {
-      clearTimeout(timer);
-      rejectPromise(new Error(`Could not run nc: ${err.message}`));
+    const socket = net.createConnection({ host: ip, port });
+    let done = false;
+    let quietTimer = null;
+    const finish = (err) => {
+      if (done) return;
+      done = true;
+      clearTimeout(overall);
+      clearTimeout(quietTimer);
+      socket.destroy();
+      if (err) rejectPromise(err);
+      else resolvePromise();
+    };
+    const overall = setTimeout(
+      () => finish(new Error(`Timed out sending to ${ip}:${port}`)),
+      timeout,
+    );
+    socket.on('connect', () => {
+      socket.end(buffer, () => {
+        quietTimer = setTimeout(() => finish(), quiet * 1000);
+      });
     });
-    nc.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        const stderr = Buffer.concat(errChunks).toString('utf8').trim();
-        rejectPromise(new Error(`nc exited ${code}${stderr ? `: ${stderr}` : ''}`));
-        return;
-      }
-      resolvePromise();
-    });
-
-    nc.stdin.on('error', () => {
-      /* printer closed early; close() reports it */
-    });
-    nc.stdin.end(buffer);
+    // Whatever the printer says back is not wanted, but must be read.
+    socket.on('data', () => {});
+    socket.on('end', () => finish());
+    socket.on('close', () => finish());
+    socket.on('error', (err) => finish(new Error(`${ip}:${port}: ${err.message}`)));
   });
 }
 
@@ -98,15 +107,29 @@ export async function uploadFile(ip, contents, destName, opts) {
   return bytes;
 }
 
+/** The ZPL that removes stored objects: one ^ID each; wildcards work. */
+export function deletePayload(names) {
+  return Buffer.from(names.map((name) => `^XA^ID${name}^FS^XZ\r\n`).join(''), 'binary');
+}
+
 /** Remove a stored object with the ZPL ^ID command. */
 export async function deleteObject(ip, destName, opts) {
-  await sendRaw(ip, Buffer.from(`^XA^ID${destName}^FS^XZ\r\n`, 'binary'), opts);
+  await sendRaw(ip, deletePayload([destName]), opts);
 }
 
 async function main() {
   const [ip, ...rest] = process.argv.slice(2);
+  if (ip && rest[0] === '--delete' && rest.length > 1) {
+    // One connection for the lot, as deploy.sh's clean step wants.
+    await sendRaw(ip, deletePayload(rest.slice(1)));
+    console.log(`  removed ${rest.slice(1).join(' ')}`);
+    return;
+  }
   if (!ip || rest.length === 0 || rest.length % 2 !== 0) {
-    console.error('usage: node tools/upload.mjs <printer-ip> <local-file> <E:NAME.EXT> [...]');
+    console.error(
+      'usage: node tools/upload.mjs <printer-ip> <local-file> <E:NAME.EXT> [...]\n' +
+        '       node tools/upload.mjs <printer-ip> --delete <E:NAME.EXT> [...]',
+    );
     process.exit(2);
   }
   for (let i = 0; i < rest.length; i += 2) {

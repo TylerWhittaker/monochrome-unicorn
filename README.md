@@ -157,7 +157,8 @@ fitted to the drawn text (`fontBoundingBoxAscent`). A deploy without
 `--packed` -- `make deploy`, or the post-commit hook -- puts the plain
 page back, so deploy the packed one again after it.
 
-Needs `node`, `nc` (OpenBSD netcat, for `-C`) and `curl`.
+Needs `node` (with npm) and `curl`. Port 9100 is reached through Node's
+own sockets, so there is no netcat to install.
 
 Saving and deleting labels from the UI need the printer's 4-digit
 password. The page tries the factory default, `1234`, first and only
@@ -232,7 +233,9 @@ another machine (Local Network Access). The printer is the one place both
 can reach. An extra row under the picture carries a frame counter and
 the backlight, so the page can tell a live helper from a frame left
 behind; Ctrl-C removes the frame, and a printer restart would too.
-`tools/lcd-shot.mjs` takes a single screenshot the same way.
+The helper talks to the printer through bash's own `/dev/tcp`, so it
+needs only bash, `dd`, `od` and `awk`. `tools/lcd-shot.mjs` takes a
+single screenshot the same way, through a Node socket.
 
 **The printer is the renderer.** Only it knows how its fonts and
 symbologies rasterize, and its `/zpl` endpoint will draw a label to a
@@ -336,8 +339,8 @@ npm run test:live -- --only editor,files --no-deploy --headed
 
 `test/live/config.example.json` shows the config file; the real one,
 `test/live/config.json`, is ignored by git since it holds the password.
-It needs Chrome (`--chrome` for another path) and the `nc`, `od` and
-`awk` the deploy and the LCD helper need.
+It needs Chrome (`--chrome` for another path), and the `dd`, `od` and
+`awk` the LCD helper uses.
 
 What the tests create is named `ZTEST*` and removed again, and what they
 change (`device.user_p1`, the menu on the screen) is put back. Printer

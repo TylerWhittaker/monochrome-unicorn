@@ -22,9 +22,21 @@ E:INDEX.SHTML   <- destination, extension required
 <data>
 ```
 
-Sent over `nc -C` to port 9100. `nc -C` rewrites bare LFs to CRLF on the
-wire, so **the byte count must be computed after CRLF normalisation** or
-the printer stores a truncated file. `tools/upload.mjs` does this.
+Sent to port 9100. **The byte count must match the bytes sent exactly**,
+or the printer stores a truncated file. These measurements were first
+made through `nc -C`, which rewrites bare LFs to CRLF on the wire, so
+`tools/upload.mjs` normalises the data to CRLF before counting; it now
+sends through a Node socket, which changes nothing, and keeps the CRLF
+so stored files are as they always were.
+
+**The printer keeps a port 9100 connection open after it answers**
+(measured on the ZD500R: a 3,584-byte `display.image` reply arrived
+whole, and the connection was still open 8 s later). A reader cannot
+wait for the printer to close: it has to know the reply's length, or
+half-close its own side and wait a while, as `nc -q` did. Bash's
+`/dev/tcp` cannot half-close, so `lcd_display_helper.sh` reads the BMP
+to the length its header gives -- plus one byte: the printer sends one
+more than the BMP's size field says -- and then the closing quote.
 
 A query string on `/` is a 500; on `/INDEX.SHTML` it is fine. Useful for
 cache-busting during development, since the printer sends `Expires: 0`
