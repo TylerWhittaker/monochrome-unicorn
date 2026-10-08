@@ -20,7 +20,7 @@ ARGS ?=
 .PHONY: help install build build-packed deploy deploy-quick deploy-packed deploy-all \
         schema test test-live \
         test-live-quick format format-check check lcd-helper lcd-shot version \
-        bump-patch bump-minor bump-major clean need-ip
+        bump-patch bump-minor bump-major release clean need-ip
 
 help: ## list the targets
 	@awk 'BEGIN { FS = ":.*## " } /^[a-z-]+:.*## / { printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -88,6 +88,22 @@ bump-minor: ## move the version on: a feature
 
 bump-major: ## move the version on: something that breaks
 	node tools/version.mjs bump major
+
+# The release is the committed source (HEAD), as git archive gives it:
+# no .git, node_modules, build output or untracked files, and not the
+# Zebra reference material, the original prompt or AGENTS.md (a symlink
+# to README.md). Named <package name>-<version>.tar.gz, unpacking into a
+# directory of the same name, the version read from HEAD's package.json.
+RELEASE_EXCLUDE = ':(exclude)reference' ':(exclude)docs/initial_claude_prompt.txt' \
+                  ':(exclude)AGENTS.md'
+
+release: ## dist/<name>-<version>.tar.gz of the committed source
+	@name=$$(git show HEAD:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).name") && \
+	version=$$(git show HEAD:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version") && \
+	out=dist/$$name-$$version.tar.gz && mkdir -p dist && \
+	{ git diff --quiet HEAD -- || echo "note: uncommitted changes are not in it; it is made from HEAD" >&2; } && \
+	git archive --format=tar.gz --prefix=$$name-$$version/ -o $$out HEAD -- . $(RELEASE_EXCLUDE) && \
+	echo "$$out  $$(tar -tzf $$out | grep -vc '/$$') files, $$(du -h $$out | cut -f1)"
 
 clean: ## remove the build output and the LCD helper's files
 	rm -rf dist lcd.bmp lcd.bmp.part lcd.png

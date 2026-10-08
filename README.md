@@ -9,12 +9,12 @@ ribbon out or head open -- refreshed every 15 seconds, and a Printer
 menu for what is otherwise done at the printer: feed a label, pause and
 resume, cancel all jobs, calibrate, print the configuration label.
 
-Three modes:
+Four modes:
 
-- **Printer Settings** — every SGD on the printer, `about:config` style:
-  filter by name or value, sort them, edit the writable ones with a
-  widget chosen from the setting's type and range, see at a glance which
-  differ from their factory default. All 574 of them arrive in one
+- **Printer Settings** — every SGD on the printer, Firefox `about:config` 
+  style: filter by name or value, sort them, edit the writable ones with 
+  a widget chosen from the setting's type and range, see at a glance 
+  which differ from their factory default. All ~574 of them arrive in one
   streamed request, painted as they land. Click a setting's name for
   what it is for -- a summary written for every setting of the printers
   this was built against (`src/data/sgd-reference.mjs`, served as
@@ -301,6 +301,16 @@ reference/            the ZPL, CPCL and EPL2 programming manuals (and
 `make test`, `make test-live`, `make check` before a commit -- with the
 printer taken from `test/live/config.json` when `IP` is not given.
 
+`make release` packs the committed source (HEAD, not uncommitted
+changes, which it warns about) into `dist/<name>-<version>.tar.gz` --
+`zebra-printer-web-app-0.43.0.tar.gz`, unpacking into a directory of the
+same name. It is what `git archive` gives, so nothing untracked goes in
+(`node_modules`, `dist`, `data/sgd-schema.json`, the live tests'
+`config.json` and its password), and it leaves out the Zebra reference
+material, `docs/initial_claude_prompt.txt` and `AGENTS.md`. Unpacked
+elsewhere, `npm install` then `./deploy.sh <printer-ip>` builds and
+installs it.
+
 ```sh
 node test/zpl.test.mjs      # ZPL generation/parsing round-trips
 node test/printer.test.mjs  # helper-file parsing and entity decoding
@@ -493,7 +503,7 @@ The built `INDEX.SHTML` is a copy of this program, so a printer you hand
 to someone else carries it: the page states the licence in its footer and
 in an HTML comment at the top. If you give out a printer or a build, you
 also owe the recipient the corresponding source — this repository, at the
-commit the build came from.
+commit the build came from; `make release` packs exactly that.
 
 Third-party code, all AGPL-compatible and under its own terms:
 
