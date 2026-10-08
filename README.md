@@ -49,7 +49,9 @@ Four modes:
   label gives it -- from a reference written for every command in the
   ZPL guide (`src/data/zpl-reference.mjs`), served as `ZPLREF.SHTML` and
   read the first time it is wanted. The preview beside it is the
-  printer's own render, not a simulation. Every length is shown in
+  printer's own render, not a simulation; its Zoom fits it to the pane
+  or shows it at a fixed size, 100% being one screen pixel to a printer
+  dot, scrolling when it is bigger than the pane (remembered). Every length is shown in
   inches, millimetres or dots, switched by one radio group and
   remembered between visits.
   Several elements can be selected at once -- Shift-click, Ctrl+A, or

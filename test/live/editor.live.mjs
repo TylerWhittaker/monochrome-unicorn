@@ -542,6 +542,43 @@ export default function register(s, ctx) {
     }
   });
 
+  s.test('the preview zooms: fit, or a fixed size in dots, remembered', async () => {
+    const zoom = panel.getByLabel('Preview zoom');
+    const frame = panel.locator('img[alt="Rendered label"]').locator('..');
+    const measure = () =>
+      frame.evaluate((f) => {
+        const host = f.parentElement;
+        const [w] = f.dataset.dots.split('x').map(Number);
+        return {
+          dots: w,
+          width: f.getBoundingClientRect().width,
+          hostWidth: host.clientWidth,
+          scrolls: host.scrollWidth > host.clientWidth,
+        };
+      });
+    assert.equal(await zoom.inputValue(), 'fit');
+    const fit = await measure();
+
+    // 100% is a screen pixel to a dot; 50% half that.
+    await zoom.selectOption('1');
+    let m = await measure();
+    assert.ok(Math.abs(m.width - m.dots) <= 1, `100%: ${m.width}px for ${m.dots} dots`);
+    await zoom.selectOption('0.5');
+    m = await measure();
+    assert.ok(Math.abs(m.width - m.dots / 2) <= 1, `50%: ${m.width}px for ${m.dots} dots`);
+
+    // Bigger than the pane, it scrolls rather than squeezing.
+    await zoom.selectOption('2');
+    m = await measure();
+    assert.ok(Math.abs(m.width - m.dots * 2) <= 1, `200%: ${m.width}px`);
+    assert.ok(m.scrolls, 'the pane scrolls');
+    assert.equal(await page.evaluate(() => localStorage.getItem('zebra.previewZoom')), '2');
+
+    await zoom.selectOption('fit');
+    m = await measure();
+    assert.ok(Math.abs(m.width - fit.width) <= 1, `back to fit: ${m.width} vs ${fit.width}`);
+  });
+
   s.test('elements move by drag and by arrow key, and are duplicated and deleted', async () => {
     await selectNode(3); // the box
     const x0 = Number(await field('X').inputValue());
@@ -670,17 +707,17 @@ export default function register(s, ctx) {
     assert.equal(await panel.locator('.preview-surface > div.pointer-events-none').count(), 1);
     await check(panel, 'Grid').uncheck();
 
-    await panel.locator('select', { has: page.locator('option[value="fit"]') }).selectOption('1');
+    await panel.getByLabel('Canvas zoom').selectOption('1');
     const width = await panel
       .locator('.preview-surface')
       .first()
       .evaluate((n) => n.style.width);
     assert.equal(width, '600px', 'at 100% a dot is a pixel');
-    await panel.locator('select', { has: page.locator('option[value="fit"]') }).selectOption('fit');
+    await panel.getByLabel('Canvas zoom').selectOption('fit');
   });
 
   s.test('the canvas sits centred in grey, wide window or narrow', async () => {
-    const zoom = panel.locator('select', { has: page.locator('option[value="fit"]') });
+    const zoom = panel.getByLabel('Canvas zoom');
     // A quarter size, so the label is narrower than its column either way.
     await zoom.selectOption('0.25');
     for (const width of [1400, 900]) {
@@ -1116,9 +1153,7 @@ export default function register(s, ctx) {
         clientY: y,
         isPrimary: id === 11,
       });
-      const zoomSelect = panel.locator('select', {
-        has: page.locator('option', { hasText: 'Fit' }),
-      });
+      const zoomSelect = panel.getByLabel('Canvas zoom');
 
       // Two fingers 100 px apart move to 200: twice the zoom.
       const width = async () => surface.evaluate((n) => parseFloat(n.style.width));

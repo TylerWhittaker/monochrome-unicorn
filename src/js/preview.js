@@ -39,6 +39,39 @@ import { extractPrinterError, printerTurn } from './printer.js';
 
 let seq = 0;
 
+/*
+ * The zoom a pane offers when asked for one: "fit" fills the pane's
+ * width, a number is screen pixels per printer dot -- so 100% shows the
+ * label dot for dot. Remembered in this browser, like the canvas's grid.
+ */
+export const PREVIEW_ZOOMS = [
+  ['fit', 'Fit'],
+  ['0.25', '25%'],
+  ['0.5', '50%'],
+  ['0.75', '75%'],
+  ['1', '100%'],
+  ['1.5', '150%'],
+  ['2', '200%'],
+];
+const ZOOM_KEY = 'zebra.previewZoom';
+
+function loadPreviewZoom() {
+  try {
+    const saved = localStorage.getItem(ZOOM_KEY);
+    return PREVIEW_ZOOMS.some(([value]) => value === saved) ? saved : 'fit';
+  } catch (err) {
+    return 'fit';
+  }
+}
+
+function savePreviewZoom(value) {
+  try {
+    localStorage.setItem(ZOOM_KEY, value);
+  } catch (err) {
+    /* private mode; it just will not persist */
+  }
+}
+
 /**
  * The label's own size, in dots, from the last ^PW and ^LL in its ZPL,
  * or null for a part the ZPL does not give (a recalled format, say).
@@ -82,17 +115,20 @@ function htmxSend(path, values, options) {
  * Returns {node, update(zpl), print(zpl)}. `update` is safe to call often;
  * callers debounce it, and a superseded render is simply overwritten.
  */
-export function createPreview({ onPrinted, onPrint } = {}) {
+export function createPreview({ onPrinted, onPrint, zoom: offerZoom = false } = {}) {
   const id = `preview-${++seq}`;
 
   const imageHost = el(
     'div',
     {
       id: `${id}-host`,
-      class:
-        'preview-surface flex max-h-[60vh] min-h-[12rem] items-start justify-center overflow-auto p-3',
+      class: 'preview-surface flex max-h-[60vh] min-h-[12rem] items-start overflow-auto p-3',
     },
-    [el('p', { class: 'text-[12px] text-ink-400' }, ['The rendered label will appear here.'])],
+    [
+      el('p', { class: 'mx-auto text-[12px] text-ink-400' }, [
+        'The rendered label will appear here.',
+      ]),
+    ],
   );
 
   const status = el('span', { class: 'text-[11px] text-ink-400' });
@@ -123,9 +159,37 @@ export function createPreview({ onPrinted, onPrint } = {}) {
       ['Print'],
     );
 
+  // The label as last framed, so a change of zoom can resize it in place.
+  let framed = null;
+  let zoom = offerZoom ? loadPreviewZoom() : 'fit';
+  const zoomSelect =
+    offerZoom &&
+    el(
+      'select',
+      {
+        class: 'field w-20 py-1 text-[12px]',
+        title: 'Fit the pane, or a fixed size: 100% is one screen pixel to a printer dot',
+        'aria-label': 'Preview zoom',
+        onchange: () => {
+          zoom = zoomSelect.value;
+          savePreviewZoom(zoom);
+          applyZoom();
+        },
+      },
+      PREVIEW_ZOOMS.map(([value, text]) =>
+        el('option', { value, selected: value === zoom }, [text]),
+      ),
+    );
+
   const node = el('div', { class: 'card flex flex-col self-start overflow-hidden' }, [
     el('div', { class: 'toolbar' }, [
       el('span', { class: 'text-[12px] font-medium text-ink-700' }, ['Preview']),
+      zoomSelect
+        ? el('label', { class: 'flex items-center gap-1.5' }, [
+            el('span', { class: 'text-[11px] uppercase tracking-wide text-ink-500' }, ['Zoom']),
+            zoomSelect,
+          ])
+        : null,
       el('div', { class: 'ml-auto flex items-center gap-2' }, [status, refreshBtn, printBtn]),
     ]),
     imageHost,
@@ -136,8 +200,29 @@ export function createPreview({ onPrinted, onPrint } = {}) {
 
   /** Replace the image with a message. */
   function showMessage(text) {
+    framed = null;
     imageHost.classList.add('min-h-[12rem]');
-    imageHost.replaceChildren(el('p', { class: 'py-6 text-[12px] text-ink-400' }, [text]));
+    imageHost.replaceChildren(el('p', { class: 'mx-auto py-6 text-[12px] text-ink-400' }, [text]));
+  }
+
+  /*
+   * Fit: the frame fills the pane's width. A fixed zoom: the frame is
+   * the label's width in dots times the zoom, and the pane scrolls when
+   * that is wider or taller than it. Auto margins centre a frame smaller
+   * than the pane, and give way to scrolling for a bigger one (centring
+   * with justify-content would push a wide label's left edge out of
+   * reach).
+   */
+  function applyZoom() {
+    if (!framed) return;
+    const { frame, width } = framed;
+    if (zoom === 'fit') {
+      frame.style.width = '';
+      frame.classList.add('w-full');
+    } else {
+      frame.classList.remove('w-full');
+      frame.style.width = `${Math.round(width * Number(zoom))}px`;
+    }
   }
 
   /*
@@ -157,13 +242,17 @@ export function createPreview({ onPrinted, onPrint } = {}) {
       const h = Math.min(size.height || img.naturalHeight, img.naturalHeight);
       if (!w || !h) return;
       const frame = el('div', {
-        class: 'relative w-full shrink-0 overflow-hidden bg-white shadow-sm ring-1 ring-ink-300',
+        class:
+          'relative mx-auto w-full shrink-0 overflow-hidden bg-white shadow-sm ring-1 ring-ink-300',
         style: `aspect-ratio:${w} / ${h};`,
+        dataset: { dots: `${w}x${h}` },
       });
       img.className = 'absolute left-0 top-0 max-w-none';
       img.style.width = `${(img.naturalWidth / w) * 100}%`;
       img.replaceWith(frame);
       frame.append(img);
+      framed = { frame, width: w };
+      applyZoom();
     };
     if (img.complete && img.naturalWidth) fit();
     else img.addEventListener('load', fit, { once: true });
@@ -236,7 +325,7 @@ export function createPreview({ onPrinted, onPrint } = {}) {
     if (img) {
       img.removeAttribute('width');
       img.removeAttribute('border');
-      img.className = 'max-w-full bg-white shadow-sm ring-1 ring-ink-300';
+      img.className = 'mx-auto max-w-full bg-white shadow-sm ring-1 ring-ink-300';
       img.alt = 'Rendered label';
       frameToLabel(img, labelSizeOf(lastZpl));
       // The printer only writes the temp bitmap when the format draws

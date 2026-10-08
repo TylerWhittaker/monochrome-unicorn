@@ -972,7 +972,10 @@ export function mountEditor(panel) {
     ],
   );
 
-  zoomSelect = el('select', { class: 'field w-24 py-1 text-[12px]' });
+  zoomSelect = el('select', {
+    class: 'field w-24 py-1 text-[12px]',
+    'aria-label': 'Canvas zoom',
+  });
   for (const [value, text] of [
     ['fit', 'Fit'],
     ['0.25', '25%'],
@@ -1064,7 +1067,7 @@ export function mountEditor(panel) {
   inspectorHeadingHost = el('div', {}, [panelHeading('Object options', 'The selected element')]);
   labelPanelHost = el('div');
 
-  editorPreview = createPreview({ onPrint: () => printEditorLabel() });
+  editorPreview = createPreview({ onPrint: () => printEditorLabel(), zoom: true });
 
   const localPicker = el('input', {
     type: 'file',
