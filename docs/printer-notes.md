@@ -423,7 +423,41 @@ complaint. Neither reports success, so confirm with `/dir`.
 
 ## What a browser can upload
 
-Only two things, both through the `/zpl` form:
+**Update, 2026-10-08: `file.append` and `file.rename` through
+`setvars.cgi` store files of any type.** Both are in the printer's own
+catalogue (write-only strings) and neither is in the manual. Tested on
+the ZD500R (V74.20.23Z), port 9100 answering after every step:
+
+- `file.append=<name> <contents>` (form-encoded, as the console writes
+  any setting) creates `<name>` -- `E:` unless a drive is given; the name
+  is stored in capitals -- or **appends to it if it exists**, so a
+  replacement means `file.delete` first. Port 9100 takes the same as
+  `! U1 setvar "file.append" "<name> <contents>"`.
+- **Byte-exact text**: LF and CRLF kept as sent (nothing rewritten),
+  tabs, runs of spaces, `^ ~ " & < % + \`, UTF-8, and every byte from
+  1 to 255. **A NUL ends the file**, so a `.PNG`, `.BMP`, `.TTF` or
+  anything else with NULs cannot be written this way.
+- **At most 10,468 bytes per write** (10,484 is cut): over it, the write
+  is not refused but kept short (1,002 bytes, at 12 KB and at 16 KB).
+  Appends build anything bigger: 64 KB in nine 8,000-byte appends came
+  back exact, in 3 s.
+- Stored and served back over HTTP intact: `.TXT`, `.BAT`, `.WML`
+  (listed as WML), `.CSV`. **A `.BAT` written this way runs** under
+  `file.run` (it set `device.user_p1`). `R:` works too, but is not
+  served over HTTP.
+- **An `.SHTML` written this way is served raw**: its `<!--#exec-->`
+  is not run, where one uploaded with `CISDFCRC16` is. The printer
+  keeps some other type for it, so the console cannot rewrite its own
+  helper files from the browser.
+- `file.rename=E:OLD.TXT E:NEW.CSV` renames, contents intact, and can
+  change the extension.
+- `setvars.cgi` sometimes answers in a way curl calls malformed (exit
+  8) even when the write landed; the stored file is the proof, as for
+  every write through it.
+- `^ID` with a wildcard did not remove the `.WML`; `file.delete` did.
+
+What follows is the older picture, from before `file.append`: the
+`/zpl` form takes only two things --
 
 | payload | how | result |
 |---|---|---|
