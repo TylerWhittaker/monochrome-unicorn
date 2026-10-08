@@ -1,4 +1,6 @@
-# Zebra printer console
+# Monochrome Unicorn
+
+*A web app for Zebra thermal printers.*
 
 A single-page console that runs **on** a Zebra printer: the build folds
 everything into one `INDEX.SHTML` and uploads it to the printer's flash,
@@ -303,7 +305,7 @@ printer taken from `test/live/config.json` when `IP` is not given.
 
 `make release` packs the committed source (HEAD, not uncommitted
 changes, which it warns about) into `dist/<name>-<version>.tar.gz` --
-`zebra-printer-web-app-0.43.0.tar.gz`, unpacking into a directory of the
+`monochrome-unicorn-0.43.1.tar.gz`, unpacking into a directory of the
 same name. It is what `git archive` gives, so nothing untracked goes in
 (`node_modules`, `dist`, `data/sgd-schema.json`, the live tests'
 `config.json` and its password), and it leaves out the Zebra reference

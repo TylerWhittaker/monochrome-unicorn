@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Zebra Printer Console -- a web console served from a Zebra printer.
+# Monochrome Unicorn -- a web app for Zebra thermal printers.
 # Copyright (C) 2026 Tyler Whittaker
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #

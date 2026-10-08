@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Zebra Printer Console -- a web console served from a Zebra printer.
+ * Monochrome Unicorn -- a web app for Zebra thermal printers.
  * Copyright (C) 2026 Tyler Whittaker
  *
  * This program is free software: you can redistribute it and/or modify
@@ -130,7 +130,7 @@ export function withoutLcd(html) {
  * what terms. src/index.html carries the full notice as HTML.
  */
 const JS_BANNER = [
-  '/*! Zebra Printer Console -- Copyright (C) 2026 Tyler Whittaker.',
+  '/*! Monochrome Unicorn -- Copyright (C) 2026 Tyler Whittaker.',
   ' * Free software under the GNU AGPL v3 or later, with ABSOLUTELY NO WARRANTY.',
   ' * See <https://www.gnu.org/licenses/agpl-3.0.html>. */',
 ].join('\n');

@@ -1,5 +1,5 @@
 /*
- * Zebra Printer Console -- a web console served from a Zebra printer.
+ * Monochrome Unicorn -- a web app for Zebra thermal printers.
  * Copyright (C) 2026 Tyler Whittaker
  *
  * This program is free software: you can redistribute it and/or modify
@@ -89,7 +89,7 @@ export default function register(s, ctx) {
     assert.match(meta, new RegExp(ctx.firmware.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     const status = (await page.locator('#hdr-status').textContent()).trim();
     assert.ok(['ready', 'paper out', 'paused', 'unknown'].includes(status), `status "${status}"`);
-    assert.equal(await page.title(), `${friendly} — Printer Console`);
+    assert.equal(await page.title(), `${friendly} — Monochrome Unicorn`);
   });
 
   s.test('the packed page unpacks: styles, catalogue, htmx and app all in place', async () => {

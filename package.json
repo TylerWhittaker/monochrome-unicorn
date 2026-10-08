@@ -1,11 +1,11 @@
 {
-  "name": "zebra-printer-web-app",
-  "version": "0.43.1",
+  "name": "monochrome-unicorn",
+  "version": "0.44.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "author": "Tyler Whittaker",
   "type": "module",
-  "description": "Single-page app served from a Zebra printer's onboard web server (E:INDEX.SHTML)",
+  "description": "Monochrome Unicorn: a web app for Zebra thermal printers, served from the printer's onboard web server (E:INDEX.SHTML)",
   "scripts": {
     "css": "tailwindcss -i src/css/app.css -o dist/app.css --minify",
     "build": "node tools/build.mjs",
