@@ -74,9 +74,9 @@ Four modes:
   the editor's `?` button, for every keyboard shortcut.
 - **Stored Formats** — pick a stored format in any of the printer's
   label languages (ZPL, EPL, CPCL), fill in one box per field, preview
-  and print. What is possible varies by language, because the printer's
-  web server will only hand back the contents of a `.ZPL`; the mode says
-  so rather than pretending otherwise. CPCL formats only show up in the
+  and print. The fields are read from the format itself, in any of the
+  three; only a ZPL format can be previewed, because the printer only
+  renders ZPL, and the mode says so rather than pretending otherwise. CPCL formats only show up in the
   drive listing (below), so they join the list when it lands, with a
   note beside the list while it is being read. A batch from CSV prints
   one label per row, the columns matched to fields by name; Previous,
@@ -87,8 +87,14 @@ Four modes:
 - **File System** — every stored object on every drive, with what can
   be done to each: view it (a label as its ZPL, a graphic as a picture,
   a batch file as its escape sequences), download it to your computer,
-  edit a `.ZPL` in the Label Editor, print a stored format, run a
-  `.BAT`, delete, and upload. Which buttons a row gets is decided by the
+  edit a `.ZPL` in the Label Editor and any other text file in place
+  (a `.WML` menu, an EPL or CPCL format, a `.BAT`...), print a stored
+  format, run a `.BAT`, delete, upload a file of any type, or write a
+  new one (**New file…**). Files other than `.ZPL` and pictures are
+  written through the undocumented `file.append` setting: in chunks,
+  read back and compared, and only then put in place of the old one;
+  one with a NUL byte (a font, say) cannot go that way, and is turned
+  away with the `tools/upload.mjs` command to use instead. Which buttons a row gets is decided by the
   type, because the printer's web server treats types very differently;
   a button that is off says why. **Pictures** shows every graphic as a
   thumbnail instead, with Rename (`^TO` copies it, and only once the
@@ -274,6 +280,7 @@ src/js/
   zplhelp.js          the source view's panel: the command under the cursor
   shortcuts.js        the ? sheet: every keyboard shortcut, in one list
   gallery.js          stored pictures as thumbnails; rename
+  filewrite.js        storing any file through file.append: chunks, encoding
   layers.js           the Label Editor's Layers card: order, hide, lock
   maintenance.js      the Maintenance card: odometers
   sensor.js           the Media sensor card: readings and thresholds
@@ -330,6 +337,7 @@ node test/gallery.test.mjs  # what a rename may call a picture
 node test/sensor.test.mjs   # the media sensor gauges
 node test/layers.test.mjs   # reordering layers
 node test/store.test.mjs    # the state store
+node test/filewrite.test.mjs # file.append requests, chunks and text encodings
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier
@@ -441,17 +449,21 @@ a 500).
   the printer answers nothing else. Any other request the console makes
   meanwhile waits for it to finish instead of failing with the printer's
   "busy processing another request".
-- What the console can put **on** the printer is what its web server
-  accepts: a `.ZPL` through the label form, and a picture as a `.GRF`
-  (reduced to one bit here in the browser). A `.PNG` cannot be stored
-  over HTTP at all — `~DY` reports success and writes nothing — and
-  `.BAT`, `.TXT`, `.EPL` and the rest need the `CISDFCRC16` header on
-  port 9100, which a page cannot open. `tools/upload.mjs` does that
-  from a computer on the network, and the upload dialog says so with
-  the command already filled in.
-- Reading a file is the same story in reverse: `.ZPL` comes back from
-  the label form and `.BAT`, `.SHTML` and graphics can be fetched
-  directly, but the web server answers 500 for a `.NRD` or a `.TTF`.
+- What the console can put **on** the printer: a `.ZPL` through the
+  label form, a picture as a `.GRF` (reduced to one bit here in the
+  browser), and anything else that has no NUL byte through `file.append`
+  (docs/printer-notes.md). A file with a NUL -- a `.PNG`, a `.TTF`, a
+  `.NRD` from elsewhere -- ends at the first one written that way, so it
+  needs the `CISDFCRC16` header on port 9100, which a page cannot open;
+  `tools/upload.mjs` does that from a computer on the network, and the
+  upload dialog says so with the command filled in. An `.SHTML` written
+  from the browser is served raw, its `#exec`s not run, so the helper
+  files still go up with `deploy.sh`.
+- Reading a file: `.ZPL` comes back from the label form, and `.BAT`,
+  `.WML`, `.TXT`, EPL and CPCL formats, `.SHTML` and graphics can be
+  fetched as themselves -- which is what Edit and Stored Formats read --
+  but the web server answers 500 for a `.NRD` or a `.TTF`, so those can
+  be replaced but not edited.
   (`setvar file.type`, which the manual offers for this, writes the
   contents back to the port the command arrived on — never to an HTTP
   request. Retested through `setvars.cgi`, through the preprocessor and

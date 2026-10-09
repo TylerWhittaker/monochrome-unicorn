@@ -87,7 +87,9 @@ import {
   deleteFile,
   parseObjectName,
   renameStoredObject,
+  writeStoredFile,
 } from './printer.js';
+import { decodeForEditing, encodeFromEditing, firstNul, UNSERVED_TYPES } from './filewrite.js';
 import { pictureGrid, isPicture, askRename } from './gallery.js';
 import { languageOf, parseFields } from './formats.js';
 import { formatZpl } from './zpl.js';
@@ -172,12 +174,20 @@ export function fsCapabilities(file) {
   }
   caps.download = caps.view;
 
-  if (otype !== 'ZPL') {
-    caps.edit = unknown
-      ? 'The printer did not report this file’s type.'
-      : `The web server can only write a .ZPL back, so a .${otype} is read-only here.`;
+  // A .ZPL opens in the Label Editor; anything else the web server will
+  // hand over opens as text, and is written back through file.append.
+  if (unknown) {
+    caps.edit = 'The printer did not report this file’s type.';
   } else if (readOnly) {
     caps.edit = 'This drive is read-only.';
+  } else if (otype === 'ZPL') {
+    caps.edit = null;
+  } else if (FS_IMAGE_TYPES.includes(otype)) {
+    caps.edit = 'A picture is replaced by uploading a new one (Upload…), not edited as text.';
+  } else if (UNSERVED_TYPES.includes(otype)) {
+    caps.edit = `The web server will not hand over a .${otype}, so there is nothing to edit; Upload… replaces it.`;
+  } else if (file.dev === 'R') {
+    caps.edit = 'Files on R: are not served over HTTP, so there is nothing to edit.';
   }
 
   if (!FS_PRINTABLE_TYPES.includes(otype)) {
@@ -442,7 +452,9 @@ function fsBuildRow(file) {
     ]),
     el('div', { class: 'flex shrink-0 flex-wrap items-center gap-1.5' }, [
       button('View', caps.view, () => fsViewFile(file)),
-      button('Edit', caps.edit, () => fsEditFile(file)),
+      button('Edit', caps.edit, () =>
+        String(file.otype).toUpperCase() === 'ZPL' ? fsEditFile(file) : fsEditTextFile(file),
+      ),
       button('Download', caps.download, () => fsDownloadFile(file)),
       caps.print === null ? button('Print', null, () => fsPrintFile(file)) : null,
       caps.run === null ? button('Run', null, () => fsRunFile(file)) : null,
@@ -824,9 +836,12 @@ async function fsStillThere(file) {
  * tools/upload.mjs does exactly that from a computer on the network.
  * ------------------------------------------------------------------ */
 
-const FS_TEXT_UPLOAD = ['ZPL', 'LBL', 'FMT', 'EPL', 'TXT', 'PRN', 'LABEL'];
-
-/** Which of the three upload routes, if any, suits the file picked. */
+/**
+ * Which upload route suits the file picked: a picture is converted to a
+ * one-bit .GRF; a .ZPL goes through the label form, which stores it the
+ * way the Label Editor's labels are stored; everything else is written
+ * as it is, through file.append (writeStoredFile).
+ */
 export function fsUploadRoute(filename, mimeType = '') {
   const dot = String(filename).lastIndexOf('.');
   const ext = dot > 0 ? filename.slice(dot + 1).toUpperCase() : '';
@@ -834,8 +849,8 @@ export function fsUploadRoute(filename, mimeType = '') {
   if (ext === 'PNG' || ext === 'JPG' || ext === 'JPEG' || ext === 'GIF' || ext === 'BMP') {
     return { route: 'image', ext };
   }
-  if (FS_TEXT_UPLOAD.includes(ext)) return { route: 'zpl', ext };
-  return { route: 'none', ext };
+  if (ext === 'ZPL') return { route: 'zpl', ext };
+  return { route: 'file', ext };
 }
 
 function fsUploadPicker() {
@@ -862,43 +877,264 @@ async function fsHandlePickedFile(file) {
   }
 
   if (route === 'zpl') {
-    await fsUploadTextFile(file, ext);
+    await fsUploadTextFile(file);
     return;
   }
 
-  await modal('This file cannot be uploaded from a browser', (close) =>
-    el('div', { class: 'space-y-3' }, [
-      el('p', { class: 'text-ink-700' }, [
-        `The printer's web server has no way to store a${/^[AEIOU]/.test(ext) ? 'n' : ''} .${ext || '???'}. ` +
-          'It writes a .ZPL through its label form, and a graphic through ~DY (which the console sends ' +
-          'as a .GRF, one bit per pixel). Everything else needs the CISDFCRC16 download header on port ' +
-          '9100, which a page served by the printer cannot open.',
+  await fsUploadAnyFile(file, ext);
+}
+
+/*
+ * Any other file, written as it is (writeStoredFile). The printer ends a
+ * file written this way at the first NUL byte, so a file with one is
+ * turned away before anything is sent, with where else it can go.
+ */
+async function fsUploadAnyFile(file, ext) {
+  let bytes;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+  } catch (err) {
+    toast(`Could not read ${file.name}: ${err.message}`, 'error');
+    return;
+  }
+  const nul = firstNul(bytes);
+  if (nul !== -1) {
+    await modal('This file cannot be stored from a browser', (close) =>
+      el('div', { class: 'space-y-3' }, [
+        el('p', { class: 'text-ink-700' }, [
+          `${file.name} has a NUL byte (at byte ${nul + 1}). The printer stores files from a ` +
+            'browser through a setting, and a setting ends at the first NUL -- so a font, a ' +
+            'PNG or any other binary file cannot go this way. (A picture can: Upload converts ' +
+            'it to a one-bit .GRF.)',
+        ]),
+        el('p', { class: 'text-ink-600' }, ['From a computer on the same network:']),
+        el(
+          'pre',
+          {
+            class: 'overflow-auto rounded bg-ink-50 px-3 py-2 font-mono text-[11px] text-ink-700',
+          },
+          [
+            `node tools/upload.mjs ${printer.ip || '<printer-ip>'} ${file.name} E:${objectNameFrom(file.name)}.${ext || 'EXT'}`,
+          ],
+        ),
+        el('div', { class: 'flex justify-end gap-2' }, [
+          el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Close']),
+        ]),
       ]),
-      el('p', { class: 'text-ink-600' }, ['From a computer on the same network:']),
-      el(
-        'pre',
-        {
-          class: 'overflow-auto rounded bg-ink-50 px-3 py-2 font-mono text-[11px] text-ink-700',
-        },
-        [
-          `node tools/upload.mjs ${printer.ip || '<printer-ip>'} ${file.name} E:${objectNameFrom(file.name)}.${ext || 'EXT'}`,
-        ],
-      ),
-      el('div', { class: 'flex justify-end gap-2' }, [
-        el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Close']),
-      ]),
-    ]),
-  );
+    );
+    return;
+  }
+  const target = await fsAskFileName({
+    title: 'Upload to the printer',
+    detail: `${file.name} — ${formatBytes(bytes.length)}, stored exactly as it is.`,
+    suggested: `${objectNameFrom(file.name)}.${ext || 'TXT'}`,
+    confirm: 'Upload',
+  });
+  if (target) await fsStoreBytes(target, bytes);
 }
 
 /**
- * Store a text file as a stored format.
- *
- * It lands as a .ZPL whatever it was called, because that is the only
- * thing the form writes -- worth saying out loud when the file picked
- * was a .FMT.
+ * Ask for the name to store a file under: NAME.EXT on E:, the name up to
+ * 16 letters, digits and underscores. Resolves to { oname, otype } or null.
  */
-async function fsUploadTextFile(file, ext) {
+function fsAskFileName({ title, detail, suggested, confirm }) {
+  return modal(title, (close) => {
+    const input = el('input', {
+      class: 'field field-mono',
+      type: 'text',
+      value: suggested,
+      spellcheck: 'false',
+      autocomplete: 'off',
+    });
+    const error = el('p', { class: 'text-[12px] text-red-700' });
+    const submit = () => {
+      const { oname, otype } = parseObjectName(input.value, 'TXT');
+      if (!oname) {
+        error.textContent = 'Give it a name: letters, digits or underscores.';
+        return;
+      }
+      close({ oname, otype });
+    };
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') submit();
+    });
+    return el('div', { class: 'space-y-3' }, [
+      detail ? el('p', { class: 'text-ink-600' }, [detail]) : null,
+      el('label', { class: 'block space-y-1' }, [
+        el('span', { class: 'label-text' }, ['Name on the printer (E:)']),
+        input,
+      ]),
+      error,
+      el('p', { class: 'text-[11px] text-ink-400' }, [
+        'Up to 16 letters, digits and underscores, then the extension. A file of that name is ' +
+          'replaced -- only once the new one has been written and checked.',
+      ]),
+      el('div', { class: 'flex justify-end gap-2' }, [
+        el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Cancel']),
+        el('button', { class: 'btn-primary', onclick: submit }, [confirm]),
+      ]),
+    ]);
+  });
+}
+
+/** Write bytes to E:<oname>.<otype>, saying how it goes; true once stored. */
+async function fsStoreBytes({ dev = 'E', oname, otype }, bytes) {
+  const name = `${dev}:${oname}.${otype}`;
+  fsNoteWait();
+  const busy = toast(`Storing ${name}…`, 'busy', { timeout: 0 });
+  try {
+    const { verified } = await writeStoredFile({
+      dev,
+      oname,
+      otype,
+      bytes,
+      onProgress: (sent, total) =>
+        busy.update(`Storing ${name}… ${formatBytes(sent)} of ${formatBytes(total)}`, 'busy', {
+          timeout: 0,
+        }),
+    });
+    busy.update(
+      verified
+        ? `Stored ${name}, ${formatBytes(bytes.length)}, read back and checked.`
+        : `Stored ${name}. The printer does not serve a .${otype}, so it could not be read back.`,
+      'success',
+    );
+    staleDriveListing();
+    await fsRefresh({ force: true });
+    return true;
+  } catch (err) {
+    busy.update(`Could not store ${name}: ${err.message}`, 'error', { timeout: 10000 });
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Edit as text, and New file
+ *
+ * Anything the web server will hand over can be edited here and written
+ * back through file.append. A UTF-8 file is edited as UTF-8; anything
+ * else keeps one character to a byte, so a .BAT's escape sequences and
+ * high bytes come back as they were (filewrite.js).
+ * ------------------------------------------------------------------ */
+
+/** The editing dialog: resolves to the text to save, or null. */
+function fsTextEditor({ title, text, note }) {
+  return modal(
+    title,
+    (close) => {
+      const area = el('textarea', {
+        class: 'field field-mono h-[55vh] w-full resize-y whitespace-pre text-[12px] leading-snug',
+        spellcheck: 'false',
+        autocomplete: 'off',
+        wrap: 'off',
+        'aria-label': 'File contents',
+      });
+      area.value = text;
+      const size = el('span', { class: 'text-[11px] text-ink-400' });
+      const sync = () => {
+        size.textContent = `${area.value.split('\n').length} lines`;
+      };
+      area.addEventListener('input', sync);
+      area.addEventListener('keydown', (event) => {
+        // Tab is a character in most of these files, not a way out.
+        if (event.key === 'Tab' && !event.shiftKey) {
+          event.preventDefault();
+          area.setRangeText('\t', area.selectionStart, area.selectionEnd, 'end');
+          sync();
+        } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+          event.preventDefault();
+          close(area.value);
+        }
+      });
+      sync();
+      setTimeout(() => area.focus(), 0);
+      return el('div', { class: 'space-y-2' }, [
+        note ? el('p', { class: 'text-[12px] text-ink-500' }, [note]) : null,
+        area,
+        el('div', { class: 'flex items-center justify-end gap-2' }, [
+          size,
+          el('span', { class: 'mr-auto text-[11px] text-ink-400' }, ['Ctrl+S saves']),
+          el('button', { class: 'btn-secondary', onclick: () => close(null) }, ['Cancel']),
+          el('button', { class: 'btn-primary', onclick: () => close(area.value) }, ['Save']),
+        ]),
+      ]);
+    },
+    { wide: true },
+  );
+}
+
+/** Edit any served, non-binary file as text, and store it back. */
+async function fsEditTextFile(file) {
+  fsNoteWait();
+  const busy = toast(`Reading ${file.name}…`, 'busy', { timeout: 0 });
+  let bytes;
+  try {
+    bytes = await fetchStoredFile(file);
+    busy.close();
+  } catch (err) {
+    busy.update(`Could not read ${file.name}: ${err.message}`, 'error', { timeout: 8000 });
+    return;
+  }
+  if (firstNul(bytes) !== -1) {
+    toast(
+      `${file.name} is a binary file (it has NUL bytes), which cannot be written back from a browser.`,
+      'error',
+      { timeout: 8000 },
+    );
+    return;
+  }
+  const { text, encoding } = decodeForEditing(bytes);
+  let draft = text;
+  for (;;) {
+    const edited = await fsTextEditor({
+      title: `Edit ${file.name}`,
+      text: draft,
+      note:
+        `${formatBytes(bytes.length)}, ` +
+        (encoding === 'utf-8' ? 'UTF-8 text.' : 'one byte to a character (not UTF-8).') +
+        ' Saving writes it back and checks it before replacing the stored file.',
+    });
+    if (edited === null || edited === text) return;
+    draft = edited;
+    let out;
+    try {
+      out = encodeFromEditing(edited, encoding);
+    } catch (err) {
+      toast(err.message, 'error', { timeout: 8000 });
+      continue;
+    }
+    if (await fsStoreBytes({ dev: file.dev, oname: file.oname, otype: file.otype }, out)) return;
+  }
+}
+
+/** Write a new file from scratch: a name, then the editor. */
+async function fsNewFile() {
+  const target = await fsAskFileName({
+    title: 'New file',
+    detail:
+      'Any type: a .WML menu, an EPL or CPCL format, a .BAT, a .TXT... It is written ' +
+      'through file.append, as text.',
+    suggested: 'NEWFILE.TXT',
+    confirm: 'Next',
+  });
+  if (!target) return;
+  let draft = '';
+  for (;;) {
+    const text = await fsTextEditor({
+      title: `New file E:${target.oname}.${target.otype}`,
+      text: draft,
+    });
+    if (text === null) return;
+    draft = text;
+    if (await fsStoreBytes(target, new TextEncoder().encode(text))) return;
+  }
+}
+
+/**
+ * Store a .ZPL through the label form, as the Label Editor saves one: the
+ * printer tokenizes it on the way in, the form it reads back from.
+ */
+async function fsUploadTextFile(file) {
   let text;
   try {
     text = await file.text();
@@ -920,19 +1156,6 @@ async function fsUploadTextFile(file, ext) {
     });
     return el('div', { class: 'space-y-3' }, [
       el('p', { class: 'text-ink-600' }, [`${file.name} — ${formatBytes(file.size)}`]),
-      ext !== 'ZPL'
-        ? el(
-            'p',
-            {
-              class:
-                'text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded px-2 py-1.5',
-            },
-            [
-              `The printer's form stores this as a .ZPL and runs it through the ZPL parser on the way in. ` +
-                `A .${ext} that is not ZPL will not survive that; upload it over port 9100 instead.`,
-            ],
-          )
-        : null,
       el('label', { class: 'block space-y-1' }, [
         el('span', { class: 'label-text' }, ['Object name']),
         nameInput,
@@ -1007,6 +1230,15 @@ export function mountFiles(panel) {
   });
 
   const picker = fsUploadPicker();
+  const newFileBtn = el(
+    'button',
+    {
+      class: 'btn-secondary btn-sm',
+      title: 'Write a new file of any type, as text',
+      onclick: () => fsNewFile(),
+    },
+    ['New file…'],
+  );
   const uploadBtn = el(
     'button',
     {
@@ -1054,6 +1286,7 @@ export function mountFiles(panel) {
         el('div', { class: 'ml-auto flex items-center gap-3' }, [
           fsLoadingNode,
           fsCountNode,
+          newFileBtn,
           uploadBtn,
           fsRefreshBtn,
         ]),

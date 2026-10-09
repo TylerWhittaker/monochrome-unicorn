@@ -293,31 +293,20 @@ export default function register(s, ctx) {
     assert.equal(await panel.getByText('looking for CPCL formats…').count(), 0);
   });
 
-  s.test('a CPCL format says what cannot be done, and takes a field count', async () => {
+  s.test('a CPCL format’s fields are read from the file itself; there is no preview', async () => {
+    // /zpl only opens a .ZPL, but the stored file can be fetched as itself.
     await select().selectOption(`E:${CPCL_FORMAT}.FMT`);
     await panel.getByText('CPCL format', { exact: false }).first().waitFor();
+    await waitFor(async () => (await inputs().count()) === 3, { what: 'three placeholders' });
+    const captions = await panel.locator('label .label-text').allTextContents();
+    assert.match(captions[0], /^1\. TEXT 4 0 30 30/);
+    assert.match(captions[2], /^3\. BARCODE 128/);
     const text = await panel.textContent();
-    assert.match(text, /will not return the contents of a CPCL file/);
+    assert.doesNotMatch(text, /would not hand over/);
+    assert.equal(await panel.getByRole('button', { name: 'Paste source…' }).count(), 0);
     assert.match(text, /no preview for CPCL|only renders ZPL previews/);
     const speaksCpcl = ['cpcl', 'line_print'].includes(languages.trim().toLowerCase());
     assert.equal(/does not parse CPCL/.test(text), !speaksCpcl, `device.languages is ${languages}`);
-
-    const count = panel.locator('label', { hasText: 'placeholders' }).locator('input');
-    await count.fill('2');
-    await count.dispatchEvent('change');
-    await waitFor(async () => (await inputs().count()) === 2, { what: 'two blank fields' });
-  });
-
-  s.test('pasting its source names the fields', async () => {
-    await panel.getByRole('button', { name: 'Paste source…' }).click();
-    const dialog = page.locator('#modal-root .card', { hasText: 'Paste CPCL source' });
-    await dialog.locator('textarea').fill(CPCL_SOURCE);
-    await dialog.getByRole('button', { name: 'Read fields' }).click();
-    await ui.toast(/Found 3 placeholder/);
-    const captions = await panel.locator('label .label-text').allTextContents();
-    assert.equal(captions.length, 3);
-    assert.match(captions[0], /^1\. TEXT 4 0 30 30/);
-    assert.match(captions[2], /^3\. BARCODE 128/);
   });
 
   s.test('printing CPCL sends ! UF with the values, one to a line', async () => {

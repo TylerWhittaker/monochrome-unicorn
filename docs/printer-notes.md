@@ -309,7 +309,8 @@ because of what the web server will hand over:
 |---|---|---|---|
 | listed by `/dir`             | yes | yes | yes, but as type `---` |
 | real extension visible       | `/dir` | `/dir` | only `file.drive_listing` |
-| contents readable over HTTP  | **yes** | no | no |
+| contents readable through `/zpl` | **yes** | no | no |
+| contents readable as `/NAME.EXT` | yes (tokenized) | yes | yes |
 | preview renders it           | **yes** | no | no |
 | accepted by `POST /zpl`      | yes | yes | yes (ignored here) |
 
@@ -455,6 +456,22 @@ the ZD500R (V74.20.23Z), port 9100 answering after every step:
   8) even when the write landed; the stored file is the proof, as for
   every write through it.
 - `^ID` with a wildcard did not remove the `.WML`; `file.delete` did.
+- **Never send a `setvars.cgi` request while the server is still
+  building an SSI page.** In the console's first try at uploads, a
+  `file.delete` left the page in the same millisecond as the header's
+  15-second `STATUS.SHTML` poll (a page of `#exec getvar.cgi`s). The
+  write got an empty reply, and so did every `setvars.cgi` request after
+  it -- settings included -- until the printer was power-cycled; page
+  loads and port 9100 carried on. It happened twice; the same sequence
+  of requests sent one after another (40 of them, renames and
+  drive-listing reads included) never did. The trigger is the overlap,
+  not `file.append` or `file.rename`, so the console now sends every
+  request in turn, one at a time (`printerTurn` in `src/js/printer.js`).
+- EPL and CPCL formats **are** served as `/NAME.EXT` -- one written with
+  `file.append`, and the CPCL format the live tests store over port 9100
+  alike -- so Stored Formats now reads their fields from the file
+  itself. (The table under "Label languages other than ZPL" said no; it
+  was measured through `/zpl`, which only opens a `.ZPL`.)
 
 What follows is the older picture, from before `file.append`: the
 `/zpl` form takes only two things --

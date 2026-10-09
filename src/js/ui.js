@@ -131,7 +131,7 @@ export function toast(message, kind = 'info', { timeout = 4000 } = {}) {
  * Show a modal dialog. `render(close)` returns the body; `close(value)`
  * resolves the promise. Escape and backdrop clicks resolve with null.
  */
-export function modal(title, render) {
+export function modal(title, render, { wide = false } = {}) {
   return new Promise((resolvePromise) => {
     const root = qs('#modal-root');
     let settled = false;
@@ -150,7 +150,9 @@ export function modal(title, render) {
     const panel = el(
       'div',
       {
-        class: 'card w-[min(30rem,calc(100vw-2rem))] max-h-[85vh] overflow-auto',
+        class:
+          (wide ? 'w-[min(60rem,calc(100vw-2rem))]' : 'w-[min(30rem,calc(100vw-2rem))]') +
+          ' card max-h-[85vh] overflow-auto',
         onclick: (event) => event.stopPropagation(),
       },
       [

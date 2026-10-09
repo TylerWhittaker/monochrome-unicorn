@@ -22,7 +22,12 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
-const printerSrc = readFileSync(new URL('../src/js/printer.js', import.meta.url), 'utf8');
+const filewriteUrl = new URL('../src/js/filewrite.js', import.meta.url).href;
+// printer.js imports filewrite.js, which needs no document: resolve it for real.
+const printerSrc = readFileSync(new URL('../src/js/printer.js', import.meta.url), 'utf8').replace(
+  "'./filewrite.js'",
+  `'${filewriteUrl}'`,
+);
 const printerUrl = 'data:text/javascript;base64,' + Buffer.from(printerSrc).toString('base64');
 const p = await import(printerUrl);
 
@@ -34,6 +39,7 @@ const p = await import(printerUrl);
  */
 const filesSrc = readFileSync(new URL('../src/js/files.js', import.meta.url), 'utf8')
   .replace("'./printer.js'", `'${printerUrl}'`)
+  .replace("'./filewrite.js'", `'${filewriteUrl}'`)
   .replace(/^import\s*\{[^}]*\}\s*from\s*'\.\/[^']*';?$/gm, '');
 const fs = await import('data:text/javascript;base64,' + Buffer.from(filesSrc).toString('base64'));
 
@@ -119,13 +125,23 @@ check('a .BAT runs, and is not offered as a label', () => {
   assert.equal(caps.run, null);
   assert.equal(caps.view, null, 'the web server does serve a .BAT');
   assert.match(caps.print, /not a stored label format/);
-  assert.match(caps.edit, /only write a \.ZPL/);
+  assert.equal(caps.edit, null, 'edited as text, written back through file.append');
 });
 
-check('a CPCL label prints, and says why it cannot be edited', () => {
+check('a CPCL label prints, and is edited as text', () => {
   const caps = fs.fsCapabilities({ dev: 'E', oname: 'SHELF', otype: 'LBL' });
   assert.equal(caps.print, null);
-  assert.match(caps.edit, /\.LBL is read-only/);
+  assert.equal(caps.edit, null);
+});
+
+check('what cannot be edited says why', () => {
+  assert.match(fs.fsCapabilities({ dev: 'E', oname: 'LOGO', otype: 'PNG' }).edit, /picture/);
+  assert.match(
+    fs.fsCapabilities({ dev: 'E', oname: 'X', otype: 'NRD' }).edit,
+    /will not hand over/,
+  );
+  assert.match(fs.fsCapabilities({ dev: 'R', oname: 'X', otype: 'TXT' }).edit, /R: are not served/);
+  assert.equal(fs.fsCapabilities({ dev: 'E', oname: 'MENU', otype: 'WML' }).edit, null);
 });
 
 check('a type /dir could not name offers nothing, and says so', () => {
@@ -238,16 +254,16 @@ check('a picture goes through the one-bit converter', () => {
   assert.equal(fs.fsUploadRoute('scan', 'image/tiff').route, 'image');
 });
 
-check('a label format goes through the ZPL form', () => {
+check('a .ZPL goes through the label form', () => {
   assert.equal(fs.fsUploadRoute('label.zpl', 'text/plain').route, 'zpl');
-  assert.equal(fs.fsUploadRoute('SHELF.FMT', '').route, 'zpl');
 });
 
-check('anything the printer cannot be given is refused up front', () => {
-  assert.equal(fs.fsUploadRoute('setup.bat', '').route, 'none');
-  assert.equal(fs.fsUploadRoute('font.ttf', '').route, 'none');
-  assert.equal(fs.fsUploadRoute('README', '').route, 'none');
-  assert.equal(fs.fsUploadRoute('page.shtml', 'text/html').route, 'none');
+check('anything else is stored as it is, through file.append', () => {
+  // A NUL in the bytes is what refuses a file, and that is found when it
+  // is read, not from its name.
+  for (const name of ['SHELF.FMT', 'setup.bat', 'menu.wml', 'font.ttf', 'README', 'page.shtml']) {
+    assert.equal(fs.fsUploadRoute(name, '').route, 'file', name);
+  }
 });
 
 console.log(failures ? `\n${failures} failure(s)` : '\nall passed');

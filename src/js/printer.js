@@ -53,52 +53,45 @@
  * object and decide how loud to be about it.
  */
 
+import { appendBodies, firstNul, sameBytes, UNSERVED_TYPES } from './filewrite.js';
+
 /*
- * The web server answers one request at a time, and a slow setting
- * (file.drive_listing, nine seconds) holds it for the whole read: a
- * request sent meanwhile comes back as "The printer is busy processing
- * another request". So a slow read waits for the requests in flight to
- * finish, and every request made after it waits for the slow read,
- * rather than failing.
+ * The web server answers one request at a time, and it is not safe to
+ * ask it two at once: a setvars.cgi write that arrives while it is still
+ * building a page full of #exec getvar.cgi (STATUS.SHTML, polled every
+ * 15 seconds) gets an empty reply -- and from then on so does every
+ * setvars.cgi request, until the printer is power-cycled. (Caught on the
+ * ZD500R, 2026-10-08: the header's status poll and an upload's
+ * file.delete left the page in the same millisecond.) A slow setting
+ * (file.drive_listing, nine seconds) holds the server for the whole read
+ * as well, and a request sent meanwhile comes back as "The printer is
+ * busy processing another request".
+ *
+ * So every request the console makes takes its turn: one at a time, in
+ * the order asked, the next starting only when the last has answered.
+ * A turn that never ends (a request with no timeout of its own) gives
+ * way after TURN_LIMIT_MS rather than holding the printer for good.
  */
-let slowRead = null;
-let inFlight = 0;
-let idleWaiters = [];
+const TURN_LIMIT_MS = 150000;
+let lastTurn = Promise.resolve();
 
-/** Run one ordinary request, held back while a slow read has the printer. */
-export async function printerTurn(request) {
-  // The check and the count happen in the same tick, so a slow read
-  // cannot start between them.
-  while (slowRead) await slowRead.catch(() => {});
-  inFlight++;
-  try {
-    return await request();
-  } finally {
-    if (--inFlight === 0) {
-      const waiters = idleWaiters;
-      idleWaiters = [];
-      for (const wake of waiters) wake();
-    }
-  }
+/** Run one request when the printer is free; resolves with its result. */
+export function printerTurn(request) {
+  const turn = lastTurn.then(() => request());
+  lastTurn = new Promise((release) => {
+    const limit = setTimeout(release, TURN_LIMIT_MS);
+    turn
+      .finally(() => {
+        clearTimeout(limit);
+        release();
+      })
+      .catch(() => {});
+  });
+  return turn;
 }
 
-/**
- * Run a slow read with the printer to itself. It claims the printer at
- * once, so nothing new starts while it waits for what is in flight.
- */
-async function slowTurn(request) {
-  while (slowRead) await slowRead.catch(() => {});
-  const turn = (async () => {
-    while (inFlight > 0) await new Promise((wake) => idleWaiters.push(wake));
-    return request();
-  })();
-  slowRead = turn;
-  try {
-    return await turn;
-  } finally {
-    if (slowRead === turn) slowRead = null;
-  }
-}
+/** A slow read takes its turn like anything else; the name says what it costs. */
+const slowTurn = printerTurn;
 
 /** Serialize a flat object as application/x-www-form-urlencoded. */
 function formEncode(fields) {
@@ -773,6 +766,102 @@ export function runStoredFile(name) {
  */
 export function deleteStoredFile(name) {
   return sendCommandSetting('file.delete', name);
+}
+
+/** Give a stored file a new name, extension and all ("E:OLD.TXT", "E:NEW.CSV"). */
+export function renameStoredFile(from, to) {
+  return sendCommandSetting('file.rename', `${from} ${to}`);
+}
+
+/** One raw form body to setvars.cgi, already encoded (filewrite.js). */
+function postSetvarsBody(body, { timeout = 30000 } = {}) {
+  return printerTurn(async () => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    try {
+      const res = await fetch('/Zebra/cgi/setvars.cgi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+        signal: ctrl.signal,
+      });
+      await res.text();
+      return res.ok;
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+}
+
+/**
+ * Store a file of any type on the printer, from the browser, through the
+ * undocumented file.append setting (filewrite.js has the measurements).
+ *
+ * It is written beside the real one first, as UPLOAD_TMP.<EXT> on the
+ * same drive, in chunks; read back and compared byte for byte where the
+ * web server will serve the type; and only then put in place -- the old
+ * file deleted, the new one renamed over it -- so a write that goes wrong
+ * leaves the old file as it was. setvars.cgi says nothing either way, so
+ * the read-back is the proof. `onProgress(sent, total)` follows the chunks.
+ *
+ * Resolves to { verified }: false only for a type the web server will
+ * not serve, which was checked for in the drive's listing instead.
+ */
+export async function writeStoredFile({ dev = 'E', oname, otype, bytes, onProgress = () => {} }) {
+  const nul = firstNul(bytes);
+  if (nul !== -1) {
+    throw new Error(
+      `It has a NUL byte (at byte ${nul + 1}), and the printer ends a file written this way ` +
+        'at the first one. Pictures go through Upload as a .GRF; other binary files need ' +
+        'tools/upload.mjs on port 9100.',
+    );
+  }
+  const type = String(otype).toUpperCase();
+  const name = `${dev}:${oname}.${type}`;
+  const temp = { dev, oname: 'UPLOAD_TMP', otype: type };
+  const tempName = `${dev}:${temp.oname}.${type}`;
+  const served = dev !== 'R' && !UNSERVED_TYPES.includes(type);
+
+  await deleteStoredFile(tempName).catch(() => {});
+  const bodies = appendBodies(tempName, bytes);
+  for (let i = 0; i < bodies.length; i++) {
+    // The CGI's reply is sometimes malformed even when the write landed,
+    // and a fetch may call that an error; the read-back decides.
+    await postSetvarsBody(bodies[i]).catch(() => {});
+    onProgress(
+      Math.min(bytes.length, Math.round(((i + 1) / bodies.length) * bytes.length)),
+      bytes.length,
+    );
+  }
+
+  if (served) {
+    const back = await fetchStoredFile(temp).catch((err) => {
+      throw new Error(`The printer did not keep it: ${err.message}`);
+    });
+    if (!sameBytes(back, bytes)) {
+      await deleteStoredFile(tempName).catch(() => {});
+      throw new Error(
+        `The printer kept ${back.length} of ${bytes.length} bytes, not the file sent; ` +
+          `${name} is unchanged.`,
+      );
+    }
+  } else {
+    const listed = await listFiles({ dev, otype: '*  ' });
+    if (!listed.some((f) => f.oname === temp.oname)) {
+      throw new Error(`The printer did not keep it; ${name} is unchanged.`);
+    }
+  }
+
+  await deleteStoredFile(name).catch(() => {});
+  await renameStoredFile(tempName, name);
+  if (served) {
+    const placed = await fetchStoredFile({ dev, oname, otype: type }).catch(() => null);
+    if (!placed || !sameBytes(placed, bytes)) {
+      throw new Error(`It was written as ${tempName}, but could not be renamed to ${name}.`);
+    }
+  }
+  forgetStoredImage(name);
+  return { verified: served };
 }
 
 /**

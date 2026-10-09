@@ -22,7 +22,12 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
-const src = readFileSync(new URL('../src/js/printer.js', import.meta.url), 'utf8');
+const filewriteUrl = new URL('../src/js/filewrite.js', import.meta.url).href;
+// printer.js imports filewrite.js, which needs no document: resolve it for real.
+const src = readFileSync(new URL('../src/js/printer.js', import.meta.url), 'utf8').replace(
+  "'./filewrite.js'",
+  `'${filewriteUrl}'`,
+);
 const mod = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
 const {
   parseVarFile,
@@ -231,6 +236,33 @@ await checkAsync('a slow read waits for requests in flight, and holds back the r
   assert.deepEqual(printer.sent, ['/A.ZPL', '/S_0.SHTML', '/B.ZPL'], 'B went after the slow read');
   printer.answer('/B.ZPL');
   await later;
+});
+
+await checkAsync(
+  'ordinary requests go one at a time too: never a write beside a page',
+  async () => {
+    // The collision that stuck setvars.cgi on the ZD500R: the status poll
+    // and a setting write leaving together. The write must wait.
+    const printer = fakePrinter();
+    const poll = mod.fetchStoredFile({ oname: 'STATUS', otype: 'SHTML' });
+    const write = mod.sendCommandSetting('file.delete', 'E:X.TXT');
+    await tick();
+    assert.deepEqual(printer.sent, ['/STATUS.SHTML'], 'the write waits for the page');
+    printer.answer('/STATUS.SHTML');
+    await poll;
+    await tick();
+    assert.deepEqual(printer.sent, ['/STATUS.SHTML', '/Zebra/cgi/setvars.cgi']);
+    printer.answer('/Zebra/cgi/setvars.cgi');
+    await write;
+  },
+);
+
+await checkAsync('a request that fails does not hold up the next', async () => {
+  globalThis.fetch = (url) =>
+    url === '/BAD.TXT' ? Promise.reject(new Error('gone')) : Promise.resolve(new Response('ok'));
+  await assert.rejects(mod.fetchStoredFile({ oname: 'BAD', otype: 'TXT' }), /gone/);
+  const bytes = await mod.fetchStoredFile({ oname: 'GOOD', otype: 'TXT' });
+  assert.equal(new TextDecoder().decode(bytes), 'ok');
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

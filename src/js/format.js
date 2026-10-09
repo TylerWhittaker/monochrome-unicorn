@@ -36,7 +36,8 @@
 
 import { el, toast, confirmPrint, debounce, formatBytes, replaceChildren, modal } from './ui.js';
 import { printer } from './state.js';
-import { listFiles, readScript, sendControl } from './printer.js';
+import { listFiles, readScript, sendControl, fetchStoredFile } from './printer.js';
+import { decodeForEditing } from './filewrite.js';
 import {
   cachedDriveListing,
   driveListingError,
@@ -174,7 +175,7 @@ function renderNotice() {
   if (!sourceRead) {
     notes.push([
       'info',
-      `The web server will not return the contents of a ${lang.label} file, so its ` +
+      `The printer would not hand over this ${lang.label} file, so its ` +
         `${lang.fieldNoun}s cannot be found automatically. Set how many there are, or paste the ` +
         'source and they will be read from that.',
     ]);
@@ -567,9 +568,10 @@ async function selectFormat(value, preloaded = null) {
     st.batch = null;
   });
 
-  // A mode that has already read the file hands the source over with it,
-  // which is the only way an EPL or CPCL format ever gets its fields
-  // named: /zpl will not open one, but the file itself can be fetched.
+  // A mode that has already read the file hands the source over with it.
+  // /zpl only opens a .ZPL, but an EPL or CPCL format can be fetched as
+  // the file itself -- one stored from the browser (file.append) always
+  // can -- and failing that, its source can be pasted.
   if (preloaded) {
     applySource(preloaded, true);
   } else if (lang.id === 'zpl') {
@@ -584,7 +586,12 @@ async function selectFormat(value, preloaded = null) {
       applySource('', false);
     }
   } else {
-    applySource('', false);
+    try {
+      const bytes = await fetchStoredFile({ dev, oname, otype });
+      applySource(decodeForEditing(bytes).text, true);
+    } catch (err) {
+      applySource('', false);
+    }
   }
   formatStore.update('format');
 

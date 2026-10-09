@@ -37,6 +37,14 @@ export const name = 'File System';
 const TEXT_FILE = 'ZTESTFILE';
 const IMAGE_FILE = 'ZTESTPIC';
 const BATCH_FILE = 'ZTESTRUN';
+const ANY_FILE = 'ZTESTANY';
+const MENU_FILE = 'ZTESTMENU';
+
+/** About 20 KB of text, CRLF lines and UTF-8: more than one file.append write holds. */
+const BIG_TEXT = Array.from(
+  { length: 300 },
+  (_, i) => `line ${i} — café ✓ ^XA ~HS "q" & <t> 100%\r\n`,
+).join('');
 
 const ZPL_TEXT = '^XA\r\n^FO40,40^A0N,40,40^FDZTEST file^FS\r\n^XZ\r\n';
 
@@ -73,6 +81,15 @@ export default function register(s, ctx) {
     await removeFile(cfg.ip, `E:${IMAGE_FILE}.GRF`);
     await removeFile(cfg.ip, `E:${IMAGE_FILE}2.GRF`);
     await removeFile(cfg.ip, `E:${BATCH_FILE}.BAT`);
+    // ^ID will not take a .WML; file.delete takes anything.
+    for (const name of [
+      `E:${ANY_FILE}.TXT`,
+      `E:${MENU_FILE}.WML`,
+      'E:UPLOAD_TMP.TXT',
+      'E:UPLOAD_TMP.WML',
+    ]) {
+      await setvar(cfg.ip, 'file.delete', name);
+    }
   }, 'remove the test files');
   s.cleanup(() => con && con.close());
 
@@ -265,22 +282,74 @@ export default function register(s, ctx) {
     await row(`E:${IMAGE_FILE}.GRF`).waitFor();
   });
 
-  s.test('a type the web server cannot store says how to upload it instead', async () => {
+  const served = async (name) => Buffer.from((await http(cfg.ip, `/${name}`)).bytes);
+
+  s.test('Upload stores any type as it is: 20 KB of CRLF and UTF-8, read back exact', async () => {
+    await panel.locator('input[type="file"]').setInputFiles({
+      name: 'ztestany.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(BIG_TEXT),
+    });
+    const upload = dialog('Upload to the printer');
+    assert.equal(await upload.locator('input').inputValue(), `${ANY_FILE}.TXT`);
+    await upload.getByRole('button', { name: 'Upload' }).click();
+    await ui.toast(new RegExp(`Stored E:${ANY_FILE}\\.TXT.*checked`), { timeout: 120000 });
+    assert.ok((await served(`${ANY_FILE}.TXT`)).equals(Buffer.from(BIG_TEXT)), 'byte for byte');
+  });
+
+  s.test('Upload again replaces the file rather than adding to it', async () => {
+    await panel.locator('input[type="file"]').setInputFiles({
+      name: 'ztestany.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('second\n'),
+    });
+    await dialog('Upload to the printer').getByRole('button', { name: 'Upload' }).click();
+    await ui.toast(new RegExp(`Stored E:${ANY_FILE}\\.TXT`), { timeout: 60000 });
+    assert.equal((await served(`${ANY_FILE}.TXT`)).toString(), 'second\n');
+    assert.equal(await hasObject(cfg.ip, 'E', 'UPLOAD_TMP'), false, 'no temporary file left');
+  });
+
+  s.test('a file with a NUL byte is turned away, with where else it can go', async () => {
     await panel.locator('input[type="file"]').setInputFiles({
       name: 'ztestrun.bat',
       mimeType: 'application/octet-stream',
-      buffer: Buffer.from('! U1 getvar "device.unique_id"\r\n'),
+      buffer: Buffer.from('a\u0000b'),
     });
-    const help = dialog('This file cannot be uploaded from a browser');
+    const help = dialog('This file cannot be stored from a browser');
     await help.waitFor();
-    assert.match(
-      await help.locator('pre').textContent(),
-      new RegExp(
-        `node tools/upload\\.mjs ${cfg.ip.replace(/\./g, '\\.')} ztestrun\\.bat E:${BATCH_FILE}\\.BAT`,
-      ),
-    );
+    assert.match(await help.textContent(), /NUL byte \(at byte 2\)/);
+    assert.match(await help.locator('pre').textContent(), /node tools\/upload\.mjs/);
     await help.getByRole('button', { name: 'Close' }).click();
     assert.equal(await hasObject(cfg.ip, 'E', BATCH_FILE), false, 'nothing was stored');
+  });
+
+  s.test('Edit opens any text file, and Save writes it back to the printer', async () => {
+    await listingRead();
+    await row(`E:${ANY_FILE}.TXT`).waitFor({ timeout: 60000 });
+    await rowButton(`E:${ANY_FILE}.TXT`, 'Edit').click();
+    const editor = dialog(`Edit E:${ANY_FILE}.TXT`);
+    const area = editor.getByLabel('File contents');
+    await area.waitFor({ timeout: 30000 });
+    assert.equal(await area.inputValue(), 'second\n');
+    await area.fill('edited in the browser\r\ncafé\n');
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await ui.toast(new RegExp(`Stored E:${ANY_FILE}\\.TXT.*checked`), { timeout: 60000 });
+    // A textarea's line breaks are LF; what was typed is what is stored.
+    assert.equal((await served(`${ANY_FILE}.TXT`)).toString(), 'edited in the browser\ncafé\n');
+  });
+
+  s.test('New file writes a .WML menu from scratch', async () => {
+    const menu = '<wml>\n<card id="ztest">\n<p>ZTEST menu</p>\n</card>\n</wml>\n';
+    await panel.getByRole('button', { name: 'New file…' }).click();
+    const name = dialog('New file');
+    await name.locator('input').fill(`${MENU_FILE}.wml`);
+    await name.getByRole('button', { name: 'Next' }).click();
+    const editor = dialog(`New file E:${MENU_FILE}.WML`);
+    await editor.getByLabel('File contents').fill(menu);
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await ui.toast(new RegExp(`Stored E:${MENU_FILE}\\.WML.*checked`), { timeout: 60000 });
+    assert.equal((await served(`${MENU_FILE}.WML`)).toString(), menu);
+    assert.ok(await hasObject(cfg.ip, 'E', MENU_FILE));
   });
 
   s.test('Run executes a .BAT: it sets device.user_p1, which is then put back', async () => {
