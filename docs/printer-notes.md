@@ -601,6 +601,36 @@ silently. And a press that does nothing is not proof the command
 failed -- Down does nothing on the home screen, which is what made the
 first attempt look like a dead end.
 
+## Syslog and alerts
+
+Measured on both printers, 2026-10-09:
+
+- **A log line** is `Sep 23 02:30:50 nto : [Power][Informational][0X14]
+  Power On` -- with a host name (`nto`) the manual's examples leave out.
+  syslog's own `... nto last message repeated 15 times` lines come in
+  between, without the brackets. Severities read `Informational`,
+  `Notice`, `Error`... The ZD620 logs every setting written, from any
+  port, as `[SGD][Informational][0X1D] SGD Set name -> value` (with a
+  password shown as `*`), so its log quotes setting names and values.
+- **`device.syslog.configuration` is kept exactly as written**, and
+  refused whole -- silently, the old value kept -- if a `;` is followed
+  by a space. Capitals, IP addresses and a trailing `;` are all taken.
+  The ZD620 shipped with all eight severities to `local`; only the first
+  `local` entry counts, as the manual says.
+- **The ZD500R (V74.20.23Z) kept nothing locally**: syslog on,
+  `debug,local;`, `save_local_file` yes, and a setting change and a
+  pause/resume logged nothing, in `device.syslog.entries` or
+  `E:SYSLOG.TXT` (a 404). The ZD620 (V84.20.23Z) logs, and serves
+  `/SYSLOG.TXT`. Whether the ZD500R needs a restart to start is not known.
+- **`alerts.configured` is kept exactly as written**; a trailing `|` is
+  refused and the old list kept. An `SGD SET` alert has an eighth field,
+  the setting to watch.
+- **The printers' lists are not the manual's**: `alerts.conditions` has
+  30 entries (`CUTTER JAMMED`, not `CUTTER JAM`; `MOTOR OVERTEMP`,
+  `PRINTHEAD SHUTDOWN`, `SHUTTING DOWN`, `RESTARTING`, `NO READER` added;
+  no `MED`), and `alerts.destinations` has no `MQTT`. The console offers
+  what the printer lists.
+
 ## Rendering
 
 `^PW` and `^LL` both take effect in the preview; width is rounded up to a

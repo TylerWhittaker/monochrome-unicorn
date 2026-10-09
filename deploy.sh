@@ -102,7 +102,7 @@ if [ "$CLEAN" = 1 ]; then
   # connection carries them all. Only .SHTML goes, so a user's own
   # V_ or S_ label or graphic is left alone.
   node tools/upload.mjs "$IP" --delete 'E:V_*.SHTML' 'E:S_*.SHTML' 'E:LCD.SHTML' \
-    'E:STATUS.SHTML' 'E:CLOCK.SHTML' 'E:MAINT.SHTML' 'E:SENSOR.SHTML' || true
+    'E:STATUS.SHTML' 'E:CLOCK.SHTML' 'E:MAINT.SHTML' 'E:SENSOR.SHTML' 'E:LOGS.SHTML' || true
 fi
 
 echo "Uploading to $IP ..."

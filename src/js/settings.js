@@ -35,6 +35,7 @@ import { el, qs, replaceChildren, toast, debounce, modal } from './ui.js';
 import { printer, allSettings } from './state.js';
 import { createMaintenanceCard } from './maintenance.js';
 import { createSensorCard } from './sensor.js';
+import { createLogsView } from './logs.js';
 import { buildBackup, compareBackup } from './backup.js';
 import {
   readAllSettings,
@@ -1116,7 +1117,54 @@ export function mountSettings(panel) {
   listNode = el('div');
   listNode.append(...buildGroups());
 
+  // Two tools: every setting, and Syslog & alerts, which is read only
+  // the first time it is opened.
+  const allView = el('div', { dataset: { settingsView: 'all' } });
+  const logsHost = el('div', { dataset: { settingsView: 'logs' }, hidden: true });
+  let logsView = null;
+  const viewButtons = [
+    ['all', 'All settings'],
+    ['logs', 'Syslog & alerts'],
+  ].map(([view, label]) =>
+    el(
+      'button',
+      {
+        class: 'btn-sm rounded-none',
+        role: 'tab',
+        dataset: { view },
+        onclick: () => showView(view),
+      },
+      [label],
+    ),
+  );
+  function showView(view) {
+    allView.hidden = view !== 'all';
+    logsHost.hidden = view !== 'logs';
+    for (const btn of viewButtons) {
+      const on = btn.dataset.view === view;
+      btn.setAttribute('aria-selected', String(on));
+      btn.className = on
+        ? 'btn-primary btn-sm rounded-none'
+        : 'btn-secondary btn-sm rounded-none border-transparent bg-transparent';
+    }
+    if (view === 'logs' && !logsView) {
+      logsView = createLogsView();
+      logsHost.append(logsView.node);
+      logsView.load();
+    }
+  }
   panel.append(
+    el(
+      'div',
+      { class: 'mb-3 inline-flex overflow-hidden rounded border border-ink-300', role: 'tablist' },
+      viewButtons,
+    ),
+    allView,
+    logsHost,
+  );
+  showView('all');
+
+  allView.append(
     el('div', { class: 'card overflow-hidden' }, [
       sourceNotice(),
       el('div', { class: 'toolbar' }, [
@@ -1153,7 +1201,7 @@ export function mountSettings(panel) {
   // done so they do not hold the printer up for the settings.
   const maintenance = createMaintenanceCard();
   const sensor = createSensorCard();
-  panel.append(el('div', { class: 'mt-3 space-y-3' }, [maintenance.node, sensor.node]));
+  allView.append(el('div', { class: 'mt-3 space-y-3' }, [maintenance.node, sensor.node]));
 
   onDriveListing(paintDriveListing);
   applyFilter();

@@ -63,6 +63,17 @@ export async function prepare(ctx) {
   }
 }
 
+/*
+ * Logs the printer keeps as settings, which quote other settings by name
+ * and value ("SGD Set device.user_vars.test_string -> ...") on a printer
+ * that logs locally -- so a filter for a test setting finds them too.
+ */
+const QUOTING_LOGS = [
+  'device.syslog.entries',
+  'alerts.tracked_settings.log_tracked',
+  'alerts.http.logging.entries',
+];
+
 export default function register(s, ctx) {
   const { cfg } = ctx;
   let con;
@@ -163,11 +174,15 @@ export default function register(s, ctx) {
     const filter = page.getByPlaceholder('Filter by name or value…');
     await filter.fill('test_ user_vars');
     await page.waitForTimeout(400);
-    const shown = await page
+    const all = await page
       .locator('[data-name]:visible')
       .evaluateAll((n) => n.map((r) => r.dataset.name));
+    const shown = all.filter((name) => !QUOTING_LOGS.includes(name));
     assert.deepEqual(shown.sort(), Object.keys(TEST_VARS).map(full).sort());
-    assert.match(await ui.panel('settings').locator('.toolbar').textContent(), /4 of \d+ settings/);
+    assert.match(
+      await ui.panel('settings').locator('.toolbar').textContent(),
+      new RegExp(`${all.length} of \\d+ settings`),
+    );
     await filter.fill('no_such_setting_anywhere');
     await page.locator('#settings-empty:visible').waitFor();
     await filter.fill('test_ user_vars');
@@ -269,9 +284,9 @@ export default function register(s, ctx) {
     const filter = page.getByPlaceholder('Filter by name or value…');
     await filter.fill(`ext-${ctx.runId}`.toLowerCase());
     await page.waitForTimeout(400);
-    const shown = await page
-      .locator('[data-name]:visible')
-      .evaluateAll((n) => n.map((r) => r.dataset.name));
+    const shown = (
+      await page.locator('[data-name]:visible').evaluateAll((n) => n.map((r) => r.dataset.name))
+    ).filter((name) => !QUOTING_LOGS.includes(name));
     assert.deepEqual(shown, [full('test_string')]);
     await filter.fill('');
   });
@@ -413,4 +428,143 @@ export default function register(s, ctx) {
     await filter.fill('');
     ui.assertNoErrors();
   });
+
+  /* -- Syslog & alerts ------------------------------------------- */
+
+  const SYSLOG_SETTINGS = [
+    'device.syslog.enable',
+    'device.syslog.configuration',
+    'device.syslog.save_local_file',
+    'alerts.configured',
+    'device.user_p1',
+  ];
+  const before = {};
+  s.cleanup(async () => {
+    for (const [name, value] of Object.entries(before)) await setvar(cfg.ip, name, value);
+  }, 'put the syslog and alert settings back');
+
+  const tool = () => page.locator('#logs-tool');
+  async function openLogsTool() {
+    await page.getByRole('tab', { name: 'Syslog & alerts' }).click();
+    await tool().locator('#syslog-settings').waitFor();
+    await waitFor(async () => await tool().getByText('Reading the syslog and alerts…').isHidden(), {
+      timeout: 60000,
+      what: 'LOGS.SHTML to be read',
+    });
+  }
+
+  s.test('Syslog & alerts: the destinations saved are the string the printer keeps', async () => {
+    for (const name of SYSLOG_SETTINGS) before[name] = await getvar(cfg.ip, name);
+    await openLogsTool();
+    const card = tool().locator('#syslog-settings');
+    // Start from nothing, then one destination kept on the printer.
+    while ((await card.getByRole('button', { name: /^Remove destination/ }).count()) > 0) {
+      await card
+        .getByRole('button', { name: /^Remove destination/ })
+        .first()
+        .click();
+    }
+    await card.getByRole('button', { name: 'Add destination' }).click();
+    await card.getByLabel('Destination 1 severity').selectOption('debug');
+    const syslogOn = card.getByLabel('Syslog on');
+    if (!(await syslogOn.isChecked())) await syslogOn.check();
+    assert.match(await card.locator('[data-syslog-config]').textContent(), /"debug,local;"/);
+    await card.getByRole('button', { name: 'Save' }).click();
+    await ui.toast(/Saved the syslog settings/, { timeout: 60000 });
+    assert.equal(await getvar(cfg.ip, 'device.syslog.configuration'), 'debug,local;');
+    assert.equal(await getvar(cfg.ip, 'device.syslog.enable'), 'on');
+  });
+
+  s.test('the viewer shows what the printer logs, filtered by severity and words', async () => {
+    // A setting change is logged as "[SGD][Informational] SGD Set name -> value".
+    const marker = `ZTESTLOG${ctx.runId}`.slice(0, 20);
+    await setvar(cfg.ip, 'device.user_p1', marker);
+    const viewer = tool().locator('#syslog-viewer');
+    const lines = viewer.locator('[data-log] [data-entry]');
+    const logged = await waitFor(
+      async () => {
+        await viewer.getByRole('button', { name: 'Refresh' }).click();
+        await page.waitForTimeout(1500);
+        return (await viewer.locator('[data-log]').textContent()).includes(marker);
+      },
+      { timeout: 20000, interval: 3000, what: `the printer to log ${marker}` },
+    ).then(
+      () => true,
+      () => false,
+    );
+    if (!logged) {
+      // The ZD500R (V74.20.23Z) logs nothing locally, even set to
+      // "debug,local;" and paused and resumed; the ZD620 does.
+      const entries = await getvar(cfg.ip, 'device.syslog.entries');
+      assert.equal(await lines.count(), entries.split(/\r?\n/).filter((l) => l.trim()).length);
+      if (!entries.trim()) {
+        assert.match(await viewer.locator('[data-log]').textContent(), /The log is empty\./);
+        skip('this printer kept nothing in its local syslog, so there is nothing to filter');
+      }
+      assert.fail('the printer logs, but did not log the change to device.user_p1');
+    }
+    const printerLines = (await getvar(cfg.ip, 'device.syslog.entries'))
+      .split(/\r?\n/)
+      .filter((l) => l.trim()).length;
+    // The log is live -- every setting written is a new line -- so allow
+    // for a few arriving between the page's read and this one.
+    const rows = await lines.count();
+    assert.ok(Math.abs(rows - printerLines) <= 3, `${rows} rows for ${printerLines} lines`);
+    const mine = viewer.locator('[data-log] [data-entry]', { hasText: marker });
+    assert.match(
+      await mine.first().textContent(),
+      /Informational.*\[SGD\].*SGD Set device\.user_p1/,
+    );
+
+    await viewer.getByLabel('Search the log').fill(marker);
+    assert.ok((await lines.count()) >= 1);
+    assert.match(await viewer.locator('[data-log-count]').textContent(), /of \d+ lines/);
+    await viewer.getByLabel('Lowest severity shown').selectOption('3'); // Error and worse
+    assert.equal(await mine.count(), 0, 'an informational line is filtered out');
+    await viewer.getByLabel('Lowest severity shown').selectOption('7');
+    await viewer.getByLabel('Search the log').fill('');
+  });
+
+  s.test('an address that is not one blocks Save', async () => {
+    const card = tool().locator('#syslog-settings');
+    await card.getByRole('button', { name: 'Add destination' }).click();
+    await card.getByLabel('Destination 2 kind').selectOption('server');
+    await card.getByLabel('Destination 2 address').fill('10.0.0.300');
+    await card.getByText(/syslog server's IPv4 address/).waitFor();
+    assert.equal(await card.getByRole('button', { name: 'Save' }).isDisabled(), true);
+    await card.getByRole('button', { name: 'Remove destination 2' }).click();
+  });
+
+  s.test(
+    'an alert added on the page is what alerts.configured holds, and removing it puts it back',
+    async () => {
+      const card = tool().locator('#alerts-settings');
+      const original = await getvar(cfg.ip, 'alerts.configured');
+      const rows = card.locator('tr[data-alert]');
+      const n = await rows.count();
+      await card.getByRole('button', { name: 'Add alert' }).click();
+      const k = n + 1;
+      await card.getByLabel(`Alert ${k} condition`).selectOption('PAPER OUT');
+      await card.getByLabel(`Alert ${k} destination`).selectOption('UDP');
+      // A TEST-NET address, and quelled: configured, never sent.
+      await card.getByLabel(`Alert ${k} address`).fill('192.0.2.1');
+      await card.getByLabel(`Alert ${k} port`).fill('9999');
+      await card.getByLabel(`Alert ${k} quelled`).check();
+      await card.getByRole('button', { name: 'Save' }).click();
+      await ui.toast(/Saved the alerts/, { timeout: 60000 });
+      const kept = await getvar(cfg.ip, 'alerts.configured');
+      assert.equal(kept, `${original ? `${original}|` : ''}PAPER OUT,UDP,Y,N,192.0.2.1,9999,Y`);
+
+      await card.locator('tr[data-alert]').nth(n).waitFor();
+      await card.getByRole('button', { name: `Remove alert ${k}` }).click();
+      await card.getByRole('button', { name: 'Save' }).click();
+      // The first save's toast may still be up; the printer is the proof.
+      await waitFor(async () => (await getvar(cfg.ip, 'alerts.configured')) === original, {
+        timeout: 60000,
+        what: 'alerts.configured to be as it was',
+      });
+      await page.getByRole('tab', { name: 'All settings' }).click();
+      ui.assertNoErrors();
+    },
+  );
 }

@@ -89,6 +89,26 @@ const SENSOR_VARS = [
   'sensor.back_bar.ppr_out_thold',
 ];
 
+/** Syslog & alerts in Printer Settings: the log, and the settings it edits. */
+const LOG_VARS = [
+  'device.syslog.enable',
+  'device.syslog.configuration',
+  'device.syslog.save_local_file',
+  'device.syslog.log_max_file_size',
+  'device.syslog.entries',
+  'alerts.configured',
+  'alerts.conditions',
+  'alerts.destinations',
+  'alerts.http.logging.entries',
+  'alerts.http.logging.max_entries',
+  'alerts.tracked_settings.log_tracked',
+  'alerts.tracked_settings.max_log_entries',
+  'ip.smtp.enable',
+  'ip.smtp.server_addr',
+  'ip.smtp.domain',
+  'ip.snmp.trap_community_name',
+];
+
 /** The printer's clock, for the Set clock dialog. */
 const CLOCK_VARS = ['rtc.exists', 'rtc.date', 'rtc.time', 'rtc.timezone', 'rtc.unix_timestamp'];
 
@@ -464,6 +484,7 @@ function helperFiles(schema) {
   files.push({ dest: 'E:CLOCK.SHTML', contents: CLOCK_VARS.map(varLine).join('\n') + '\n' });
   files.push({ dest: 'E:MAINT.SHTML', contents: MAINT_VARS.map(varLine).join('\n') + '\n' });
   files.push({ dest: 'E:SENSOR.SHTML', contents: SENSOR_VARS.map(varLine).join('\n') + '\n' });
+  files.push({ dest: 'E:LOGS.SHTML', contents: LOG_VARS.map(varLine).join('\n') + '\n' });
 
   /*
    * Every readable setting in one file, for the sweep.

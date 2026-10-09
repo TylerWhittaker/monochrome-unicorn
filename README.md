@@ -37,6 +37,17 @@ Four modes:
   the ticked ones, each confirmed by read-back. Passwords and keys
   never go in a backup, nor do the clock, the odometers, commands or
   user variables; the network address and identity only when asked.
+  **Syslog & alerts**, beside All settings, is a tool of its own: the
+  printer's syslog (`device.syslog.entries`, or `E:SYSLOG.TXT`) a line
+  at a time, its feature, severity and code picked out and coloured,
+  filtered by severity, feature and words, downloaded or cleared; the
+  syslog settings, the destination list edited as rows of severity and
+  "kept on the printer" or a server's address; and the alerts
+  (`alerts.configured`) the same way, each condition, destination,
+  on-set and on-clear, address, port and quelling, with the e-mail and
+  SNMP settings they are sent with and the alert system's own logs.
+  Each list is checked as it is edited, and shown as the string that
+  will be written; every write is read back.
 - **Label Editor** — create and edit stored `.ZPL` labels, either by
   dragging text, barcodes (twenty symbologies, GS1 and postal among
   them), serial numbers (`^SN`, counting from label to label), images,
@@ -284,6 +295,8 @@ src/js/
   layers.js           the Label Editor's Layers card: order, hide, lock
   maintenance.js      the Maintenance card: odometers
   sensor.js           the Media sensor card: readings and thresholds
+  logs.js             Syslog & alerts: the log viewer and both editors
+  syslog.js           syslog lines and the syslog / alert strings, as data
 src/data/
   zpl-reference.mjs   every ZPL command and parameter, in our words
   sgd-reference.mjs   what each printer setting is for, likewise
@@ -338,6 +351,7 @@ node test/sensor.test.mjs   # the media sensor gauges
 node test/layers.test.mjs   # reordering layers
 node test/store.test.mjs    # the state store
 node test/filewrite.test.mjs # file.append requests, chunks and text encodings
+node test/syslog.test.mjs   # syslog lines, destinations and alerts
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 npm run format              # lay out every .js/.mjs with prettier

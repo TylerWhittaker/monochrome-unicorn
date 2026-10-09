@@ -233,6 +233,11 @@ export async function readMaintenance({ timeout = 15000 } = {}) {
   return parseVarFile(await getText('/MAINT.SHTML', { timeout }));
 }
 
+/** The syslog, and the syslog and alert settings (build.mjs LOG_VARS). */
+export async function readLogs({ timeout = 30000 } = {}) {
+  return parseVarFile(await getText('/LOGS.SHTML', { timeout }));
+}
+
 /** The media sensor's readings (build.mjs SENSOR_VARS). */
 export async function readSensor({ timeout = 15000 } = {}) {
   return parseVarFile(await getText('/SENSOR.SHTML', { timeout }));
