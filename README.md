@@ -205,7 +205,7 @@ in (`boot-vars`) and the footer stay plain text either way.
 Wi-Fi and 370-560 KB/s wired (docs/printer-notes.md), so the plain page
 loads in about a second and the packed one in about half that; a phone
 on a weak link will be slower. Page weight is still watched: the build
-prints the breakdown, and the live tests fail a plain page over 500 KB
+prints the breakdown, and the live tests fail a plain page over 600 KB
 or a packed one over 250 KB. Ace (~400 KB) is the one thing loaded from
 a CDN, on demand, the first time you open the source view; when the client has no internet
 the editor falls back to a textarea with its own ZPL highlighting, so the

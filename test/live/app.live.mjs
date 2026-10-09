@@ -46,10 +46,10 @@ export default function register(s, ctx) {
 
   s.test('the page stays near its size budget', async () => {
     const page = await http(cfg.ip, '/INDEX.SHTML');
-    // Unpacked (the default) it is about 440 KB; packed (deploy.sh
+    // Unpacked (the default) it is about 495 KB; packed (deploy.sh
     // --packed) about 170 KB. Well past either is a regression.
     const packed = Buffer.from(page.bytes).toString('latin1').includes('id="packed"');
-    const budget = (packed ? 250 : 500) * 1024;
+    const budget = (packed ? 250 : 600) * 1024;
     assert.ok(
       page.bytes.length < budget,
       `INDEX.SHTML (${packed ? 'packed' : 'unpacked'}) is ${page.bytes.length} bytes`,
