@@ -42,7 +42,7 @@ build-packed: ## the same, gzipped: ~170 KB for a slow link (Safari 16.4+, Firef
 deploy: need-ip ## read the printer's catalogue, build and install on IP
 	./deploy.sh $(IP)
 
-deploy-quick: need-ip ## build and install on IP, reusing data/sgd-schema.json
+deploy-quick: need-ip ## build and install on IP, reusing dist/sgd-schema.json
 	./deploy.sh $(IP) --no-schema
 
 deploy-packed: need-ip ## install the packed page on IP (the next commit's deploy unpacks it again)
@@ -51,7 +51,7 @@ deploy-packed: need-ip ## install the packed page on IP (the next commit's deplo
 deploy-all: ## build and install on every printer in PRINTERS
 	@for p in $(PRINTERS); do echo "== $$p"; ./deploy.sh $$p || exit 1; done
 
-schema: need-ip ## capture IP's settings catalogue into data/sgd-schema.json
+schema: need-ip ## capture IP's settings catalogue into dist/sgd-schema.json
 	node tools/fetch-schema.mjs $(IP)
 
 test: ## the unit tests: no printer needed

@@ -96,7 +96,7 @@ check('the packed blob round-trips, in short lines', () => {
   );
 });
 
-const schemaPath = new URL('../data/sgd-schema.json', import.meta.url).pathname;
+const schemaPath = new URL('../dist/sgd-schema.json', import.meta.url).pathname;
 if (existsSync(schemaPath)) {
   check('the built page keeps the SSI lines plain and packs the rest', () => {
     const out = mkdtempSync(join(tmpdir(), 'zebra-build-'));
@@ -139,7 +139,7 @@ if (existsSync(schemaPath)) {
     }
   });
 } else {
-  console.log('  skip the built page (no data/sgd-schema.json yet)');
+  console.log('  skip the built page (no dist/sgd-schema.json yet)');
 }
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

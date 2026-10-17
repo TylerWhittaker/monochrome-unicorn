@@ -23,7 +23,7 @@
  * fetch-schema.mjs -- capture the printer's SGD catalogue at build time.
  *
  * Asks the printer for its settings on port 9100 and writes a compacted
- * schema to data/sgd-schema.json. Only the shape of each setting (type,
+ * schema to dist/sgd-schema.json. Only the shape of each setting (type,
  * range, access, factory default) is kept -- live values come from the
  * V_*.SHTML helper files at page load, so baking them in would just make
  * the page bigger and wronger.
@@ -42,7 +42,7 @@
  * ~HI says which generation this is, so the choice is made for you
  * unless --allcv or --allconfig says otherwise.
  *
- *   node tools/fetch-schema.mjs <printer-ip> [--out data/sgd-schema.json]
+ *   node tools/fetch-schema.mjs <printer-ip> [--out dist/sgd-schema.json]
  *                              [--allcv | --allconfig]
  */
 
@@ -405,7 +405,7 @@ async function main() {
     process.exit(2);
   }
   const outFlag = args.indexOf('--out');
-  const outPath = resolve(outFlag !== -1 ? args[outFlag + 1] : 'data/sgd-schema.json');
+  const outPath = resolve(outFlag !== -1 ? args[outFlag + 1] : 'dist/sgd-schema.json');
 
   let source = args.includes('--allcv')
     ? 'allcv'

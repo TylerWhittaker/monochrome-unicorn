@@ -46,9 +46,9 @@ check('every entry is a sentence or two about a dotted setting name', () => {
 });
 
 check('it covers the settings catalogue this build was made from', () => {
-  const path = new URL('../data/sgd-schema.json', import.meta.url);
+  const path = new URL('../dist/sgd-schema.json', import.meta.url);
   if (!existsSync(path)) {
-    console.log('       (no data/sgd-schema.json yet: nothing to check against)');
+    console.log('       (no dist/sgd-schema.json yet: nothing to check against)');
     return;
   }
   const schema = JSON.parse(readFileSync(path, 'utf8'));

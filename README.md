@@ -142,13 +142,14 @@ npm install                      # once, for the Tailwind CLI
 That reads the printer's setting catalogue, builds `dist/INDEX.SHTML`,
 uploads it plus its helper files, and checks what the printer now serves.
 
-The catalogue it captures (`data/sgd-schema.json`) is a property of the
+The catalogue it captures (`dist/sgd-schema.json`) is a property of the
 printer in front of you, not of this project, so it is generated rather
 than checked in: a fresh clone has none until a deploy -- or
-`node tools/fetch-schema.mjs <printer-ip>` -- has fetched one.
+`node tools/fetch-schema.mjs <printer-ip>` -- has fetched one, and
+`make clean` removes it with the rest of `dist/`.
 
 ```
---no-schema   reuse data/sgd-schema.json instead of re-reading the printer
+--no-schema   reuse dist/sgd-schema.json instead of re-reading the printer
 --no-upload   build only
 --no-clean    keep previously installed helper files (by default
               they are removed before the new set is uploaded)
@@ -329,7 +330,7 @@ printer taken from `test/live/config.json` when `IP` is not given.
 changes, which it warns about) into `dist/<name>-<version>.tar.gz` --
 `monochrome-unicorn-0.43.1.tar.gz`, unpacking into a directory of the
 same name. It is what `git archive` gives, so nothing untracked goes in
-(`node_modules`, `dist`, `data/sgd-schema.json`, the live tests'
+(`node_modules`, `dist` and the catalogue in it, the live tests'
 `config.json` and its password), and it leaves out the Zebra reference
 material, `docs/initial_claude_prompt.txt` and `AGENTS.md`. Unpacked
 elsewhere, `npm install` then `./deploy.sh <printer-ip>` builds and

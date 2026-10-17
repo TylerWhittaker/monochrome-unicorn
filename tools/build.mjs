@@ -28,7 +28,7 @@
  * small. Ace is the one exception -- it is pulled from cdnjs on demand,
  * with a plain-textarea fallback when the client has no internet.
  *
- *   node tools/build.mjs [--schema data/sgd-schema.json] [--out dist]
+ *   node tools/build.mjs [--schema dist/sgd-schema.json] [--out dist]
  */
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
@@ -656,7 +656,7 @@ function main() {
   };
 
   const result = build({
-    schemaPath: resolve(flag('--schema', 'data/sgd-schema.json')),
+    schemaPath: resolve(flag('--schema', 'dist/sgd-schema.json')),
     outDir: resolve(flag('--out', 'dist')),
     // --unpacked is the default now, and still accepted.
     packed: args.includes('--packed'),

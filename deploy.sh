@@ -22,7 +22,7 @@
 #
 #   ./deploy.sh <printer-ip> [options]
 #
-#     --no-schema   reuse data/sgd-schema.json instead of re-reading the
+#     --no-schema   reuse dist/sgd-schema.json instead of re-reading the
 #                   printer's SGD catalogue (faster; use when you know the
 #                   target printer matches the captured one)
 #     --allcv       read the catalogue with `! U1 getvar "allcv"` rather
@@ -86,7 +86,7 @@ done
 if [ "$FETCH_SCHEMA" = 1 ]; then
   node tools/fetch-schema.mjs "$IP" ${SCHEMA_ARGS[@]+"${SCHEMA_ARGS[@]}"}
 else
-  echo "Using cached data/sgd-schema.json"
+  echo "Using cached dist/sgd-schema.json"
 fi
 
 node tools/build.mjs ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}

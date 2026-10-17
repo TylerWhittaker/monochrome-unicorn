@@ -2,7 +2,6 @@ node_modules/
 dist/
 *.log
 reference/
-data/sgd-schema.json
 allcv.txt
 zpl/
 lcd.bmp*
