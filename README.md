@@ -14,198 +14,55 @@ printer's address in a browser.
 
 ![The Label Editor: a label on the canvas, the selected barcode's options, and the printer's own render](docs/screenshots/editor.png)
 
-**Contents:** [What it does](#what-it-does) ·
+**Contents:** [Screenshots](#screenshots) ·
 [Installing](#installing) · [Deploying](#deploying) ·
 [Why it is built this way](#why-it-is-built-this-way) ·
 [Working on it](#working-on-it) · [Known limits](#known-limits) ·
 [Licence](#licence)
 
-## What it does
+## Screenshots
 
-The header shows the printer's status -- ready, paused, paper out,
-ribbon out or head open -- refreshed every 15 seconds, and a Printer
-menu for what is otherwise done at the printer: feed a label, pause and
-resume, cancel all jobs, calibrate, set the clock, print the
-configuration label.
-
-![The Printer menu, open under the header](docs/screenshots/printer-menu.png)
-
-Five modes, one tab each:
-
-| | |
-|---|---|
-| [**Printer Settings**](#printer-settings) | every setting on the printer, explained, editable, backed up and restored; odometers, media sensor, syslog and alerts |
-| [**Label Editor**](#label-editor) | drag-and-drop or raw ZPL, with the printer's own render beside it |
-| [**Stored Formats**](#stored-formats) | fill in a stored ZPL, EPL or CPCL format and print it, one label or a CSV batch |
-| [**File System**](#file-system) | every file on every drive: view, edit, download, upload, run, delete |
-| [**LCD Viewer**](#lcd-viewer) | the front panel, mirrored, with buttons that press the printer's own |
-
-### Printer Settings
+**Printer Settings** -- every setting on the printer, filtered, explained and edited in place.
 
 ![Printer Settings, filtered to media., with media.speed explained](docs/screenshots/settings.png)
 
-Every SGD on the printer, Firefox `about:config` style: filter by name
-or value, sort them, edit the writable ones with a widget chosen from
-the setting's type and range, see at a glance which differ from their
-factory default. All ~574 of them arrive in one streamed request,
-painted as they land. Click a setting's name for what it is for -- a
-summary written for every setting of the printers this was built
-against (`src/data/sgd-reference.mjs`, served as `SGDREF.SHTML` and
-read on first use) -- with its range and default.
+Only the settings changed from their factory default.
 
 ![Only the settings changed from their factory default](docs/screenshots/settings-changed.png)
 
-**Back up…** downloads the settings that differ from their default (or
-every writable one) as JSON; **Restore…** reads one back, shows it
-against this printer with the differing ones ticked, and writes the
-ticked ones, each confirmed by read-back. Passwords and keys never go
-in a backup, nor do the clock, the odometers, commands or user
-variables; the network address and identity only when asked.
-
-Below the table, a **Maintenance** card shows the odometers -- media
-run since the head was cleaned and since it was replaced, labels, cuts,
-head temperature, uptime -- with buttons to reset the head counters.
+The odometers, and the media sensor's readings against its thresholds.
 
 ![The Maintenance card](docs/screenshots/maintenance.png)
 
-Under it, a **Media sensor** card shows which sensor finds the labels
-(gap or black mark), each sensor's reading against its label and
-paper-out thresholds, and Watch re-reads them every second for two
-minutes, so moving the media by hand shows the reading change; with
-Calibrate (`~JC`) and Print sensor profile (`~JG`) beside it. The
-profile graph itself only exists on paper: the printer prints it and
-hands nothing back.
-
 ![The Media sensor card](docs/screenshots/media-sensor.png)
 
-**Syslog & alerts**, beside All settings, is a tool of its own: the
-printer's syslog (`device.syslog.entries`, or `E:SYSLOG.TXT`) a line at
-a time, its feature, severity and code picked out and coloured,
-filtered by severity, feature and words, downloaded or cleared; the
-syslog settings, the destination list edited as rows of severity and
-"kept on the printer" or a server's address; and the alerts
-(`alerts.configured`) the same way, each condition, destination, on-set
-and on-clear, address, port and quelling, with the e-mail and SNMP
-settings they are sent with and the alert system's own logs. Each list
-is checked as it is edited, and shown as the string that will be
-written; every write is read back.
+The printer's syslog, a line at a time, with its destinations and alerts below.
 
 ![Syslog & alerts: the printer's log, a line at a time](docs/screenshots/syslog.png)
 
-### Label Editor
+The Printer menu: what is otherwise done at the printer.
 
-Create and edit stored `.ZPL` labels, either by dragging text, barcodes
-(twenty symbologies, GS1 and postal among them), serial numbers (`^SN`,
-counting from label to label), images, boxes, ellipses, straight and
-diagonal lines, `^FN` fields and dates (`^FC`, filled in from the
-printer's clock) around a canvas or by writing ZPL directly. Text can
-run vertically or reversed, in the built-in fonts or any TrueType font
-stored on the printer (`^A@`). The preview beside it is the printer's
-own render, not a simulation; its Zoom fits it to the pane or shows it
-at a fixed size, 100% being one screen pixel to a printer dot,
-scrolling when it is bigger than the pane (remembered). Every length is
-shown in inches, millimetres or dots, switched by one radio group and
-remembered between visits.
+![The Printer menu, open under the header](docs/screenshots/printer-menu.png)
 
-In the source view, the panel beside it explains the command under the
-cursor -- what it does, and each parameter with the value the label
-gives it -- from a reference written for every command in the ZPL guide
-(`src/data/zpl-reference.mjs`), served as `ZPLREF.SHTML` and read the
-first time it is wanted.
+**Label Editor** -- the source view, with the command under the cursor explained.
 
 ![The source view, with ^BY under the cursor explained parameter by parameter](docs/screenshots/editor-source.png)
 
-Several elements can be selected at once -- Shift-click, Ctrl+A, or a
-drag across the empty label -- then moved, nudged, deleted, lined up or
-spaced evenly together. Ctrl+C puts them on the clipboard as ZPL and
-Ctrl+V pastes copies; ZPL copied from anywhere else pastes as the
-elements it draws.
-
-A drag snaps to smart guides -- the edges and centres of the other
-elements and of the label, drawn as blue lines while they hold --
-unless the grid is on, when it lands on the grid instead; Alt drags
-freely. A Layers card under the canvas, collapsed until its arrow opens
-it, lists the elements top-most first: click one to select it (even one
-buried under others), drag rows or use To front / Forward / Backward /
-To back to change the order the ZPL draws them in, and Hide (off the
-canvas, still printed) or Lock (not dragged or nudged) any of them --
-those two are the editor's own and not saved with the label.
-
-On a touch screen two fingers pinch the zoom, a long press adds an
-element to the selection, a finger on empty space scrolls rather than
-drawing a band, and the resize handle and buttons are bigger. Press `?`
-anywhere, or the editor's `?` button, for every keyboard shortcut.
-
-### Stored Formats
+**Stored Formats** -- fill in a stored format's fields, previewed by the printer.
 
 ![Stored Formats: four fields filled in, and the printer's render](docs/screenshots/formats.png)
 
-Pick a stored format in any of the printer's label languages (ZPL, EPL,
-CPCL), fill in one box per field, preview and print. The fields are
-read from the format itself, in any of the three; only a ZPL format can
-be previewed, because the printer only renders ZPL, and the mode says
-so rather than pretending otherwise. CPCL formats only show up in the
-drive listing (below), so they join the list when it lands, with a note
-beside the list while it is being read.
-
-A batch from CSV prints one label per row, the columns matched to
-fields by name; Previous, Next and the arrow keys step the preview
-through the rows, and a note says which rows leave a field empty, or
-which field has no column. A field the format itself fills in
-(`^FN3^FD12345`) is shown but fixed: printers ignore data sent for it.
-
-### File System
+**File System** -- every file on every drive, and what can be done to it.
 
 ![File System: each file with what can be done to it](docs/screenshots/files.png)
 
-Every stored object on every drive, with what can be done to each: view
-it (a label as its ZPL, a graphic as a picture, a batch file as its
-escape sequences), download it to your computer, edit a `.ZPL` in the
-Label Editor and any other text file in place (a `.WML` menu, an EPL or
-CPCL format, a `.BAT`...), print a stored format, run a `.BAT`, delete,
-upload a file of any type, or write a new one (**New file…**).
-
-Files other than `.ZPL` and pictures are written through the
-undocumented `file.append` setting: in chunks, read back and compared,
-and only then put in place of the old one; one with a NUL byte (a font,
-say) cannot go that way, and is turned away with the `tools/upload.mjs`
-command to use instead. Which buttons a row gets is decided by the
-type, because the printer's web server treats types very differently; a
-button that is off says why.
-
-**Pictures** shows every graphic as a thumbnail instead, with Rename
-(`^TO` copies it, and only once the copy is listed does `^ID` remove
-the original); the Label Editor's Choose… picks an image from the same
-thumbnails.
+Every stored graphic as a thumbnail.
 
 ![Pictures: every stored graphic as a thumbnail](docs/screenshots/pictures.png)
 
-The listing is one read of `file.drive_listing` — about nine seconds,
-with the header saying so — which is the only place the real
-extensions live. Settings reads it once its own sweep is done and keeps
-one copy for the whole console, so this mode and Stored Formats open on
-that copy and re-read it in the background (unless it is under a minute
-old; Refresh always re-reads).
-
-### LCD Viewer
+**LCD Viewer** -- the front panel, mirrored, with buttons that press the printer's own.
 
 ![The LCD Viewer, drawing the printer's own pixels](docs/screenshots/lcd.png)
-
-Mirror the printer's front panel on an adjustable timer (1 s by
-default), with a note of how long ago it last refreshed. Drawn as a
-classic green LCD, which brightens when the printer's backlight is on.
-Its keypad presses the printer's own buttons through the undocumented
-`diag.simulate_event`, so the menus can be driven from here — and Up
-and Down change the value on screen, as they do on the printer.
-
-It draws the screen from `display.text`, laid out in the columns and
-size of the font the menu on screen asks for (a WML `<font>` tag, read
-from the file `display.load_card` names) — unless
-`./lcd_display_helper.sh <printer-ip>` is running on a computer that
-can reach the printer, and then it draws the printer's own pixels
-(below), as in the picture above. The mode tells you how to start it. A
-printer whose catalogue has no `display.*` branch has no display, so
-its build leaves this mode out: no tab, and no `LCD.SHTML` uploaded.
 
 ## Installing
 
