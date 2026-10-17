@@ -1,14 +1,11 @@
 node_modules/
 dist/
 *.log
-reference/*.pdf
+reference/
 data/sgd-schema.json
 allcv.txt
 zpl/
-zpl/
-lcd.bmp
-lcd.bmp.part
+lcd.bmp*
 # The live tests' own settings: a printer address and its password.
 test/live/config.json
-# Text extracted from the Zebra manuals, which are not ours to publish.
-reference/*.txt
+tools/githooks/post-commit
