@@ -31,6 +31,9 @@
  * the canvas (it still prints), a locked one is not dragged, nudged or
  * caught by a band. Neither is written into the ZPL, so they last until
  * the label is opened again.
+ *
+ * The card starts collapsed to its header, and stays as it was left for
+ * the rest of the visit.
  */
 
 import { el, replaceChildren } from './ui.js';
@@ -116,11 +119,15 @@ export function moveAbove(elements, id, targetId) {
   return [...rest.slice(0, at + 1), item, ...rest.slice(at + 1)];
 }
 
+/** Whether the card is open; the panel is redrawn whole, so it lives here. */
+let expanded = false;
+
 /**
  * Draw the panel. `selection` is the selected ids; `onSelect(id, adding)`,
  * `onOrder(elements)` and `onFlag(id, flag, on)` report what was done.
  */
-export function renderLayers(host, { doc, selection, onSelect, onOrder, onFlag }) {
+export function renderLayers(host, options) {
+  const { doc, selection, onSelect, onOrder, onFlag } = options;
   const chosen = new Set(selection);
   const elements = doc.elements;
   const button = (label, title, how) =>
@@ -193,9 +200,33 @@ export function renderLayers(host, { doc, selection, onSelect, onOrder, onFlag }
     return row;
   });
 
+  const header = el(
+    'button',
+    {
+      class: 'mr-auto flex items-center gap-1.5 text-[12px] font-semibold text-ink-700',
+      'aria-expanded': String(expanded),
+      title: expanded ? 'Collapse the layers' : 'Show the layers',
+      dataset: { layersToggle: '' },
+      onclick: () => {
+        expanded = !expanded;
+        renderLayers(host, options);
+      },
+    },
+    [
+      el('span', { class: 'w-3 text-ink-400', 'aria-hidden': 'true' }, [expanded ? '▾' : '▸']),
+      'Layers',
+      el('span', { class: 'font-normal text-ink-400' }, [`(${elements.length})`]),
+    ],
+  );
+
+  if (!expanded) {
+    replaceChildren(host, [el('div', { class: 'flex items-center px-3 py-2' }, [header])]);
+    return;
+  }
+
   replaceChildren(host, [
     el('div', { class: 'flex flex-wrap items-center gap-1.5 border-b border-ink-200 px-3 py-2' }, [
-      el('span', { class: 'mr-auto text-[12px] font-semibold text-ink-700' }, ['Layers']),
+      header,
       button('To front', 'Draw the selection on top of everything', 'front'),
       button('Forward', 'One place nearer the top', 'forward'),
       button('Backward', 'One place nearer the bottom', 'backward'),

@@ -73,8 +73,8 @@ Four modes:
   A drag snaps to smart guides -- the edges and centres of the other
   elements and of the label, drawn as blue lines while they hold --
   unless the grid is on, when it lands on the grid instead; Alt drags
-  freely. A Layers card under the canvas lists the elements top-most
-  first: click one to select it (even one buried under others), drag
+  freely. A Layers card under the canvas, collapsed until its arrow
+  opens it, lists the elements top-most first: click one to select it (even one buried under others), drag
   rows or use To front / Forward / Backward / To back to change the
   order the ZPL draws them in, and Hide (off the canvas, still printed)
   or Lock (not dragged or nudged) any of them -- those two are the

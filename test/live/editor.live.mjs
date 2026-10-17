@@ -1098,6 +1098,13 @@ export default function register(s, ctx) {
   s.test('Layers: pick one from under another, reorder, lock and hide', async () => {
     const layers = panel.locator('#layers');
     const rows = layers.locator('[data-layer]');
+    // Collapsed to its header until the arrow opens it.
+    const toggle = layers.locator('[data-layers-toggle]');
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    assert.match(await toggle.textContent(), /Layers\s*\(3\)/);
+    assert.equal(await rows.count(), 0);
+    await toggle.click();
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
     assert.equal(await rows.count(), 3);
     // The square was pasted last, so it is drawn last: the top row. (A
     // solid ^GB50,50,50 reads back as a 50-dot line 50 thick.)
@@ -1138,6 +1145,10 @@ export default function register(s, ctx) {
     await squareRow.locator('[data-flag="hidden"]').click();
     await textRow.locator('[data-flag="locked"]').click();
     assert.equal(await nodes().count(), 3);
+
+    // And the arrow closes it again.
+    await toggle.click();
+    assert.equal(await rows.count(), 0);
   });
 
   s.test(
