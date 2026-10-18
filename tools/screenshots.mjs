@@ -263,6 +263,14 @@ const SCENES = {
   },
 
   async lcd(browser, cfg) {
+    // First without the helper: the screen as display.text has it.
+    if (!(await hasObject(cfg.ip, 'R', 'LCD'))) {
+      const con = await openConsole(browser, cfg, 'lcd', { viewport: VIEWPORT });
+      await con.page.waitForTimeout(6000);
+      await shot(con.page, 'lcd-text');
+      await con.close();
+    }
+
     const dir = mkdtempSync(join(tmpdir(), 'mu-lcd-'));
     const helper = spawn(
       join(ROOT, 'lcd_display_helper.sh'),

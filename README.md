@@ -4,13 +4,16 @@
 
 [![Licence: AGPL v3](https://img.shields.io/badge/licence-AGPL%20v3-blue.svg)](LICENSE)
 ![Runs on: Zebra Link-OS](https://img.shields.io/badge/runs%20on-Zebra%20Link--OS-black.svg)
-![Installs from: Linux · macOS · Windows (WSL2)](https://img.shields.io/badge/installs%20from-Linux%20%C2%B7%20macOS%20%C2%B7%20WSL2-555.svg)
+[![Installs from: Linux · macOS · Windows WSL2](https://img.shields.io/badge/installs%20from-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20WSL2-555.svg)](#installing)
 
 A single-page console that runs **on** a Zebra printer: the build folds
 everything into one `INDEX.SHTML` and uploads it to the printer's flash,
 where its onboard web server serves it at `http://<printer>/`. Nothing
 to install on the computers, phones or tablets that use it -- open the
 printer's address in a browser.
+
+**Install from:** [Linux](#linux) · [macOS](#macos) ·
+[Windows (WSL2)](#windows-wsl2)
 
 ![The Label Editor: a label on the canvas, the selected barcode's options, and the printer's own render](docs/screenshots/editor.png)
 
@@ -22,7 +25,7 @@ printer's address in a browser.
 
 ## Screenshots
 
-**Printer Settings** -- every setting on the printer, filtered, explained and edited in place.
+**Printer Settings** -- every setting (aka SGD) on the printer, filtered, explained and edited in place.
 
 ![Printer Settings, filtered to media., with media.speed explained](docs/screenshots/settings.png)
 
@@ -44,7 +47,22 @@ The Printer menu: what is otherwise done at the printer.
 
 ![The Printer menu, open under the header](docs/screenshots/printer-menu.png)
 
-**Label Editor** -- the source view, with the command under the cursor explained.
+**Label Editor** -- drag text, barcodes, images and shapes around the
+canvas; the selected element's options in the middle, the printer's
+render on the right.
+
+![The Label Editor's visual mode: the canvas, the selected barcode's options and the preview](docs/screenshots/editor.png)
+
+The preview is not a simulation: the label's ZPL goes to the printer's
+own `/zpl` endpoint, and the picture that comes back is drawn by the
+same ZPL engine, fonts and firmware that will print it. Online
+previewers such as [Labelary](https://labelary.com) emulate that engine
+instead, so they can differ from the printer in how text and barcodes
+rasterize and in firmware-specific behaviour, and they cannot draw the
+fonts and graphics stored on your printer. Here what you see is what
+the printer will print.
+
+The source view, with the command under the cursor explained.
 
 ![The source view, with ^BY under the cursor explained parameter by parameter](docs/screenshots/editor-source.png)
 
@@ -60,9 +78,26 @@ Every stored graphic as a thumbnail.
 
 ![Pictures: every stored graphic as a thumbnail](docs/screenshots/pictures.png)
 
-**LCD Viewer** -- the front panel, mirrored, with buttons that press the printer's own.
+**LCD Viewer** -- the front panel, mirrored, with buttons that press the
+printer's own. On its own, the page can only read the screen as text
+(`display.text`), and draws that in an approximation of the printer's
+font:
 
-![The LCD Viewer, drawing the printer's own pixels](docs/screenshots/lcd.png)
+![The LCD Viewer in text mode, drawn from display.text](docs/screenshots/lcd-text.png)
+
+The real screen is a bitmap (`display.image`), but the printer's web
+server cuts every value off at its first NUL byte, four bytes into the
+picture, and the port that returns it whole (9100) is not one a browser
+can open. `lcd_display_helper.sh` bridges the gap: run on any computer
+that can reach the printer, it reads the bitmap over port 9100 each
+second and stores it in the printer's RAM, where the page picks it up
+and draws the printer's own pixels:
+
+```sh
+./lcd_display_helper.sh <printer-ip>      # Ctrl-C to stop
+```
+
+![The LCD Viewer drawing the printer's own pixels, with the helper running](docs/screenshots/lcd.png)
 
 ## Installing
 
