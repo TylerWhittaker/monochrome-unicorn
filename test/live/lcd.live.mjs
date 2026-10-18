@@ -298,10 +298,14 @@ export default function register(s, ctx) {
     await panel.getByText(/paused — updated/).waitFor();
     await panel.getByRole('button', { name: 'Resume' }).click();
     const every = panel.locator('label', { hasText: 'Every' }).locator('input');
+    assert.equal(await every.inputValue(), '0.5', 'half a second by default');
     await every.fill('0.1');
     await every.dispatchEvent('change');
     assert.equal(await every.inputValue(), '0.5', 'clamped to half a second');
-    await every.fill('1');
+    await every.fill('2');
+    await every.dispatchEvent('change');
+    assert.equal(await every.inputValue(), '2');
+    await every.fill('0.5');
     await every.dispatchEvent('change');
   });
 
