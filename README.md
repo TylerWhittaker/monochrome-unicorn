@@ -80,18 +80,22 @@ Every stored graphic as a thumbnail.
 
 **LCD Viewer** -- the front panel, mirrored, with buttons that press the
 printer's own. On its own, the page can only read the screen as text
-(`display.text`), and draws that in an approximation of the printer's
-font:
+(`display.text`), so it redraws the screen from that text and the menu
+file on screen: laid out as the panel lays it out, with the menu's
+pictures, and the printer's own menus in the panel's own font. For
+Zebra's menus that is the panel pixel for pixel; a menu in another font
+gets the right layout in a stand-in font:
 
-![The LCD Viewer in text mode, drawn from display.text](docs/screenshots/lcd-text.png)
+![The LCD Viewer in text mode, redrawn from display.text and the menu](docs/screenshots/lcd-text.png)
 
 The real screen is a bitmap (`display.image`), but the printer's web
 server cuts every value off at its first NUL byte, four bytes into the
 picture, and the port that returns it whole (9100) is not one a browser
-can open. `lcd_display_helper.sh` bridges the gap: run on any computer
-that can reach the printer, it reads the bitmap over port 9100 each
-second and stores it in the printer's RAM, where the page picks it up
-and draws the printer's own pixels:
+can open. For the real thing, whatever is on screen, run
+`lcd_display_helper.sh` on any computer that can reach the printer: it
+reads the bitmap over port 9100 each second and stores it in the
+printer's RAM, where the page picks it up and draws the printer's own
+pixels:
 
 ```sh
 ./lcd_display_helper.sh <printer-ip>      # Ctrl-C to stop
@@ -305,7 +309,11 @@ in, so the page gets `BM\xfd\x0d` and nothing more. The raw port that
 returns it whole is not something a browser can speak to, and the
 detours (`file.capture_response`, ZBI) are respectively unimplemented
 here and unlicensed. So the LCD Viewer draws `display.text`, the same
-screen as a 20x6 character grid, which survives intact.
+screen as a 20x6 character grid, which survives intact -- and redraws
+it as the panel would: in each font's measured geometry, the menu's
+centring, pictures and highlights taken from its WML file, and the
+printer's own menu font as glyphs read off the panel (`lcdfont.js`).
+docs/printer-notes.md has the measurements.
 
 For the real pixels, `lcd_display_helper.sh` runs on a computer that can
 reach port 9100. Each second it reads the bitmap, saves it as `lcd.bmp`,
@@ -342,6 +350,7 @@ src/js/
   editor.js           mode 2
   format.js           mode 3
   lcd.js              mode 4
+  lcdfont.js          the front panel's menu font, read off the panel
   zpl.js              label model, ZPL generation and parsing
   formats.js          ZPL / EPL / CPCL: fields and recall syntax
   wysiwyg.js          the drag-and-drop canvas
@@ -516,8 +525,10 @@ a 500).
 - Uploaded images are reduced to one bit per pixel, because that is all
   a thermal printer stores. The dialog shows the result before sending,
   with a dither option that helps photographs and hurts line art.
-- Without `lcd_display_helper.sh` running, the LCD Viewer shows
-  characters, not pixels, for the reason above. With it, the screen can
+- Without `lcd_display_helper.sh` running, the LCD Viewer redraws the
+  screen from its text, for the reason above: exact for the printer's
+  own menus, but a menu in another font is drawn in a stand-in font,
+  and what a card shows only under an `<if>` is left out. With it, the screen can
   be up to a second or two behind the printer. The viewer
   polls only while its tab is on screen and the browser tab is visible,
   so it does not compete with the rest of the console for the printer's

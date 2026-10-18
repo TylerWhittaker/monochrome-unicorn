@@ -140,6 +140,66 @@ EPL300-5 draw nothing; and a font that is missing (C, E) or a stub (P
 to V) falls back to A. The column counts for all of them are in
 `src/js/lcd.js`.
 
+### Drawing the panel from display.text
+
+Compared pixel for pixel with `display.image` on a ZD500R (V74.20.23Z),
+the LCD Viewer's text mode now draws the printer's own menus exactly:
+every card of SETTINGS, PORTS and BLUETOOTH, the home menu with each
+icon selected, and the idle, TOOLS, NETWORK and SENSORS screens -- 0
+pixels differ. What it took, all of it measured:
+
+- **The menus' font is a variable.** Zebra's menus say
+  `<font name="$(display.wml_font)">`; on this printer that is
+  `NJ20WGL4.FNT`, 20 columns. Read literally, it fell back to A.FNT's
+  40, which is why the text came out half size.
+- **display.text is UTF-8, cut in bytes.** A row is `columns` *bytes*:
+  U+00AA, the home icon, is `C2 AA` and takes one cell. In the
+  soft-key row the icon keeps only its first byte (`C2`), whichever
+  icon it is, so the WML file says which: `0xAA` (home) or `0xBA`
+  (back). The page reads LCD.SHTML as windows-1252, then turns each
+  row back into bytes and decodes it as UTF-8.
+- **Geometry, per font.** Cells are `floor(240 / columns)` wide. Rows
+  are evenly spaced, and with a `<nav_bar>` a one-pixel rule is drawn
+  across, the body is clipped above it, and the soft keys sit below:
+
+  | font | row pitch | capitals' top | capitals | rule | soft keys' capitals |
+  |---|---|---|---|---|---|
+  | A | 9 | 0 | 7 | 96 | 99 |
+  | B | 11 | 0 | 11 | 96 | 99 |
+  | D | 18 | 0 | 14 | 87 | 90 |
+  | E6 | 21 | 2 | 14 | 81 | 86 |
+  | F | 26 | 0 | 21 | 75 | 78 |
+  | H6 | 17 | 0 | 17 | 82 | 85 |
+  | MONOBD15 | 15 | 1 | 11 | 87 | 91 |
+  | N?20WGL4 | 20 | 3 | 14 | 85 | 90 |
+
+  Without a `<nav_bar>` there is no rule and the rows carry on down.
+- **Alignment is by the pixel.** display.text pads a centred line to
+  whole columns; the panel centres it exactly (`<p align="center">`,
+  and `<ip_address align="center">`), and right-aligns to x 240. So the
+  page finds the card on screen -- the one whose paragraphs the text
+  shows the most of -- and places its centred and right-aligned lines
+  by their width. Left-aligned text and the soft keys stay on the grid.
+- **Pictures.** The BMPs a card shows (`/SETTINGS.BMP`, 42x42, 1-bit)
+  are served as themselves. Inline they run from x 0 a pixel apart;
+  `align="left|right"` pins one to an edge; each sits at the top of its
+  line, which is as tall as its tallest picture or a text row. The
+  link whose `m3` label the soft-key row shows is the selected one:
+  its picture is turned over, and its label is centred on the panel
+  and turned over too. A soft key with `highlight="on"` is turned over
+  in its own column.
+- **The font itself.** All four N?20WGL4 fonts draw Latin text
+  identically, so their glyphs were read off the panel -- printable
+  ASCII and Latin-1, a 12x20 cell each -- into `src/js/lcdfont.js`. `$`
+  cannot be shown through WML at all (it starts a `$(setting)`, and
+  `$$` is no escape: both come out as `?`), so it is drawn in the
+  browser's font. Capturing them, a `?` from a stray `$` threw a row
+  off by a pixel; check a capture against the grid before trusting it.
+
+Other fonts are laid out by the same measurements but drawn in the
+browser's monospace font, cut to one bit: the right size and place, not
+the panel's letters. What a card does inside `<if>` is not modelled.
+
 ### Getting the real screen to the page
 
 Two ways that do not work, measured from Chrome 154 on another machine:

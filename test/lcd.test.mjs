@@ -23,10 +23,11 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 /* The decoding is pure; the rest of the module wants a document. */
-const src = readFileSync(new URL('../src/js/lcd.js', import.meta.url), 'utf8').replace(
-  /^import\s*\{[^}]*\}\s*from\s*'\.\/[^']*';?$/gm,
-  '',
-);
+// lcd.js with the menu font it imports, in one scope as the build has them.
+const src = (
+  readFileSync(new URL('../src/js/lcdfont.js', import.meta.url), 'utf8') +
+  readFileSync(new URL('../src/js/lcd.js', import.meta.url), 'utf8')
+).replace(/^import\s*\{[^}]*\}\s*from\s*'\.\/[^']*';?$/gm, '');
 const lcd = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
 
 let failures = 0;
@@ -121,6 +122,164 @@ check('the file on screen comes from load_card, then root_wml', () => {
     'A_FNT.WML',
   );
   assert.equal(lcd.currentWmlFile({}), 'INDEX.WML');
+});
+
+/* display.text as the page reads it: decoded as windows-1252, a byte a character. */
+const cp1252 = (bytes) => new TextDecoder('windows-1252').decode(Uint8Array.from(bytes));
+const ascii = (s) => [...s].map((c) => c.charCodeAt(0));
+
+check('display.text rows are cut in bytes, then read as UTF-8', () => {
+  // A body line with U+00AA (the home icon) as two bytes, then the
+  // soft-key row with only the icon's first byte, as the printer sends it.
+  const text = cp1252([
+    ...ascii('A'),
+    0xc2,
+    0xaa,
+    ...ascii('B'.padEnd(17)),
+    ...ascii(' '),
+    0xc2,
+    ...ascii('            ABOUT '),
+  ]);
+  const rows = lcd.screenRows(text, 20);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0], 'AªB'.padEnd(20), 'one cell for the two-byte icon');
+  assert.equal(rows[1], ' �            ABOUT ', 'a lone first byte is one cell too');
+  assert.ok(rows.every((r) => r.length === 20));
+});
+
+check('a $(setting) in a WML value is filled in from the values read', () => {
+  const values = { 'display.wml_font': 'NJ20WGL4.FNT' };
+  assert.equal(lcd.resolveWmlValue('$(display.wml_font)', values), 'NJ20WGL4.FNT');
+  assert.equal(lcd.resolveWmlValue('$(DISPLAY.WML_FONT)', values), 'NJ20WGL4.FNT');
+  assert.equal(lcd.resolveWmlValue('F.FNT', {}), 'F.FNT');
+  assert.equal(lcd.resolveWmlValue('$(display.other)', values), null, 'not read: null');
+  assert.equal(lcd.resolveWmlValue(null, values), null);
+  assert.equal(lcd.lcdColumns('NJ20WGL4.FNT'), 20, 'the printer’s own menu font');
+});
+
+const INDEX_CARD = `<wml><display><font name="$(display.wml_font)" vspace="0"></font>
+<card id="DoMain" title="">
+  <if condition="x = y"><p>HIDDEN</p></if>
+  <p align="center" allcaps="on">PRINTER READY</p><br/><br/>
+  <p align="center">$(ip.addr)</p><br/>
+  <nav_bar><p1 highlight="off" href="H.WML">ª</p1><p2 highlight="on" href="#a">ABOUT</p2></nav_bar>
+</card>
+<card id="Darkness" title="">
+  <p align="center">DARKNESS</p><br/><br/>
+  <img src="DOWN_ARROW_ICON.BMP" align="left"/>
+  <p align="center">$(print.tone)</p>
+  <img src="UP_ARROW_ICON.BMP" align="right"/><br/>
+  <nav_bar><p1 highlight="off" href="H.WML">º</p1></nav_bar>
+</card></display></wml>`;
+
+check('a WML file says how each card is laid out', () => {
+  const layout = lcd.wmlLayout(INDEX_CARD);
+  assert.equal(layout.cards.length, 2);
+  const [main, dark] = layout.cards;
+  assert.equal(main.nav, true);
+  assert.deepEqual(main.highlighted, ['ABOUT']);
+  assert.equal(main.navIcon, 'ª');
+  assert.equal(dark.navIcon, 'º');
+  assert.ok(main.aligned.some((a) => a.align === 'center' && a.pattern.test('PRINTER READY')));
+  assert.ok(
+    main.aligned.some((a) => a.pattern.test('192.168.1.81')),
+    '$(ip.addr): anything',
+  );
+  assert.deepEqual(
+    dark.flow.map((f) => f.type + (f.align ? `:${f.align}` : '')),
+    ['text', 'br', 'br', 'img:left', 'text', 'img:right', 'br'],
+  );
+  assert.deepEqual(
+    main.flow.map((f) => f.type),
+    ['text', 'br', 'br', 'text', 'br'],
+    'what an <if> holds is left out',
+  );
+});
+
+check('the card on screen is the one whose text the screen shows', () => {
+  const layout = lcd.wmlLayout(INDEX_CARD);
+  const rows = ['      DARKNESS      ', '', '        1.5         ', '', '', ' �                  '];
+  assert.equal(lcd.pickCard(layout, rows), layout.cards[1]);
+  const idle = ['   PRINTER READY    ', '', '    192.168.1.81    '];
+  assert.equal(lcd.pickCard(layout, idle), layout.cards[0]);
+  assert.deepEqual(lcd.pickCard(null, idle), {}, 'no WML read yet');
+});
+
+check('a line the WML centres is placed by its own width, not the grid', () => {
+  const g = lcd.lcdGeometry('NJ20WGL4.FNT');
+  const { aligned } = lcd.wmlLayout(INDEX_CARD).cards[0];
+  // Measured on the panel: "PRINTER READY" starts at 42, not column 3.
+  assert.equal(lcd.rowStart('   PRINTER READY    ', g, aligned), 42);
+  assert.equal(lcd.rowStart('    LINK-OS 6.4     ', g, []), 48, 'anything else: the grid');
+});
+
+check('pictures go where the panel puts them', () => {
+  const g = lcd.lcdGeometry('NJ20WGL4.FNT');
+  const sizes = { 'DOWN_ARROW_ICON.BMP': { width: 12, height: 15 } };
+  sizes['UP_ARROW_ICON.BMP'] = sizes['DOWN_ARROW_ICON.BMP'];
+  const dark = lcd.wmlLayout(INDEX_CARD).cards[1];
+  const placed = lcd.placeImages(dark.flow, g, (src) => sizes[src]);
+  assert.deepEqual(
+    placed.map(({ x, y }) => [x, y]),
+    [
+      [0, 40],
+      [228, 40],
+    ],
+  );
+  // The home menu: 42-pixel icons inline from a 17-pixel spacer, a pixel
+  // apart, two lines of them.
+  const flow = [
+    { type: 'img', src: 'S17', align: '' },
+    { type: 'img', src: 'I', align: '' },
+    { type: 'br' },
+    { type: 'img', src: 'S17', align: '' },
+    { type: 'img', src: 'I', align: '' },
+  ];
+  const home = { S17: { width: 17, height: 40 }, I: { width: 42, height: 42 } };
+  assert.deepEqual(
+    lcd.placeImages(flow, g, (src) => home[src]).map(({ x, y }) => [x, y]),
+    [
+      [0, 0],
+      [18, 0],
+      [0, 42],
+      [18, 42],
+    ],
+  );
+  assert.deepEqual(
+    lcd.placeImages(flow, g, () => null),
+    [],
+    'none until they are read',
+  );
+});
+
+check('a 1-bit BMP decodes with its palette deciding which bit is dark', () => {
+  // 2x2, bottom-up, palette white then black: the top row is "#.".
+  const bmp = new Uint8Array(62 + 8);
+  const view = new DataView(bmp.buffer);
+  bmp.set(ascii('BM'));
+  view.setUint32(10, 62, true);
+  view.setUint32(14, 40, true);
+  view.setInt32(18, 2, true);
+  view.setInt32(22, 2, true);
+  view.setUint16(28, 1, true);
+  bmp.set([0xff, 0xff, 0xff, 0, 0, 0, 0, 0], 54);
+  bmp[62] = 0b01000000; // bottom row: ".#"
+  bmp[66] = 0b10000000; // top row: "#."
+  const img = lcd.decodeBmp(bmp);
+  assert.deepEqual([img.width, img.height], [2, 2]);
+  assert.deepEqual([...img.bits], [1, 0, 0, 1]);
+  assert.equal(lcd.decodeBmp(Uint8Array.from(ascii('<html>'))), null);
+});
+
+check('the menu font has every character a menu can show', () => {
+  for (let c = 0x21; c < 0x7f; c++) {
+    const ch = String.fromCharCode(c);
+    if (ch === '$') continue; // a WML menu cannot show one
+    const bits = lcd.n20Glyph(ch);
+    assert.ok(bits && bits.length === 240, `${ch} is a 12 x 20 cell`);
+  }
+  assert.ok(lcd.n20Glyph('é'), 'Latin-1 too');
+  assert.equal(lcd.n20Glyph('一'), null);
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

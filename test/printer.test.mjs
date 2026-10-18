@@ -105,10 +105,11 @@ check('printer error pages are recognised', () => {
 
 /* ---- the LCD grid ---- */
 
-const lcdSrc = readFileSync(new URL('../src/js/lcd.js', import.meta.url), 'utf8').replace(
-  /^import [^\n]*$/gm,
-  '',
-);
+// lcd.js with the menu font it imports, in one scope as the build has them.
+const lcdSrc = (
+  readFileSync(new URL('../src/js/lcdfont.js', import.meta.url), 'utf8') +
+  readFileSync(new URL('../src/js/lcd.js', import.meta.url), 'utf8')
+).replace(/^import [^\n]*$/gm, '');
 const lcd = await import('data:text/javascript;base64,' + Buffer.from(lcdSrc).toString('base64'));
 
 check('display.text splits into a 20x6 grid in a 20-column font', () => {

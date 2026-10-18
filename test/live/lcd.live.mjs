@@ -42,8 +42,22 @@ import { join } from 'node:path';
 import { openConsole } from './lib/browser.mjs';
 import { getvar, setvar, storeFile, removeFile, hasObject, waitFor } from './lib/printer.mjs';
 import { skip } from './lib/harness.mjs';
+import { getvarRaw, unwrapBmp, readBmp } from '../../tools/lcd-shot.mjs';
 
 export const name = 'LCD Viewer';
+
+/** The panel's own bitmap over port 9100, a 1 for each dark pixel. */
+async function panelPixels(ip) {
+  const bmp = unwrapBmp(await getvarRaw(ip, 'display.image'));
+  const { pixelOffset, width, height, topDown } = readBmp(bmp);
+  const stride = Math.ceil(width / 32) * 4;
+  const out = [];
+  for (let y = 0; y < height; y++) {
+    const row = pixelOffset + (topDown ? y : height - 1 - y) * stride;
+    for (let x = 0; x < width; x++) out.push((bmp[row + (x >> 3)] >> (7 - (x & 7))) & 1);
+  }
+  return out;
+}
 
 /*
  * The fonts tried, and the grid the viewer should lay display.text out
@@ -213,15 +227,47 @@ export default function register(s, ctx) {
       await waitFor(async () => (await caption().textContent()).includes(fileOf(f)), {
         what: fileOf(f),
       });
-      return screen()
-        .locator('div')
-        .first()
-        .evaluate((n) => parseFloat(getComputedStyle(n).fontSize));
+      // The height of the capitals the panel is drawn with, in its pixels.
+      return Number(await screen().getAttribute('data-cap'));
     };
     const a = await sizeIn(FONTS[1]);
     const d = await sizeIn(FONTS[3]);
     const f = await sizeIn(FONTS[5]);
-    assert.ok(a < d && d < f, `font sizes A ${a}px, D ${d}px, F ${f}px`);
+    assert.ok(a < d && d < f, `capitals A ${a}px, D ${d}px, F ${f}px`);
+  });
+
+  s.test('the printer’s own menu is drawn as the panel draws it, pixel for pixel', async () => {
+    if (!original) skip('no display');
+    // The home menu: pictures, a selected one, the soft-key bar and the
+    // menu font, and nothing that changes while it is up.
+    await restoreScreen(cfg.ip, 'HOMEMENU.WML');
+    await waitFor(async () => (await caption().textContent()).includes('HOMEMENU.WML'), {
+      what: 'the viewer to follow',
+    });
+    const real = await panelPixels(cfg.ip);
+    let drawn = null;
+    let differ = Infinity;
+    // Its pictures are read in the background: give them a few polls.
+    await waitFor(
+      async () => {
+        drawn = await screen()
+          .locator('canvas')
+          .evaluate((c) => {
+            const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+            return Array.from({ length: c.width * c.height }, (_, i) => (d[i * 4] < 100 ? 1 : 0));
+          });
+        differ = drawn.filter((v, i) => v !== real[i]).length;
+        return differ === 0;
+      },
+      { timeout: 20000, what: 'the drawing to match the panel' },
+    ).catch(() => {});
+    assert.equal(drawn.length, real.length, 'the panel’s 240 x 110');
+    assert.ok(
+      differ < real.length / 100,
+      `${differ} of ${real.length} pixels differ from the panel's own bitmap`,
+    );
+    await restoreScreen(cfg.ip, original);
+    ui.assertNoErrors();
   });
 
   s.test('the soft keys press the printer’s own: P2 steps to the next menu', async () => {

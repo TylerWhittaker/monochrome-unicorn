@@ -120,6 +120,8 @@ const LCD_VARS = [
   // how many columns display.text is laid out in.
   'display.load_card',
   'display.root_wml',
+  // The printer's own menus name their font as $(display.wml_font).
+  'display.wml_font',
 ];
 
 /** A printer with no display.* branch has no front panel to mirror. */
