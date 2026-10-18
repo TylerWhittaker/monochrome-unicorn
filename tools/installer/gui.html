@@ -1,0 +1,314 @@
+<!doctype html>
+<!--
+  Monochrome Unicorn -- a web app for Zebra thermal printers.
+  Copyright (C) 2026 Tyler Whittaker
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  The installer's page, served by tools/installer/server.mjs to this
+  computer's own browser. Everything it does goes through that server;
+  {{TOKEN}}, {{VERSION}} and {{STEPS}} are filled in as it is served.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monochrome Unicorn installer</title>
+<style>
+  :root {
+    --bg: #f6f7f8;
+    --card: #ffffff;
+    --line: #d6dae1;
+    --text: #0f1115;
+    --muted: #67748a;
+    --head: #0f1115;
+    --head-text: #ffffff;
+    --head-muted: #8794a6;
+    --accent: #0f1115;
+    --accent-text: #ffffff;
+    --ok: #15803d;
+    --bad: #b91c1c;
+    --bad-bg: #fef2f2;
+    --ok-bg: #f0fdf4;
+    --log: #f6f7f8;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0c0f;
+      --card: #0f1115;
+      --line: #3a414e;
+      --text: #eceef1;
+      --muted: #8794a6;
+      --head: #000000;
+      --accent: #eceef1;
+      --accent-text: #0f1115;
+      --ok: #4ade80;
+      --bad: #f87171;
+      --bad-bg: #2a1215;
+      --ok-bg: #0f2417;
+      --log: #0a0c0f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+  header { background: var(--head); color: var(--head-text); }
+  header div, main { max-width: 36rem; margin: 0 auto; padding: 0 16px; }
+  header div { display: flex; align-items: baseline; gap: 12px; padding-top: 14px; padding-bottom: 14px; }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+  header span { color: var(--head-muted); font-size: 12px; }
+  main { padding-top: 24px; padding-bottom: 32px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  p { margin: 0 0 16px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  label.field { display: block; font-weight: 600; margin-bottom: 6px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  input[type='text'] {
+    flex: 1 1 14rem;
+    min-width: 0;
+    font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text);
+  }
+  input[type='text']:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-text);
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.quiet { background: transparent; color: var(--muted); border-color: var(--line); font-weight: 500; }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin-top: 14px; font-size: 14px; }
+  .check input { margin-top: 4px; }
+  ol.steps { list-style: none; padding: 0; margin: 20px 0 0; }
+  ol.steps li { display: flex; gap: 10px; align-items: center; padding: 4px 0; color: var(--muted); }
+  ol.steps li .mark { width: 18px; text-align: center; font-weight: 700; }
+  ol.steps li.running { color: var(--text); font-weight: 600; }
+  ol.steps li.done { color: var(--text); }
+  ol.steps li.done .mark { color: var(--ok); }
+  ol.steps li.failed { color: var(--bad); font-weight: 600; }
+  .spin {
+    display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--line); border-top-color: var(--text);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+  .result { margin-top: 20px; padding: 16px; border-radius: 8px; }
+  .result.ok { background: var(--ok-bg); border: 1px solid var(--ok); }
+  .result.bad { background: var(--bad-bg); border: 1px solid var(--bad); }
+  .result p { margin: 0 0 10px; }
+  .result p:last-child { margin: 0; }
+  a.open {
+    display: inline-block; margin-top: 4px; padding: 10px 18px; border-radius: 8px;
+    background: var(--accent); color: var(--accent-text); font-weight: 600; text-decoration: none;
+    word-break: break-all;
+  }
+  details { margin-top: 16px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  pre {
+    margin: 8px 0 0; padding: 10px; max-height: 18rem; overflow: auto;
+    background: var(--log); border: 1px solid var(--line); border-radius: 6px;
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; }
+  footer a { color: var(--muted); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header><div><h1>Monochrome Unicorn</h1><span>installer &middot; version {{VERSION}}</span></div></header>
+<main>
+  <div class="card">
+    <p>This puts the Monochrome Unicorn console on a Zebra printer. Afterwards, anything on the
+      network with a browser can open it at the printer's address.</p>
+
+    <form id="form">
+      <label class="field" for="ip">Printer address</label>
+      <div class="row">
+        <input id="ip" type="text" inputmode="url" autocomplete="off" autocapitalize="off"
+               spellcheck="false" placeholder="for example 192.168.1.81" required>
+        <button id="go" type="submit">Install</button>
+      </div>
+      <p class="muted" style="margin:6px 0 0">The address is on the printer's configuration label,
+        and most printers show it on the front panel.</p>
+      <label class="check"><input id="packed" type="checkbox">
+        <span>Smaller page, for printers on a slow link<br>
+          <span class="muted">About 170 KB instead of 440. Needs Chrome 86, Safari 16.4 or
+            Firefox 113 or later on the computers that open it.</span></span></label>
+    </form>
+
+    <ol class="steps" id="steps" hidden></ol>
+
+    <div class="result ok" id="ok" hidden>
+      <p><strong>Installed.</strong> <span id="ok-note"></span></p>
+      <p><a class="open" id="open" href="#" target="_blank" rel="noopener">Open the console</a></p>
+    </div>
+    <div class="result bad" id="bad" hidden>
+      <p><strong>That did not work.</strong></p>
+      <p id="bad-text"></p>
+      <p class="muted" id="bad-detail"></p>
+    </div>
+
+    <details id="details" hidden>
+      <summary>Details</summary>
+      <pre id="log"></pre>
+    </details>
+  </div>
+
+  <footer>
+    <a class="muted" href="https://github.com/TylerWhittaker/monochrome-unicorn" target="_blank"
+       rel="noopener">Free software under the GNU AGPL v3</a>
+    <button class="quiet" id="quit" type="button">Quit installer</button>
+  </footer>
+  <p class="muted" id="gone" hidden style="margin-top:16px">The installer has stopped. Run it again to
+    install on another printer.</p>
+</main>
+<script>
+  const TOKEN = '{{TOKEN}}';
+  const STEPS = {{STEPS}};
+  const $ = (id) => document.getElementById(id);
+  const post = (path, body) =>
+    fetch(path, {
+      method: 'POST',
+      headers: { 'X-Installer-Token': TOKEN, 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+  try {
+    $('ip').value = localStorage.getItem('printer') || '';
+    $('packed').checked = localStorage.getItem('packed') === '1';
+  } catch {}
+  $('ip').focus();
+
+  let stopped = false;
+  function stop() {
+    stopped = true;
+    $('go').disabled = true;
+    $('quit').disabled = true;
+    $('gone').hidden = false;
+  }
+  const ping = setInterval(() => {
+    post('/ping').catch(() => {
+      clearInterval(ping);
+      stop();
+    });
+  }, 30000);
+  $('quit').addEventListener('click', () => {
+    post('/quit').catch(() => {});
+    clearInterval(ping);
+    stop();
+  });
+
+  function drawSteps(states) {
+    const list = $('steps');
+    list.replaceChildren(
+      ...STEPS.map((s) => {
+        const li = document.createElement('li');
+        const state = states[s.id] || '';
+        li.className = state;
+        const mark = document.createElement('span');
+        mark.className = 'mark';
+        if (state === 'running') mark.innerHTML = '<span class="spin"></span>';
+        else mark.textContent = state === 'done' ? '✓' : state === 'failed' ? '✗' : '·';
+        li.append(mark, document.createTextNode(s.label));
+        return li;
+      }),
+    );
+    list.hidden = false;
+  }
+
+  $('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (stopped) return;
+    const ip = $('ip').value.trim();
+    const packed = $('packed').checked;
+    try {
+      localStorage.setItem('printer', ip);
+      localStorage.setItem('packed', packed ? '1' : '');
+    } catch {}
+
+    $('go').disabled = true;
+    $('ok').hidden = $('bad').hidden = true;
+    $('log').textContent = '';
+    $('details').hidden = false;
+    const states = {};
+    let current = null;
+    drawSteps(states);
+
+    const fail = (message, detail) => {
+      if (current) states[current] = 'failed';
+      drawSteps(states);
+      $('bad-text').textContent = message;
+      $('bad-detail').textContent = detail || '';
+      $('bad').hidden = false;
+      $('details').open = true;
+    };
+
+    try {
+      const res = await post('/deploy', { ip, packed });
+      if (!res.ok) {
+        fail(await res.text());
+        return;
+      }
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = '';
+      let ended = false;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += value;
+        let nl;
+        while ((nl = buffer.indexOf('\n')) !== -1) {
+          const event = JSON.parse(buffer.slice(0, nl));
+          buffer = buffer.slice(nl + 1);
+          if (event.type === 'step') {
+            if (current) states[current] = 'done';
+            current = event.id;
+            states[current] = 'running';
+            drawSteps(states);
+          } else if (event.type === 'log') {
+            const log = $('log');
+            log.textContent += event.text;
+            log.scrollTop = log.scrollHeight;
+          } else if (event.type === 'done') {
+            ended = true;
+            if (current) states[current] = 'done';
+            current = null;
+            drawSteps(states);
+            $('ok-note').textContent =
+              event.served && event.served !== event.version
+                ? `The printer still shows version ${event.served}; reload the console once it opens.`
+                : `Version ${event.version} is on the printer.`;
+            $('open').href = event.url;
+            $('open').textContent = `Open the console at ${event.url}`;
+            $('ok').hidden = false;
+          } else if (event.type === 'error') {
+            ended = true;
+            fail(event.message, event.detail);
+          }
+        }
+      }
+      if (!ended) fail('The installer stopped partway through.');
+    } catch (err) {
+      fail('The installer is not answering. If you closed its window, run it again.', err.message);
+    } finally {
+      $('go').disabled = stopped;
+    }
+  });
+</script>
+</body>
+</html>

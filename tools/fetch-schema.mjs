@@ -395,26 +395,17 @@ export function compactSchema(allconfig, source = 'allconfig') {
   };
 }
 
-async function main() {
-  const args = process.argv.slice(2);
-  const ip = args.find((a) => !a.startsWith('--'));
-  if (!ip) {
-    console.error(
-      'usage: node tools/fetch-schema.mjs <printer-ip> [--out <path>] [--allcv|--allconfig]',
-    );
-    process.exit(2);
-  }
-  const outFlag = args.indexOf('--out');
-  const outPath = resolve(outFlag !== -1 ? args[outFlag + 1] : 'dist/sgd-schema.json');
-
-  let source = args.includes('--allcv')
-    ? 'allcv'
-    : args.includes('--allconfig')
-      ? 'allconfig'
-      : null;
-
+/**
+ * Read a printer's catalogue and compact it (compactSchema). `source` is
+ * 'allcv', 'allconfig', or null to let ~HI decide; `log` is told what is
+ * happening, a fragment at a time, as the CLI prints it.
+ */
+export async function fetchSchema(
+  ip,
+  { source = null, log = (text) => process.stderr.write(text) } = {},
+) {
   if (!source) {
-    process.stderr.write(`Asking ${ip} what it is ... `);
+    log(`Asking ${ip} what it is ... `);
     let printer;
     try {
       printer = await identifyPrinter(ip);
@@ -424,21 +415,19 @@ async function main() {
       );
     }
     source = printer.preLinkOs ? 'allcv' : 'allconfig';
-    process.stderr.write(
+    log(
       `${printer.model || 'printer'} ${printer.version || '(no version)'}` +
         `${printer.preLinkOs ? ' -- pre-Link-OS' : ''}, using ${source}\n`,
     );
   }
 
-  process.stderr.write(`Reading SGD catalogue from ${ip} via ${source} ... `);
+  log(`Reading SGD catalogue from ${ip} via ${source} ... `);
   let config;
 
   if (source === 'allcv') {
     const raw = await fetchAllcv(ip);
     if (!allcvLooksComplete(raw)) {
-      process.stderr.write(
-        "\n  warning: the listing did not end with allcv's quote line; it may be short\n  ",
-      );
+      log("\n  warning: the listing did not end with allcv's quote line; it may be short\n  ");
     }
     config = parseAllcv(raw);
     if (Object.keys(config).length === 0) {
@@ -461,25 +450,50 @@ async function main() {
       config,
       await readFromPrinter(ip, '! U1 getvar "device.user_vars"\r\n', { idleMs: 1500 }),
     );
-    if (added) process.stderr.write(`plus ${added} user variable${added === 1 ? '' : 's'}, `);
+    if (added) log(`plus ${added} user variable${added === 1 ? '' : 's'}, `);
   }
 
   const schema = compactSchema(config, source);
-  mkdirSync(dirname(outPath), { recursive: true });
-  writeFileSync(outPath, JSON.stringify(schema, null, 1));
-
   const count = Object.keys(schema.settings).length;
   const unverified = Object.values(schema.settings).filter(
     (meta) => ACCESS[meta[2]] === 'RW?',
   ).length;
-  process.stderr.write(
+  log(
     `${count} settings, ${schema.branches.length} branches` +
       (unverified ? `, ${unverified} of unverified access` : '') +
       '\n',
   );
+  return schema;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/** Write a catalogue where the build looks for it. */
+export function writeSchema(schema, outPath) {
+  mkdirSync(dirname(outPath), { recursive: true });
+  writeFileSync(outPath, JSON.stringify(schema, null, 1));
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const ip = args.find((a) => !a.startsWith('--'));
+  if (!ip) {
+    console.error(
+      'usage: node tools/fetch-schema.mjs <printer-ip> [--out <path>] [--allcv|--allconfig]',
+    );
+    process.exit(2);
+  }
+  const outFlag = args.indexOf('--out');
+  const outPath = resolve(outFlag !== -1 ? args[outFlag + 1] : 'dist/sgd-schema.json');
+  const source = args.includes('--allcv')
+    ? 'allcv'
+    : args.includes('--allconfig')
+      ? 'allconfig'
+      : null;
+  writeSchema(await fetchSchema(ip, { source }), outPath);
+}
+
+// import.meta.main where the runtime has it: bundled into the installer,
+// every module shares the entry's URL, and only main.mjs is the entry.
+if (import.meta.main ?? import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => {
     console.error('\nfetch-schema failed:', err.message);
     process.exit(1);

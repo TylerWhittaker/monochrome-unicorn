@@ -1,0 +1,268 @@
+#!/usr/bin/env node
+/*
+ * Monochrome Unicorn -- a web app for Zebra thermal printers.
+ * Copyright (C) 2026 Tyler Whittaker
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/*
+ * deploy.mjs -- build the console and install it on a Zebra printer.
+ *
+ *   node tools/deploy.mjs <printer-ip> [options]      (or ./deploy.sh)
+ *
+ *     --no-schema   reuse dist/sgd-schema.json instead of re-reading the
+ *                   printer's SGD catalogue (faster; use when you know the
+ *                   target printer matches the captured one)
+ *     --allcv       read the catalogue with `! U1 getvar "allcv"` rather
+ *                   than the JSON allconfig. Pre-Link-OS printers (firmware
+ *                   below V68) have no JSON channel and are detected by ~HI,
+ *                   so this is only needed to force it on a printer that
+ *                   would otherwise be asked for JSON
+ *     --allconfig   force the JSON catalogue, skipping the ~HI check
+ *     --no-upload   build only, leave the printer alone
+ *     --packed      gzip the page, about 170 KB instead of 440, for a slow
+ *                   link; the browser then needs DecompressionStream
+ *                   (Safari 16.4, Firefox 113). The default is unpacked
+ *     --no-clean    keep the helper files a previous deploy installed.
+ *                   By default they (E:V_*, E:S_* and E:LCD .SHTML) are
+ *                   removed before the new set goes up, so a build that
+ *                   packs the settings differently leaves nothing stale
+ *
+ * The printer is reached two ways: port 9100 for the catalogue and raw
+ * file writes (CISDFCRC16 header, tools/upload.mjs), and port 80 to
+ * verify what it now serves. Needs nothing but node.
+ *
+ * deploy() is also what the standalone installer runs (tools/installer/),
+ * which carries a staged build instead of building one, and keeps the
+ * catalogue and the page in memory instead of in dist/.
+ */
+
+import { fetchSchema, writeSchema } from './fetch-schema.mjs';
+import { assemble } from './assemble.mjs';
+import { sendRaw, uploadFile, deletePayload } from './upload.mjs';
+
+export const USAGE =
+  'usage: deploy <printer-ip> [--no-schema] [--no-upload] [--no-clean] [--packed] [--allcv|--allconfig]';
+
+/*
+ * What a deploy removes before uploading. ^ID takes a wildcard, and one
+ * object pattern per format; one connection carries them all. Only
+ * .SHTML goes, so a user's own V_ or S_ label or graphic is left alone.
+ */
+export const CLEAN_PATTERNS = [
+  'E:V_*.SHTML',
+  'E:S_*.SHTML',
+  'E:LCD.SHTML',
+  'E:STATUS.SHTML',
+  'E:CLOCK.SHTML',
+  'E:MAINT.SHTML',
+  'E:SENSOR.SHTML',
+  'E:LOGS.SHTML',
+];
+
+/** The steps a deploy goes through, in order, as the installer lists them. */
+export const STEPS = [
+  { id: 'schema', label: "Read the printer's settings" },
+  { id: 'build', label: 'Build the console' },
+  { id: 'clean', label: 'Remove the old helper files' },
+  { id: 'upload', label: 'Upload' },
+  { id: 'verify', label: 'Check what the printer serves' },
+];
+
+/** The command line, as options for deploy(); throws USAGE when it is wrong. */
+export function parseArgs(argv) {
+  const opts = {
+    ip: '',
+    fetchSchema: true,
+    upload: true,
+    clean: true,
+    packed: false,
+    source: null,
+    help: false,
+  };
+  for (const arg of argv) {
+    if (arg === '--no-schema') opts.fetchSchema = false;
+    else if (arg === '--no-upload') opts.upload = false;
+    else if (arg === '--packed') opts.packed = true;
+    // The defaults now; kept so old command lines work.
+    else if (arg === '--unpacked' || arg === '--clean') continue;
+    else if (arg === '--no-clean') opts.clean = false;
+    else if (arg === '--allcv') opts.source = 'allcv';
+    else if (arg === '--allconfig') opts.source = 'allconfig';
+    else if (arg === '-h' || arg === '--help') opts.help = true;
+    else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
+    else opts.ip = arg;
+  }
+  if (!opts.help && !opts.ip && (opts.upload || opts.fetchSchema)) throw new Error(USAGE);
+  return opts;
+}
+
+/**
+ * GET a URL, as `curl -w '%{http_code} %{size_download}'` reported it.
+ * The printer can take a while: it serves one request at a time.
+ */
+export async function probe(url, timeoutMs = 60000) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' });
+  const body = Buffer.from(await res.arrayBuffer());
+  return { status: res.status, bytes: body.length, body };
+}
+
+/**
+ * Build the console for the printer at `opts.ip` and install it.
+ *
+ *   staged      what tools/build.mjs stage() made, or a function that
+ *               makes it -- only called when a build is needed
+ *   schemaPath  where to keep the catalogue (and, with --no-schema, read
+ *               it); null keeps it in memory
+ *   outDir      where to write the page and its helpers; null keeps them
+ *               in memory
+ *   emit        told of each step ({ type: 'step', id, label }) and each
+ *               piece of output ({ type: 'log', text }, not always a
+ *               whole line)
+ *
+ * Resolves to { url, version, served } once the printer serves the page.
+ */
+export async function deploy(
+  opts,
+  { staged, schemaPath = null, outDir = null, readSchema = null, writeBuild = null, emit },
+) {
+  const log = (text) => emit({ type: 'log', text });
+  const step = (id) => emit({ type: 'step', ...STEPS.find((s) => s.id === id) });
+  const { ip } = opts;
+
+  step('schema');
+  let schema;
+  if (opts.fetchSchema) {
+    schema = await fetchSchema(ip, { source: opts.source, log });
+    if (schemaPath) writeSchema(schema, schemaPath);
+  } else {
+    if (!readSchema) throw new Error('--no-schema needs a catalogue from an earlier deploy');
+    log(`Using cached ${schemaPath}\n`);
+    schema = readSchema(schemaPath);
+  }
+
+  step('build');
+  const result = assemble({
+    staged: typeof staged === 'function' ? staged() : staged,
+    schema,
+    packed: opts.packed,
+  });
+  if (outDir && writeBuild) writeBuild(result, outDir);
+  log(
+    `Built INDEX.SHTML, version ${result.version}: ` +
+      `${(Buffer.byteLength(result.html) / 1024).toFixed(1)} KB` +
+      `${result.packed ? ', packed' : ''}, and ${result.helpers.length} helper files\n`,
+  );
+
+  if (!opts.upload) {
+    log('Skipping upload.\n');
+    return { url: null, version: result.version, served: null };
+  }
+
+  if (opts.clean) {
+    step('clean');
+    log('Removing previously installed helper files...\n');
+    try {
+      await sendRaw(ip, deletePayload(CLEAN_PATTERNS));
+      log(`  removed ${CLEAN_PATTERNS.join(' ')}\n`);
+    } catch (err) {
+      // As deploy.sh had it: a printer that will not take the ^ID will
+      // not take the upload either, and that is the error worth showing.
+      log(`  could not remove them: ${err.message}\n`);
+    }
+  }
+
+  step('upload');
+  log(`Uploading to ${ip} ...\n`);
+  const files = [{ dest: 'E:INDEX.SHTML', contents: result.html }, ...result.helpers];
+  for (const file of files) {
+    const bytes = await uploadFile(ip, file.contents, file.dest);
+    log(`  ${file.dest.padEnd(22)} ${bytes} bytes\n`);
+  }
+
+  step('verify');
+  log('Verifying...\n');
+  await new Promise((resolveWait) => setTimeout(resolveWait, 1000));
+  const page = await probe(`http://${ip}/INDEX.SHTML`);
+  log(`  http://${ip}/INDEX.SHTML -> ${page.status} ${page.bytes}\n`);
+  const root = await probe(`http://${ip}/`);
+  log(`  http://${ip}/            -> ${root.status} ${root.bytes}\n`);
+  if (page.status !== 200) {
+    throw new Error(`The printer answered ${page.status} for INDEX.SHTML after the upload`);
+  }
+  // The footer is plain text in a packed page too.
+  const footer = /Version (\d+\.\d+\.\d+) &middot; Built/.exec(page.body.toString('latin1'));
+  const served = footer ? footer[1] : null;
+  if (served !== result.version) {
+    log(`  but it serves version ${served || '(none found)'}, not ${result.version}\n`);
+  }
+  return { url: `http://${ip}/`, version: result.version, served };
+}
+
+/** The CLI: print what deploy() reports, as deploy.sh always has. */
+export async function runCli(argv, context) {
+  let opts;
+  try {
+    opts = parseArgs(argv);
+  } catch (err) {
+    console.error(err.message);
+    return 2;
+  }
+  if (opts.help) {
+    console.log(context.help || USAGE);
+    return 0;
+  }
+  try {
+    const { url } = await deploy(opts, {
+      ...context,
+      emit: (event) => {
+        if (event.type === 'log') process.stdout.write(event.text);
+      },
+    });
+    if (url) console.log(`\nOpen ${url}`);
+    return 0;
+  } catch (err) {
+    console.error(`\ndeploy failed: ${err.message}`);
+    return 1;
+  }
+}
+
+// import.meta.main where the runtime has it: bundled into the installer,
+// every module shares the entry's URL, and only main.mjs is the entry.
+if (import.meta.main ?? import.meta.url === `file://${process.argv[1]}`) {
+  // From a checkout: build from the sources, and keep the catalogue and
+  // the page in dist/ as deploy.sh always has. Imported here, by a URL a
+  // bundler cannot follow, so the installer never carries the build's
+  // npm half.
+  const { readFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+  const { stage, readSchema, writeBuild } = await import(
+    new URL('build.mjs', import.meta.url).href
+  );
+  const outDir = resolve('dist');
+  const help = readFileSync(new URL(import.meta.url), 'utf8')
+    .match(/\/\*\n \* deploy\.mjs --[\s\S]*?\n \*\n([\s\S]*?) \* The printer/)[1]
+    .replace(/^ \* ?/gm, '');
+  process.exitCode = await runCli(process.argv.slice(2), {
+    staged: () => stage({ outDir }),
+    schemaPath: resolve(outDir, 'sgd-schema.json'),
+    outDir,
+    readSchema,
+    writeBuild,
+    help: `${USAGE}\n\n${help}`,
+  });
+}

@@ -61,6 +61,7 @@ const SUITE_MODULES = {
   formats: './formats.live.mjs',
   files: './files.live.mjs',
   lcd: './lcd.live.mjs',
+  installer: './installer.live.mjs',
 };
 
 function run(command, args) {

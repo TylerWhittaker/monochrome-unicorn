@@ -1,0 +1,54 @@
+# Monochrome Unicorn -- a web app for Zebra thermal printers.
+# Copyright (C) 2026 Tyler Whittaker
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# A tag v<version> makes a GitHub release of that commit: the standalone
+# installers (make binaries), the scripts that fetch them, their
+# checksums, and the source they were built from (make release), which
+# the AGPL asks to travel with them.
+#
+#   node tools/version.mjs          # say, 0.49.0
+#   git tag v0.49.0 && git push origin v0.49.0
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: The tag names the version package.json has
+        run: test "${GITHUB_REF_NAME#v}" = "$(node tools/version.mjs)"
+
+      - run: npm ci
+
+      - run: npm test
+
+      - name: Installers for every platform
+        run: make binaries
+
+      - name: Source
+        run: make release
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Monochrome Unicorn ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            dist/bin/monochrome-unicorn-* dist/bin/SHA256SUMS \
+            install.sh install.ps1 \
+            dist/monochrome-unicorn-*.tar.gz

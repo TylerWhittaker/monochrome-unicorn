@@ -20,7 +20,7 @@
  */
 
 /*
- * build.mjs -- assemble dist/INDEX.SHTML and the V_*.SHTML helper files.
+ * build.mjs -- build dist/INDEX.SHTML and the V_*.SHTML helper files.
  *
  * The printer will not serve a page that references local assets we cannot
  * upload alongside it, and its web server pushes a few hundred KB/s, so the
@@ -28,123 +28,27 @@
  * small. Ace is the one exception -- it is pulled from cdnjs on demand,
  * with a plain-textarea fallback when the client has no internet.
  *
- *   node tools/build.mjs [--schema dist/sgd-schema.json] [--out dist]
+ * It does that in two halves. stage() does what every printer gets
+ * alike -- Tailwind, the bundler below, prettier -- and needs the npm dev
+ * dependencies; tools/assemble.mjs fits the result to one printer's
+ * catalogue with nothing but Node's own modules. A plain build does both;
+ * a release stages once, into dist/stage.json, and the deploy tool it
+ * ships (tools/installer/) carries that and assembles on the spot.
+ *
+ *   node tools/build.mjs [--schema dist/sgd-schema.json] [--out dist] [--packed]
+ *   node tools/build.mjs --stage [--out dist]      dist/stage.json only
  */
 
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { ZPL } from '../src/data/zpl-reference.mjs';
 import { SGD } from '../src/data/sgd-reference.mjs';
 import { readVersion } from './version.mjs';
+import { assemble } from './assemble.mjs';
 import { execFileSync } from 'node:child_process';
-import { gzipSync, gunzipSync } from 'node:zlib';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-
-/*
- * The LCD viewer polls this one small file rather than a whole branch.
- * display.image (the real framebuffer) cannot come this way: getvar.cgi
- * truncates any value at its first NUL byte, and a BMP has one at offset
- * four. display.text is the same screen as a 20x6 character grid.
- */
-/*
- * What the header's status pill is refreshed from, every few seconds:
- * the ~HS flags, and the two settings that say plainly when the head is
- * open or the media has run out.
- */
-const STATUS_VARS = [
-  'device.host_status',
-  'head.latch',
-  'media.status',
-  'odometer.total_label_count',
-];
-
-/** What the Maintenance card in Printer Settings shows. */
-const MAINT_VARS = [
-  'odometer.headclean',
-  'odometer.headnew',
-  'odometer.total_label_count',
-  'odometer.total_print_length',
-  'odometer.total_cuts',
-  'odometer.latch_open_count',
-  'sensor.head.temp_celsius',
-  'device.uptime',
-  'log.reboot.reason',
-];
-
-/** The media sensor card: which sensor, its readings and thresholds. */
-const SENSOR_VARS = [
-  'media.sense_mode',
-  'device.sensor_select',
-  'media.type',
-  'media.status',
-  'head.latch',
-  'zpl.label_length',
-  'sensor.gap.cur',
-  'sensor.gap.thold',
-  'sensor.gap.ppr_out_thold',
-  'sensor.back_bar.cur',
-  'sensor.back_bar.thold',
-  'sensor.back_bar.ppr_out_thold',
-];
-
-/** Syslog & alerts in Printer Settings: the log, and the settings it edits. */
-const LOG_VARS = [
-  'device.syslog.enable',
-  'device.syslog.configuration',
-  'device.syslog.save_local_file',
-  'device.syslog.log_max_file_size',
-  'device.syslog.entries',
-  'alerts.configured',
-  'alerts.conditions',
-  'alerts.destinations',
-  'alerts.http.logging.entries',
-  'alerts.http.logging.max_entries',
-  'alerts.tracked_settings.log_tracked',
-  'alerts.tracked_settings.max_log_entries',
-  'ip.smtp.enable',
-  'ip.smtp.server_addr',
-  'ip.smtp.domain',
-  'ip.snmp.trap_community_name',
-];
-
-/** The printer's clock, for the Set clock dialog. */
-const CLOCK_VARS = ['rtc.exists', 'rtc.date', 'rtc.time', 'rtc.timezone', 'rtc.unix_timestamp'];
-
-const LCD_VARS = [
-  'display.text',
-  'display.backlight',
-  'display.contrast',
-  // Which WML file is on screen, for the font it asks for: that decides
-  // how many columns display.text is laid out in.
-  'display.load_card',
-  'display.root_wml',
-  // The printer's own menus name their font as $(display.wml_font).
-  'display.wml_font',
-];
-
-/** A printer with no display.* branch has no front panel to mirror. */
-export function hasLcd(schema) {
-  return Object.keys(schema.settings).some((name) => name.startsWith('display.'));
-}
-
-/*
- * Take the LCD Viewer's tab and panel out of the page, for a printer
- * without a display. Each is one line of src/index.html; finding anything
- * other than exactly one of each means the markup has moved on, and is
- * an error rather than a page that half-offers the mode.
- */
-export function withoutLcd(html) {
-  for (const attr of ['data-tab="lcd"', 'data-panel="lcd"']) {
-    const lines = html.split('\n');
-    const hits = lines.filter((line) => line.includes(attr));
-    if (hits.length !== 1)
-      throw new Error(`src/index.html: expected one line with ${attr}, found ${hits.length}`);
-    html = lines.filter((line) => !line.includes(attr)).join('\n');
-  }
-  return html;
-}
 
 /*
  * The one comment that survives squeeze(): the built page is a conveyed
@@ -156,33 +60,6 @@ const JS_BANNER = [
   ' * Free software under the GNU AGPL v3 or later, with ABSOLUTELY NO WARRANTY.',
   ' * See <https://www.gnu.org/licenses/agpl-3.0.html>. */',
 ].join('\n');
-
-/** The helper holding every readable setting; see helperFiles(). */
-const ALL_FILE = 'V_ALL';
-
-/* Settings shown in the page header, read live by the SSI preprocessor. */
-const BOOT_VARS = [
-  'device.product_name',
-  'device.friendly_name',
-  'device.unique_id',
-  'device.host_status',
-  // Which label language the printer will parse, so Stored Formats can
-  // warn before sending it something it will silently ignore.
-  'device.languages',
-  'appl.name',
-  'head.resolution.in_dpi',
-  // The size of the label loaded, in dots: a new label starts at it.
-  'zpl.label_length',
-  'ezpl.print_width',
-  'media.darkness',
-  'print.tone',
-  // Which interface is in use, and each one's address: ip.addr alone
-  // follows the wireless one even when the printer is on Ethernet.
-  'ip.active_network',
-  'wlan.ip.addr',
-  'internal_wired.ip.addr',
-  'ip.addr',
-];
 
 /* ------------------------------------------------------------------ *
  * A very small ES-module bundler
@@ -368,146 +245,6 @@ function prettifyInlineScripts(html) {
 }
 
 /**
- * "YYYY-MM-DD HH:MM:SS", in UTC.
- *
- * A printer on a bench and the machine that built the page are rarely
- * in the same room, let alone the same timezone, so the stamp in the
- * footer says when the build happened in the one timezone that does not
- * depend on who is reading it.
- */
-function buildStamp(now = new Date()) {
-  return now.toISOString().slice(0, 19).replace('T', ' ');
-}
-
-/** The @name=value@ block the preprocessor fills in before serving. */
-function bootVarsBlock() {
-  return BOOT_VARS.map(
-    (name) => `@${name}=<!--#exec cmd="/Zebra/cgi/getvar.cgi ${name}" -->@`,
-  ).join('\n');
-}
-
-/** One "@name=value@" line, for the preprocessor to fill in. */
-function varLine(name) {
-  return `@${name}=<!--#exec cmd="/Zebra/cgi/getvar.cgi ${name}" -->@`;
-}
-
-/** Most settings one read-back file holds, unless a branch alone is bigger. */
-const HELPER_MAX_SETTINGS = 40;
-
-/**
- * Pack settings branches into as few read-back files as will stay quick.
- *
- * A branch file is only read to confirm a write -- the sweep uses the
- * one file holding everything -- and it costs about 10 ms a setting on
- * top of ~95 ms a request. One file per branch put 32 files on E:, most
- * holding a handful of settings, so small branches share: first-fit,
- * largest first, up to HELPER_MAX_SETTINGS. A branch bigger than that
- * keeps a file to itself, since splitting one would gain nothing -- a
- * write re-reads its whole branch either way.
- *
- * Returns an array of groups, each an array of branch names.
- */
-export function packBranches(byBranch, max = HELPER_MAX_SETTINGS) {
-  const sizes = [...byBranch].map(([branch, names]) => [branch, names.length]);
-  // Largest first; ties by name, so a build is repeatable.
-  sizes.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
-  const groups = [];
-  for (const [branch, size] of sizes) {
-    const home = size < max && groups.find((g) => g.size + size <= max);
-    if (home) {
-      home.branches.push(branch);
-      home.size += size;
-    } else {
-      groups.push({ branches: [branch], size });
-    }
-  }
-  return groups.map((g) => g.branches.sort());
-}
-
-/**
- * The settings branches packed into a few read-back files (see
- * packBranches()), plus one file per slow setting.
- *
- * Each line frames the value with @...@ so the client can parse it
- * unambiguously -- a bare getvar on a whole branch returns a
- * human-readable listing whose format varies by setting.
- *
- * The slow settings are kept out of their branch file (they are 85% of
- * the time a full sweep takes) but still need a way to be read, so each
- * gets a file of its own that the client fetches on demand. Object names
- * cap out around 16 characters, hence the index rather than the setting
- * name.
- */
-function helperFiles(schema) {
-  const slow = (schema.slow || []).filter((name) => {
-    const meta = schema.settings[name];
-    return meta && schema.access[meta[2]].includes('R');
-  });
-  const slowSet = new Set(slow);
-
-  const readable = Object.entries(schema.settings)
-    .filter(([name, meta]) => schema.access[meta[2]].includes('R') && !slowSet.has(name))
-    .map(([name]) => name);
-
-  const byBranch = new Map();
-  for (const name of readable) {
-    const branch = name.split('.')[0];
-    if (!byBranch.has(branch)) byBranch.set(branch, []);
-    byBranch.get(branch).push(name);
-  }
-
-  const files = [];
-  const branchFiles = {};
-  packBranches(byBranch).forEach((group, i) => {
-    const stem = `V_${i + 1}`;
-    for (const branch of group) branchFiles[branch] = stem;
-    files.push({
-      dest: `E:${stem}.SHTML`,
-      branches: group,
-      contents:
-        group
-          .flatMap((b) => byBranch.get(b))
-          .map(varLine)
-          .join('\n') + '\n',
-    });
-  });
-
-  const slowFiles = {};
-  slow.forEach((name, i) => {
-    slowFiles[name] = `S_${i}`;
-    files.push({ dest: `E:S_${i}.SHTML`, contents: varLine(name) + '\n' });
-  });
-
-  if (hasLcd(schema)) {
-    files.push({ dest: 'E:LCD.SHTML', contents: LCD_VARS.map(varLine).join('\n') + '\n' });
-  }
-
-  files.push({ dest: 'E:STATUS.SHTML', contents: STATUS_VARS.map(varLine).join('\n') + '\n' });
-  files.push({ dest: 'E:CLOCK.SHTML', contents: CLOCK_VARS.map(varLine).join('\n') + '\n' });
-  files.push({ dest: 'E:MAINT.SHTML', contents: MAINT_VARS.map(varLine).join('\n') + '\n' });
-  files.push({ dest: 'E:SENSOR.SHTML', contents: SENSOR_VARS.map(varLine).join('\n') + '\n' });
-  files.push({ dest: 'E:LOGS.SHTML', contents: LOG_VARS.map(varLine).join('\n') + '\n' });
-
-  /*
-   * Every readable setting in one file, for the sweep.
-   *
-   * The branch files are still written, because a write is confirmed by
-   * re-reading just that branch and this one takes four seconds. But
-   * asking for it once beats asking 32 times: the per-request overhead
-   * on this web server is about 95 ms, so the sweep went from 6.9 s to
-   * 3.9 s by dropping the round trips. The preprocessor streams its
-   * output as it goes, so values still arrive to be painted one at a
-   * time -- sooner, in fact, with the first at ~120 ms.
-   */
-  files.push({ dest: `E:${ALL_FILE}.SHTML`, contents: readable.map(varLine).join('\n') + '\n' });
-
-  files.push({ dest: 'E:ZPLREF.SHTML', contents: zplReferenceFile() });
-  files.push({ dest: 'E:SGDREF.SHTML', contents: referenceFile(SGD) });
-
-  return { files, slowFiles, branchFiles };
-}
-
-/**
  * The ZPL command reference the source view shows, as JSON in a file of
  * its own (src/data/zpl-reference.mjs has why). One command to a line:
  * the printer's preprocessor reads .SHTML line by line, and nothing is
@@ -526,35 +263,52 @@ export function referenceFile(reference) {
 }
 
 /* ------------------------------------------------------------------ *
- * Packing
- * ------------------------------------------------------------------ */
-
-/**
- * The page's styles and scripts as one gzipped, base64 blob for
- * src/index.html's unpacker: about a third of their size, which is what
- * the printer's slow web server cares about. Wrapped in short lines, in
- * case the SSI preprocessor that serves the page has a limit; atob in the
- * browser ignores the line breaks.
- */
-export function packPayload(parts, width = 120) {
-  const base64 = gzipSync(Buffer.from(JSON.stringify(parts)), { level: 9 }).toString('base64');
-  const lines = [];
-  for (let i = 0; i < base64.length; i += width) lines.push(base64.slice(i, i + width));
-  return lines.join('\n');
-}
-
-/** The other way, for tests: the parts a packed blob holds. */
-export function unpackPayload(packed) {
-  return JSON.parse(gunzipSync(Buffer.from(packed.replace(/\s+/g, ''), 'base64')).toString());
-}
-
-/* ------------------------------------------------------------------ *
  * Main
  * ------------------------------------------------------------------ */
 
-export function build({ schemaPath, outDir, packed = false }) {
-  mkdirSync(outDir, { recursive: true });
+// What the tests and the old callers imported from here.
+export {
+  hasLcd,
+  withoutLcd,
+  packBranches,
+  packPayload,
+  unpackPayload,
+  assemble,
+} from './assemble.mjs';
 
+/** Everything the page needs that does not depend on the printer. */
+export function stage({ outDir }) {
+  mkdirSync(outDir, { recursive: true });
+  return {
+    template: prettifyInlineScripts(readFileSync(join(ROOT, 'src/index.html'), 'utf8')),
+    css: buildCss(outDir),
+    htmx: readFileSync(join(ROOT, 'vendor/htmx.min.js'), 'utf8').trim(),
+    app: prettify(JS_BANNER + '\n' + squeeze(bundle(join(ROOT, 'src/js/app.js')))),
+    unpack: prettify(squeeze(readFileSync(join(ROOT, 'src/unpack.js'), 'utf8'))),
+    version: readVersion(),
+    zplref: zplReferenceFile(),
+    sgdref: referenceFile(SGD),
+  };
+}
+
+/** Write an assemble() result where deploy.sh looks for it. */
+export function writeBuild(result, outDir) {
+  const indexPath = join(outDir, 'INDEX.SHTML');
+  writeFileSync(indexPath, result.html);
+
+  // Helper files live in dist/helpers so a deploy can sweep the whole set.
+  const helperDir = join(outDir, 'helpers');
+  if (existsSync(helperDir)) rmSync(helperDir, { recursive: true });
+  mkdirSync(helperDir, { recursive: true });
+
+  for (const file of result.helpers) {
+    writeFileSync(join(helperDir, file.dest.slice(2)), file.contents);
+  }
+  return { indexPath, helperDir };
+}
+
+/** Read a catalogue, saying how to get one when there is none yet. */
+export function readSchema(schemaPath) {
   // The catalogue is captured from a printer rather than kept in the
   // repository, so a fresh clone has none until a deploy has run once.
   if (!existsSync(schemaPath)) {
@@ -565,89 +319,43 @@ export function build({ schemaPath, outDir, packed = false }) {
         '       or ./deploy.sh <printer-ip>, which does both.',
     );
   }
-  const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
-  const { files: helpers, slowFiles, branchFiles } = helperFiles(schema);
+  return JSON.parse(readFileSync(schemaPath, 'utf8'));
+}
 
-  // Which file to re-read after a write to each branch. Not every branch
-  // has a readable setting (some are write-only commands), so a branch
-  // missing here has nothing to read back.
-  schema.branchFiles = branchFiles;
-  schema.slowFiles = slowFiles;
-  schema.allFile = ALL_FILE;
-
-  let template = prettifyInlineScripts(readFileSync(join(ROOT, 'src/index.html'), 'utf8'));
-  if (!hasLcd(schema)) template = withoutLcd(template);
-  const css = buildCss(outDir);
-  const htmx = readFileSync(join(ROOT, 'vendor/htmx.min.js'), 'utf8').trim();
-  const app = prettify(JS_BANNER + '\n' + squeeze(bundle(join(ROOT, 'src/js/app.js'))));
-
-  const schemaJson = JSON.stringify(schema);
-  // Unpacked (the default): each part inlined as it is. Packed (--packed):
-  // everything gzipped in one blob, and src/unpack.js to unpack it --
-  // about 170 KB instead of 440, for a slow link, but it needs a browser
-  // with DecompressionStream (see README).
-  const blob = packed ? packPayload({ css, schema: schemaJson, htmx, app }) : '';
-  const payload = packed
-    ? [
-        '<script type="text/plain" id="packed">',
-        blob,
-        '</script>',
-        '<script>',
-        prettify(squeeze(readFileSync(join(ROOT, 'src/unpack.js'), 'utf8'))),
-        '</script>',
-      ].join('\n')
-    : [
-        `<script type="application/json" id="sgd-schema">${schemaJson}</script>`,
-        `<script>${htmx}</script>`,
-        `<script>${app}</script>`,
-      ].join('\n');
-  const replacements = {
-    '{{HTML_CLASS}}': packed ? ' class="unpacking"' : '',
-    '{{HEAD_STYLE}}': packed ? 'html.unpacking body{visibility:hidden}' : css,
-    '{{PAYLOAD}}': payload,
-    '{{BOOT_VARS}}': bootVarsBlock(),
-    '{{VERSION}}': readVersion(),
-    '{{BUILD_STAMP}}': buildStamp() + (packed ? ' &middot; packed' : ''),
-  };
-
-  let html = template;
-  for (const [token, value] of Object.entries(replacements)) {
-    if (!html.includes(token))
-      throw new Error(`src/index.html is missing the ${token} placeholder`);
-    html = html.split(token).join(value);
-  }
-
-  const leftover = html.match(/\{\{[A-Z_]+\}\}/);
-  if (leftover) throw new Error(`Unreplaced placeholder ${leftover[0]} in output`);
-
-  const indexPath = join(outDir, 'INDEX.SHTML');
-  writeFileSync(indexPath, html);
-
-  // Helper files live in dist/helpers so deploy.sh can sweep the whole set.
-  const helperDir = join(outDir, 'helpers');
-  if (existsSync(helperDir)) rmSync(helperDir, { recursive: true });
-  mkdirSync(helperDir, { recursive: true });
-
-  for (const file of helpers) {
-    writeFileSync(join(helperDir, file.dest.slice(2)), file.contents);
-  }
-
+export function build({ schemaPath, outDir, packed = false }) {
+  const schema = readSchema(schemaPath);
+  const result = assemble({ staged: stage({ outDir }), schema, packed });
+  const { indexPath, helperDir } = writeBuild(result, outDir);
   return {
     indexPath,
-    version: replacements['{{VERSION}}'],
-    indexBytes: Buffer.byteLength(html),
+    version: result.version,
+    indexBytes: Buffer.byteLength(result.html),
     helperDir,
-    helpers: helpers.map((f) => f.dest),
-    lcd: hasLcd(schema),
-    parts: {
-      css: css.length,
-      htmx: htmx.length,
-      app: app.length,
-      schema: schemaJson.length,
-      packed: blob.length,
-    },
+    helpers: result.helpers.map((f) => f.dest),
+    lcd: result.lcd,
+    parts: result.parts,
     packed,
   };
+}
+
+/** The size report a build prints; deploy.mjs prints it too. */
+export function describeBuild(result) {
+  const kb = (n) => (n / 1024).toFixed(1).padStart(6) + ' KB';
+  const lines = [
+    `Built dist/INDEX.SHTML  (version ${result.version})`,
+    `  tailwind css ${kb(result.parts.css)}`,
+    `  htmx         ${kb(result.parts.htmx)}`,
+    `  app js       ${kb(result.parts.app)}`,
+    `  sgd schema   ${kb(result.parts.schema)}`,
+    `  ------------------------`,
+    result.packed
+      ? `  packed       ${kb(result.parts.packed)}   (all four, gzipped, base64)`
+      : '  unpacked     (each inlined as it is; --packed gzips them)',
+    `  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / (250 * 1024)).toFixed(1)}s to serve at 250 KB/s, the slowest measured)`,
+    `  ${result.helpers.length} helper files in dist/helpers/`,
+  ];
+  if (!result.lcd) lines.push('  no display.* settings: LCD Viewer left out');
+  return lines.join('\n');
 }
 
 function main() {
@@ -656,31 +364,22 @@ function main() {
     const i = args.indexOf(name);
     return i === -1 ? fallback : args[i + 1];
   };
+  const outDir = resolve(flag('--out', 'dist'));
+
+  if (args.includes('--stage')) {
+    const staged = stage({ outDir });
+    writeFileSync(join(outDir, 'stage.json'), JSON.stringify(staged));
+    console.log(`Staged ${rel(join(outDir, 'stage.json'))}  (version ${staged.version})`);
+    return;
+  }
 
   const result = build({
     schemaPath: resolve(flag('--schema', 'dist/sgd-schema.json')),
-    outDir: resolve(flag('--out', 'dist')),
+    outDir,
     // --unpacked is the default now, and still accepted.
     packed: args.includes('--packed'),
   });
-
-  const kb = (n) => (n / 1024).toFixed(1).padStart(6) + ' KB';
-  console.log(`Built dist/INDEX.SHTML  (version ${result.version})`);
-  console.log(`  tailwind css ${kb(result.parts.css)}`);
-  console.log(`  htmx         ${kb(result.parts.htmx)}`);
-  console.log(`  app js       ${kb(result.parts.app)}`);
-  console.log(`  sgd schema   ${kb(result.parts.schema)}`);
-  console.log(`  ------------------------`);
-  if (result.packed) {
-    console.log(`  packed       ${kb(result.parts.packed)}   (all four, gzipped, base64)`);
-  } else {
-    console.log('  unpacked     (each inlined as it is; --packed gzips them)');
-  }
-  console.log(
-    `  total        ${kb(result.indexBytes)}   (~${(result.indexBytes / (250 * 1024)).toFixed(1)}s to serve at 250 KB/s, the slowest measured)`,
-  );
-  console.log(`  ${result.helpers.length} helper files in dist/helpers/`);
-  if (!result.lcd) console.log('  no display.* settings: LCD Viewer left out');
+  console.log(describeBuild(result));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

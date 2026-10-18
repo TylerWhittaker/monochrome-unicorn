@@ -4,7 +4,7 @@
 
 [![Licence: AGPL v3](https://img.shields.io/badge/licence-AGPL%20v3-blue.svg)](LICENSE)
 ![Runs on: Zebra Link-OS](https://img.shields.io/badge/runs%20on-Zebra%20Link--OS-black.svg)
-[![Installs from: Linux · macOS · Windows WSL2](https://img.shields.io/badge/installs%20from-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20WSL2-555.svg)](#installing)
+[![Installs from: Windows · macOS · Linux](https://img.shields.io/badge/installs%20from-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-555.svg)](#installing)
 
 A single-page console that runs **on** a Zebra printer: the build folds
 everything into one `INDEX.SHTML` and uploads it to the printer's flash,
@@ -12,8 +12,9 @@ where its onboard web server serves it at `http://<printer>/`. Nothing
 to install on the computers, phones or tablets that use it -- open the
 printer's address in a browser.
 
-**Install from:** [Linux](#linux) · [macOS](#macos) ·
-[Windows (WSL2)](#windows-wsl2)
+**Install:** [download and double-click](#download-and-double-click) ·
+[one line in a terminal](#from-a-terminal) ·
+[from the source](#from-the-source)
 
 ![The Label Editor: a label on the canvas, the selected barcode's options, and the printer's own render](docs/screenshots/editor.png)
 
@@ -116,13 +117,74 @@ ZD620 (V84.20.23Z); older printers (firmware below V68) work with fewer
 details -- see [Known limits](#known-limits).
 
 **The computer you install from** needs to reach the printer on port 80
-and port 9100, and to have:
+and port 9100. Nothing else: the installer is one file that carries
+what it needs.
 
-- [Node.js](https://nodejs.org) 20 or later, with npm
-- git, curl and bash; `make` for the shortcuts (optional)
-- internet access, once, for `npm install`
+### Download and double-click
 
-### Linux
+| Your computer | Download |
+|---|---|
+| Windows 10 or 11 | [monochrome-unicorn-windows-x64.exe](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/monochrome-unicorn-windows-x64.exe) |
+| Mac with Apple silicon (M1 and later) | [monochrome-unicorn-macos-arm64.zip](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/monochrome-unicorn-macos-arm64.zip) |
+| Mac with an Intel processor | [monochrome-unicorn-macos-x64.zip](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/monochrome-unicorn-macos-x64.zip) |
+| Linux, 64-bit PC | [monochrome-unicorn-linux-x64](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/monochrome-unicorn-linux-x64) |
+| Linux, 64-bit ARM (a Raspberry Pi on 64-bit Raspberry Pi OS) | [monochrome-unicorn-linux-arm64](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/monochrome-unicorn-linux-arm64) |
+
+Open it. It opens a page in your browser: type the printer's address,
+press **Install**, and when it says so, **Open the console**. The
+installer stops when you press Quit or close its window. Run it again
+for another printer, and after a printer's firmware is updated -- each
+install reads that printer's own catalogue of settings.
+
+The installer is not signed, so the first time, your computer asks
+whether to trust it:
+
+- **Windows** says "Windows protected your PC": choose **More info**,
+  then **Run anyway**.
+- **macOS** says it cannot check the app for malicious software: press
+  **Done**, then in **System Settings → Privacy & Security** press
+  **Open Anyway** next to its name, and open it again. (Before macOS 15,
+  right-click it and choose **Open**.)
+- **Linux** needs it marked as a program first: in the file manager,
+  **Properties → Permissions → Allow executing**, or
+  `chmod +x monochrome-unicorn-linux-*`.
+
+### From a terminal
+
+On macOS, Linux or WSL, this fetches the installer for your computer,
+checks it, and runs it:
+
+```sh
+curl -fsSL https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/install.ps1 | iex
+```
+
+Either opens the installer's page. Given a printer's address, the
+installer works on the command line instead, with the same options as
+`./deploy.sh` (see [Deploying](#deploying)):
+
+```sh
+curl -fsSL https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/install.sh | sh -s -- 192.168.1.81 --packed
+./monochrome-unicorn-linux-x64 192.168.1.81      # a downloaded one
+```
+
+Nothing is installed besides the installer itself, kept in
+`~/.local/share/monochrome-unicorn/` (`%LOCALAPPDATA%\monochrome-unicorn\`
+on Windows) for next time.
+
+### From the source
+
+For working on the console, or to build what you install yourself. This
+needs [Node.js](https://nodejs.org) 20 or later with npm, git and bash
+(`make` for the shortcuts, optional), and internet access once for
+`npm install`.
+
+#### Linux
 
 Install Node.js, git and curl from your distribution if its Node.js is
 20 or later (`node --version`):
@@ -144,7 +206,7 @@ nvm install --lts
 
 Then [deploy](#deploy-it).
 
-### macOS
+#### macOS
 
 Install Apple's command-line tools (git, curl and make), then Node.js
 from [Homebrew](https://brew.sh):
@@ -157,7 +219,7 @@ brew install node
 The macOS bash 3.2 is enough for `deploy.sh` and
 `lcd_display_helper.sh`. Then [deploy](#deploy-it).
 
-### Windows (WSL2)
+#### Windows (WSL2)
 
 The scripts are bash, so on Windows they run under WSL2. In PowerShell,
 as administrator:
@@ -184,7 +246,7 @@ configuring; on a VPN that hides the LAN from WSL, turn on
 [mirrored networking](https://learn.microsoft.com/windows/wsl/networking#mirrored-mode-networking).
 Open the console in your usual Windows browser.
 
-### Deploy it
+#### Deploy it
 
 The same on every platform:
 
@@ -246,8 +308,10 @@ fitted to the drawn text (`fontBoundingBoxAscent`). A deploy without
 `--packed` -- `make deploy`, or the post-commit hook -- puts the plain
 page back, so deploy the packed one again after it.
 
-Needs `node` (with npm) and `curl`. Port 9100 is reached through Node's
-own sockets, so there is no netcat to install.
+Needs `node`, and npm for the Tailwind and prettier half of the build.
+Port 9100 is reached through Node's own sockets and port 80 through its
+`fetch`, so there is no netcat or curl to install. `deploy.sh` runs
+`tools/deploy.mjs`, which the installer runs too.
 
 Saving and deleting labels from the UI need the printer's 4-digit
 password. The page tries the factory default, `1234`, first and only
@@ -330,6 +394,18 @@ The helper talks to the printer through bash's own `/dev/tcp`, so it
 needs only bash, `dd`, `od` and `awk`. `tools/lcd-shot.mjs` takes a
 single screenshot the same way, through a Node socket.
 
+**One file to install it with.** Most of the build -- Tailwind, the
+bundler, prettier -- is the same for every printer and needs npm; what
+depends on the printer (its catalogue, the helper files, whether there
+is an LCD Viewer) needs only Node's own modules. So `tools/build.mjs`
+stages the first half and `tools/assemble.mjs` does the second, and a
+release stages once and compiles `tools/installer/` with
+`bun build --compile` into one executable per platform that carries a
+JavaScript runtime and the staged build. Its window is a page served on
+127.0.0.1 to the computer's own browser, rather than a GUI toolkit per
+platform; the page's requests carry a token from the address it was
+opened at, so no other page in that browser can drive it.
+
 **The printer is the renderer.** Only it knows how its fonts and
 symbologies rasterize, and its `/zpl` endpoint will draw a label to a
 bitmap for free. The visual canvas is deliberately an editing proxy —
@@ -375,10 +451,20 @@ src/data/
   sgd-reference.mjs   what each printer setting is for, likewise
 lcd_display_helper.sh copy the real LCD bitmap to the printer for the
                       LCD Viewer, each second (needs port 9100)
+deploy.sh             build and install on a printer (tools/deploy.mjs)
+install.sh            fetch the release's installer for this computer
+install.ps1           and run it; the same for Windows PowerShell
 tools/
+  deploy.mjs          catalogue, assemble, upload, verify: the deploy
   fetch-schema.mjs    read the SGD catalogue over port 9100
-  build.mjs           bundle, inline and pack everything
+  build.mjs           stage: Tailwind, the bundler, prettier
+  assemble.mjs        fit a staged build to one printer's catalogue
   upload.mjs          CISDFCRC16 file upload
+  installer/          the standalone installer:
+    main.mjs          its entry point: the page, or the command line
+    server.mjs        the page's server, on 127.0.0.1
+    gui.html          the page
+    package.mjs       compile it for every platform (make binaries)
   lcd-shot.mjs        save the LCD framebuffer as a PNG (needs port 9100)
   screenshots.mjs     the README's pictures, from a deployed console
   zpl-manual-extract.mjs  split the ZPL guide's text into one record per
@@ -427,8 +513,10 @@ node test/layers.test.mjs   # reordering layers
 node test/store.test.mjs    # the state store
 node test/filewrite.test.mjs # file.append requests, chunks and text encodings
 node test/syslog.test.mjs   # syslog lines, destinations and alerts
+node test/installer.test.mjs # the deploy's options, the installer's page server
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
+make binaries               # the standalone installers, in dist/bin/
 npm run format              # lay out every .js/.mjs with prettier
 npm run test:live           # every mode, in Chrome, against a real printer
 node tools/screenshots.mjs  # retake docs/screenshots/, the same way
@@ -441,7 +529,9 @@ real printer -- no mocks. It asks for the printer's address and
 password, whether it may print labels, and what label is loaded
 (defaulting to what the printer reports), then builds and deploys this
 working tree and runs a suite per mode: the app shell, Printer
-Settings, Label Editor, Stored Formats, File System and LCD Viewer.
+Settings, Label Editor, Stored Formats, File System and LCD Viewer --
+and the installer, compiled for the computer running the tests and
+used both ways, from the command line and through its page.
 
 ```sh
 npm run test:live                            # asks, and offers to save the answers
@@ -593,6 +683,17 @@ at the hook; by hand it is:
 
 ```sh
 git config core.hooksPath tools/githooks
+```
+
+A release is a tag. Pushing `v<version>`, matching `package.json`,
+starts `.github/workflows/release.yml`: it runs the unit tests, builds
+the installers (`make binaries`) and the source tarball
+(`make release`), and publishes them with `install.sh`, `install.ps1`
+and `SHA256SUMS` as that GitHub release, which the download links above
+always point at the latest of:
+
+```sh
+git tag v$(node tools/version.mjs) && git push origin v$(node tools/version.mjs)
 ```
 
 ## Licence

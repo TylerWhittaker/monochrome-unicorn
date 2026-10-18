@@ -36,7 +36,7 @@ import { getvar } from './printer.mjs';
 
 export const DEFAULT_CONFIG = fileURLToPath(new URL('../config.json', import.meta.url));
 
-export const SUITES = ['app', 'settings', 'editor', 'formats', 'files', 'lcd'];
+export const SUITES = ['app', 'settings', 'editor', 'formats', 'files', 'lcd', 'installer'];
 
 const USAGE = `usage: node test/live/run.mjs [options]
 

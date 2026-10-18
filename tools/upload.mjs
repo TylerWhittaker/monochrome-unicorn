@@ -139,7 +139,9 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// import.meta.main where the runtime has it: bundled into the installer,
+// every module shares the entry's URL, and only main.mjs is the entry.
+if (import.meta.main ?? import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => {
     console.error('upload failed:', err.message);
     process.exit(1);
