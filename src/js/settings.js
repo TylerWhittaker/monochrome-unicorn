@@ -35,6 +35,7 @@ import { el, qs, replaceChildren, toast, debounce, modal } from './ui.js';
 import { printer, allSettings } from './state.js';
 import { createMaintenanceCard } from './maintenance.js';
 import { createSensorCard } from './sensor.js';
+import { createUninstallCard } from './uninstall.js';
 import { createLogsView } from './logs.js';
 import { buildBackup, compareBackup } from './backup.js';
 import {
@@ -1201,7 +1202,9 @@ export function mountSettings(panel) {
   // done so they do not hold the printer up for the settings.
   const maintenance = createMaintenanceCard();
   const sensor = createSensorCard();
-  allView.append(el('div', { class: 'mt-3 space-y-3' }, [maintenance.node, sensor.node]));
+  allView.append(
+    el('div', { class: 'mt-3 space-y-3' }, [maintenance.node, sensor.node, createUninstallCard()]),
+  );
 
   onDriveListing(paintDriveListing);
   applyFilter();

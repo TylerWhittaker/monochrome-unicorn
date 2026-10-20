@@ -187,6 +187,21 @@ Nothing is installed besides the installer itself, kept in
 `~/.local/share/monochrome-unicorn/` (`%LOCALAPPDATA%\monochrome-unicorn\`
 on Windows) for next time.
 
+### Uninstalling
+
+At the bottom of **Printer Settings**, **Uninstall…** takes the console
+off the printer: it deletes every `.SHTML` file on the printer's `E:`
+drive -- `INDEX.SHTML`, its helper files, and any other `.SHTML` stored
+there -- after you tick that you understand, and the printer's web
+server serves its factory pages at `http://<printer>/` again. Settings,
+stored labels, pictures and fonts are left as they are. To use the
+console again, install it again. Without the page, the same from a
+computer on the network:
+
+```sh
+node tools/upload.mjs <printer-ip> --delete 'E:*.SHTML'
+```
+
 ### From the source
 
 For working on the console, or to build what you install yourself. This
@@ -455,6 +470,7 @@ src/js/
   maintenance.js      the Maintenance card: odometers
   sensor.js           the Media sensor card: readings and thresholds
   logs.js             Syslog & alerts: the log viewer and both editors
+  uninstall.js        Printer Settings' Uninstall: the console off the printer
   syslog.js           syslog lines and the syslog / alert strings, as data
 src/data/
   zpl-reference.mjs   every ZPL command and parameter, in our words

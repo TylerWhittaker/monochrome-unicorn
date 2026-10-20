@@ -75,8 +75,16 @@ import { appendBodies, firstNul, sameBytes, UNSERVED_TYPES } from './filewrite.j
 const TURN_LIMIT_MS = 150000;
 let lastTurn = Promise.resolve();
 
+/*
+ * Set once the console has uninstalled itself (uninstallConsole): the
+ * helper files the polls read are gone, so nothing more is asked of the
+ * printer, and every request from then on simply never answers.
+ */
+let uninstalled = false;
+
 /** Run one request when the printer is free; resolves with its result. */
 export function printerTurn(request) {
+  if (uninstalled) return new Promise(() => {});
   const turn = lastTurn.then(() => request());
   lastTurn = new Promise((release) => {
     const limit = setTimeout(release, TURN_LIMIT_MS);
@@ -771,6 +779,30 @@ export function runStoredFile(name) {
  */
 export function deleteStoredFile(name) {
   return sendCommandSetting('file.delete', name);
+}
+
+/**
+ * Take the console off the printer: delete every .SHTML on E: --
+ * INDEX.SHTML and the helper files, which are all an install puts there
+ * -- in one file.delete, which takes a wildcard, and the LCD helper's
+ * frame from the RAM drive if it left one. Then the printer serves its
+ * factory pages at / again.
+ *
+ * file.delete reports nothing, so the proof is that INDEX.SHTML is no
+ * longer served. After that, no further request is sent (printerTurn).
+ */
+export async function uninstallConsole() {
+  await deleteStoredFile('E:*.SHTML');
+  await deleteStoredFile('R:LCD.GRF').catch(() => {});
+  const status = await printerTurn(async () => {
+    const res = await fetch(`/INDEX.SHTML?v=${Date.now()}`, { cache: 'no-store' });
+    await res.arrayBuffer();
+    return res.status;
+  });
+  if (status !== 404) {
+    throw new Error(`the printer still serves INDEX.SHTML (HTTP ${status})`);
+  }
+  uninstalled = true;
 }
 
 /** Give a stored file a new name, extension and all ("E:OLD.TXT", "E:NEW.CSV"). */

@@ -118,6 +118,16 @@ export async function dirNames(ip, dev = 'E') {
   return [...html.matchAll(/>\s*([A-Z]:[^<\s]+)\s*</g)].map((m) => m[1]);
 }
 
+/**
+ * Every file on a drive, by its full name ("E:INDEX.SHTML"), from
+ * file.dir over port 9100 -- which, unlike /dir, keeps every extension.
+ */
+export async function driveFiles(ip, dev = 'E') {
+  const reply = await talk(ip, `! U1 getvar "file.dir" "${dev}:*.*"\r\n`, { quietMs: 1500 });
+  const text = reply.toString('latin1');
+  return [...text.matchAll(new RegExp(`^\\* (${dev}:\\S+)`, 'gm'))].map((m) => m[1]);
+}
+
 /** Whether an object is on a drive, by name without the type ("E:ZTEST"). */
 export async function hasObject(ip, dev, oname) {
   const names = await dirNames(ip, dev);

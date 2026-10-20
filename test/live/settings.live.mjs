@@ -36,8 +36,9 @@
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { openConsole } from './lib/browser.mjs';
-import { getvar, setvar, waitFor } from './lib/printer.mjs';
+import { getvar, setvar, waitFor, storeFile, driveFiles, http } from './lib/printer.mjs';
 import { skip } from './lib/harness.mjs';
 
 export const name = 'Printer Settings';
@@ -566,5 +567,63 @@ export default function register(s, ctx) {
       await page.getByRole('tab', { name: 'All settings' }).click();
       ui.assertNoErrors();
     },
+  );
+
+  /*
+   * Last, as it takes the console off the printer: everything after it
+   * is put back by deploying this tree again, as the run did at the start.
+   */
+  s.test(
+    'Uninstall removes every .SHTML on E:, once the person says they understand',
+    async () => {
+      if (!cfg.deploy) skip('--no-deploy: there would be no way to put back what the printer had');
+      const shtml = async () => (await driveFiles(cfg.ip)).filter((f) => /\.SHTML$/.test(f));
+      // A page of someone's own goes too: every .SHTML, as the dialog says.
+      await storeFile(cfg.ip, '<p>mine</p>\n', 'E:ZTESTUNINST.SHTML');
+      const before = await shtml();
+      assert.ok(before.includes('E:INDEX.SHTML') && before.includes('E:ZTESTUNINST.SHTML'));
+      const others = (await driveFiles(cfg.ip)).filter((f) => !/\.SHTML$/.test(f));
+      try {
+        const card = page.locator('#uninstall');
+        await card.scrollIntoViewIfNeeded();
+
+        // Cancelled, nothing happens.
+        await card.click();
+        const dialog = page.locator('#modal-root');
+        await dialog.getByText('Uninstall Monochrome Unicorn?').waitFor();
+        const go = dialog.locator('#uninstall-confirm');
+        assert.equal(await go.isDisabled(), true, 'not until the box is ticked');
+        await dialog.getByRole('button', { name: 'Cancel' }).click();
+        assert.deepEqual(await shtml(), before, 'Cancel leaves everything');
+
+        await card.click();
+        await dialog.getByLabel(/I understand that this uninstalls the web interface/).check();
+        assert.match(
+          await dialog.textContent(),
+          /factory default/,
+          'the dialog says what it returns to',
+        );
+        await go.click();
+        await page.locator('#uninstalled').waitFor({ timeout: 60000 });
+
+        assert.deepEqual(await shtml(), [], 'no .SHTML left on E:');
+        assert.deepEqual(
+          (await driveFiles(cfg.ip)).filter((f) => !/\.SHTML$/.test(f)),
+          others,
+          'every other file kept',
+        );
+        assert.equal((await http(cfg.ip, `/INDEX.SHTML?v=${Date.now()}`)).status, 404);
+        const home = await http(cfg.ip, '/');
+        assert.equal(home.status, 200, 'the printer serves its own page at /');
+        assert.doesNotMatch(Buffer.from(home.bytes).toString('latin1'), /Monochrome Unicorn/);
+      } finally {
+        execFileSync('./deploy.sh', [cfg.ip, '--no-schema'], {
+          cwd: ctx.root,
+          stdio: ['ignore', 'ignore', 'inherit'],
+        });
+        assert.equal((await http(cfg.ip, `/INDEX.SHTML?v=${Date.now()}`)).status, 200);
+      }
+    },
+    { timeout: 240000 },
   );
 }
