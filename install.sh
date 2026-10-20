@@ -20,7 +20,7 @@
 #
 # install.sh -- fetch the installer for this computer and run it.
 #
-#   curl -fsSL https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- 192.168.1.81 [--packed ...]
 #
 # With no address the installer opens its page in your browser; with one
@@ -30,12 +30,15 @@
 # ~/.local/share/monochrome-unicorn/ for next time. Needs curl, and
 # sha256sum or shasum to check the download.
 #
-# MONOCHROME_UNICORN_URL fetches from somewhere other than the latest
-# release, e.g. .../releases/download/v0.49.0.
+# This copy fetches the latest release. A release carries its own copy,
+# monochrome-unicorn-<version>-install.sh, with VERSION below filled in,
+# which fetches that release. MONOCHROME_UNICORN_VERSION picks another
+# one; MONOCHROME_UNICORN_URL fetches the files from somewhere else.
 
 set -eu
 
-BASE=${MONOCHROME_UNICORN_URL:-https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download}
+REPO=https://github.com/TylerWhittaker/monochrome-unicorn
+VERSION=${MONOCHROME_UNICORN_VERSION:-}
 
 fail() {
   echo "install.sh: $*" >&2
@@ -46,7 +49,7 @@ case "$(uname -s)" in
   Linux) os=linux ;;
   Darwin) os=macos ;;
   MINGW* | MSYS* | CYGWIN*)
-    fail "on Windows, download monochrome-unicorn-windows-x64.exe from $BASE/ instead" ;;
+    fail "on Windows, download the windows-x64.exe from $REPO/releases/latest instead" ;;
   *) fail "no installer for $(uname -s)" ;;
 esac
 
@@ -60,7 +63,21 @@ if [ "$os-$arch" = macos-x64 ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null)"
   arch=arm64
 fi
 
-name=monochrome-unicorn-$os-$arch
+if [ -z "$VERSION" ]; then
+  # The latest release's page redirects to its tag: .../releases/tag/v1.2.3.
+  latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$REPO/releases/latest") ||
+    fail "could not reach $REPO"
+  VERSION=${latest##*/v}
+  case "$VERSION" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *) fail "could not tell which release is the latest ($latest)" ;;
+  esac
+fi
+BASE=${MONOCHROME_UNICORN_URL:-$REPO/releases/download/v$VERSION}
+
+# The release's file names, as tools/installer/package.mjs makes them.
+name=monochrome-unicorn-$VERSION-$os-$arch
+sums=monochrome-unicorn-$VERSION-SHA256SUMS
 dir=${XDG_DATA_HOME:-$HOME/.local/share}/monochrome-unicorn
 bin=$dir/monochrome-unicorn
 mkdir -p "$dir"
@@ -75,13 +92,13 @@ elif command -v shasum >/dev/null; then
 else
   sum() { echo unchecked; }
 fi
-expected=$(curl -fsSL "$BASE/SHA256SUMS" | awk -v n="$name" '$2 == n { print $1 }')
+expected=$(curl -fsSL "$BASE/$sums" | awk -v n="$name" '$2 == n { print $1 }')
 actual=$(sum "$bin.part")
 if [ "$actual" = unchecked ]; then
   echo "(no sha256sum or shasum here, so the download is not checked)" >&2
 elif [ -z "$expected" ] || [ "$actual" != "$expected" ]; then
   rm -f "$bin.part"
-  fail "the download does not match the release's SHA256SUMS; try again"
+  fail "the download does not match $sums; try again"
 fi
 
 chmod +x "$bin.part"

@@ -122,13 +122,18 @@ what it needs.
 
 ### Download and double-click
 
-| Your computer | Download |
+On the [latest release](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest), under **Assets**,
+download the file for your computer. Each is named for the version it
+installs, so for 0.50.1 the Windows one is
+`monochrome-unicorn-0.50.1-windows-x64.exe`:
+
+| Your computer | The file ending in |
 |---|---|
-| Windows 10 or 11 | [monochrome-unicorn-windows-x64.exe](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/monochrome-unicorn-windows-x64.exe) |
-| Mac with Apple silicon (M1 and later) | [monochrome-unicorn-macos-arm64.zip](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/monochrome-unicorn-macos-arm64.zip) |
-| Mac with an Intel processor | [monochrome-unicorn-macos-x64.zip](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/monochrome-unicorn-macos-x64.zip) |
-| Linux, 64-bit PC | [monochrome-unicorn-linux-x64](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/monochrome-unicorn-linux-x64) |
-| Linux, 64-bit ARM (a Raspberry Pi on 64-bit Raspberry Pi OS) | [monochrome-unicorn-linux-arm64](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/monochrome-unicorn-linux-arm64) |
+| Windows 10 or 11 | `-windows-x64.exe` |
+| Mac with Apple silicon (M1 and later) | `-macos-arm64.zip` |
+| Mac with an Intel processor | `-macos-x64.zip` |
+| Linux, 64-bit PC | `-linux-x64` |
+| Linux, 64-bit ARM (a Raspberry Pi on 64-bit Raspberry Pi OS) | `-linux-arm64` |
 
 Open it. It opens a page in your browser: type the printer's address,
 press **Install**, and when it says so, **Open the console**. The
@@ -147,30 +152,35 @@ whether to trust it:
   right-click it and choose **Open**.)
 - **Linux** needs it marked as a program first: in the file manager,
   **Properties → Permissions → Allow executing**, or
-  `chmod +x monochrome-unicorn-linux-*`.
+  `chmod +x monochrome-unicorn-*-linux-*`.
 
 ### From a terminal
 
-On macOS, Linux or WSL, this fetches the installer for your computer,
-checks it, and runs it:
+On macOS, Linux or WSL, this fetches the latest release's installer for
+your computer, checks it against the release's checksums, and runs it:
 
 ```sh
-curl -fsSL https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.sh | sh
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/install.ps1 | iex
+irm https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.ps1 | iex
 ```
+
+A release carries its own copy of each script,
+`monochrome-unicorn-<version>-install.sh` and `.ps1`, which fetches that
+release rather than the latest; so does `MONOCHROME_UNICORN_VERSION=0.50.1`
+in front of either.
 
 Either opens the installer's page. Given a printer's address, the
 installer works on the command line instead, with the same options as
 `./deploy.sh` (see [Deploying](#deploying)):
 
 ```sh
-curl -fsSL https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/install.sh | sh -s -- 192.168.1.81 --packed
-./monochrome-unicorn-linux-x64 192.168.1.81      # a downloaded one
+curl -fsSL https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.sh | sh -s -- 192.168.1.81 --packed
+./monochrome-unicorn-0.50.1-linux-x64 192.168.1.81      # a downloaded one
 ```
 
 Nothing is installed besides the installer itself, kept in
@@ -688,9 +698,11 @@ git config core.hooksPath tools/githooks
 A release is a tag. Pushing `v<version>`, matching `package.json`,
 starts `.github/workflows/release.yml`: it runs the unit tests, builds
 the installers (`make binaries`) and the source tarball
-(`make release`), and publishes them with `install.sh`, `install.ps1`
-and `SHA256SUMS` as that GitHub release, which the download links above
-always point at the latest of:
+(`make release`), and publishes them with that version's `install.sh`,
+`install.ps1` and checksums as that GitHub release. Every file is named
+for the version, `monochrome-unicorn-<version>-...`, so a download says
+which release it came from; the one-liners above find the latest
+themselves:
 
 ```sh
 git tag v$(node tools/version.mjs) && git push origin v$(node tools/version.mjs)

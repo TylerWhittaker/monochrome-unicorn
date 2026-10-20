@@ -27,7 +27,14 @@ import { inflateRawSync } from 'node:zlib';
 import { parseArgs, USAGE, STEPS } from '../tools/deploy.mjs';
 import { assemble, STAGED_PARTS } from '../tools/assemble.mjs';
 import { startGui, validAddress, explainError } from '../tools/installer/server.mjs';
-import { zipOne, crc32, TARGETS } from '../tools/installer/package.mjs';
+import {
+  zipOne,
+  crc32,
+  TARGETS,
+  binaryName,
+  assetName,
+  stampScript,
+} from '../tools/installer/package.mjs';
 
 let failures = 0;
 async function check(name, fn) {
@@ -274,12 +281,38 @@ await check('the zip holds the executable whole, marked executable', () => {
   assert.equal(end + 22, zip.length);
 });
 
-await check('every platform has an installer, named for its download', () => {
+await check('every platform has an installer, named for its version', () => {
   assert.deepEqual(
-    TARGETS.map((t) => t.name),
-    ['windows-x64', 'macos-arm64', 'macos-x64', 'linux-x64', 'linux-arm64'],
+    TARGETS.map((t) => binaryName(t, '1.2.3')),
+    [
+      'monochrome-unicorn-1.2.3-windows-x64.exe',
+      'monochrome-unicorn-1.2.3-macos-arm64',
+      'monochrome-unicorn-1.2.3-macos-x64',
+      'monochrome-unicorn-1.2.3-linux-x64',
+      'monochrome-unicorn-1.2.3-linux-arm64',
+    ],
   );
-  for (const t of TARGETS) assert.ok(t.file.startsWith('monochrome-unicorn-' + t.name));
+  assert.equal(assetName('1.2.3', 'SHA256SUMS'), 'monochrome-unicorn-1.2.3-SHA256SUMS');
+});
+
+await check('the install scripts name the files package.mjs makes', () => {
+  const sh = readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
+  const ps1 = readFileSync(new URL('../install.ps1', import.meta.url), 'utf8');
+  assert.match(sh, /^name=monochrome-unicorn-\$VERSION-\$os-\$arch$/m);
+  assert.match(sh, /^sums=monochrome-unicorn-\$VERSION-SHA256SUMS$/m);
+  assert.match(ps1, /^\$name = "monochrome-unicorn-\$version-windows-x64\.exe"$/m);
+  assert.match(ps1, /^\$sumsName = "monochrome-unicorn-\$version-SHA256SUMS"$/m);
+});
+
+await check('a released install script fetches its own release', () => {
+  const sh = readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
+  const ps1 = readFileSync(new URL('../install.ps1', import.meta.url), 'utf8');
+  assert.match(stampScript(sh, '1.2.3'), /^VERSION=\$\{MONOCHROME_UNICORN_VERSION:-1\.2\.3\}$/m);
+  assert.match(
+    stampScript(ps1, '1.2.3'),
+    /^\$version = if \(\$env:MONOCHROME_UNICORN_VERSION\) \{ \$env:MONOCHROME_UNICORN_VERSION \} else \{ '1\.2\.3' \}$/m,
+  );
+  assert.throws(() => stampScript('echo hi\n', '1.2.3'), /no version line/);
 });
 
 console.log(failures ? `\n${failures} failing` : '\nall passing');

@@ -24,17 +24,21 @@
  *
  * Stages the build (tools/build.mjs), puts it and the installer's page in
  * dist/installer.json, and compiles tools/installer/main.mjs with
- * `bun build --compile` once per target into dist/bin/:
+ * `bun build --compile` once per target into dist/bin/, each named for
+ * the version it installs:
  *
- *   monochrome-unicorn-windows-x64.exe
- *   monochrome-unicorn-macos-arm64(.zip)   Apple silicon
- *   monochrome-unicorn-macos-x64(.zip)     Intel
- *   monochrome-unicorn-linux-x64
- *   monochrome-unicorn-linux-arm64
+ *   monochrome-unicorn-<version>-windows-x64.exe
+ *   monochrome-unicorn-<version>-macos-arm64(.zip)   Apple silicon
+ *   monochrome-unicorn-<version>-macos-x64(.zip)     Intel
+ *   monochrome-unicorn-<version>-linux-x64
+ *   monochrome-unicorn-<version>-linux-arm64
  *
  * The macOS ones also go in a zip, which keeps the executable bit a
- * browser download would lose; install.sh fetches the bare files, and
- * checks each against SHA256SUMS.
+ * browser download would lose; install.sh fetches the bare files. Beside
+ * them go install.sh and install.ps1 with the version filled in, as
+ * monochrome-unicorn-<version>-install.sh and .ps1, and the checksums of
+ * all of it, monochrome-unicorn-<version>-SHA256SUMS: every file in
+ * dist/bin/ is a release asset, and says which release it belongs to.
  *
  * Bun is only the packager -- the project is developed and tested on
  * Node -- so it is not a dependency: a `bun` on PATH is used if there is
@@ -74,26 +78,44 @@ const BUN_VERSION = '1.4.2';
  * gains nothing from the newer instructions.
  */
 export const TARGETS = [
-  {
-    name: 'windows-x64',
-    bun: 'bun-windows-x64-baseline',
-    file: 'monochrome-unicorn-windows-x64.exe',
-  },
-  {
-    name: 'macos-arm64',
-    bun: 'bun-darwin-arm64',
-    file: 'monochrome-unicorn-macos-arm64',
-    zip: true,
-  },
-  {
-    name: 'macos-x64',
-    bun: 'bun-darwin-x64-baseline',
-    file: 'monochrome-unicorn-macos-x64',
-    zip: true,
-  },
-  { name: 'linux-x64', bun: 'bun-linux-x64-baseline', file: 'monochrome-unicorn-linux-x64' },
-  { name: 'linux-arm64', bun: 'bun-linux-arm64', file: 'monochrome-unicorn-linux-arm64' },
+  { name: 'windows-x64', bun: 'bun-windows-x64-baseline', ext: '.exe' },
+  { name: 'macos-arm64', bun: 'bun-darwin-arm64', zip: true },
+  { name: 'macos-x64', bun: 'bun-darwin-x64-baseline', zip: true },
+  { name: 'linux-x64', bun: 'bun-linux-x64-baseline' },
+  { name: 'linux-arm64', bun: 'bun-linux-arm64' },
 ];
+
+/**
+ * A release asset's file name: monochrome-unicorn-<version>-<part>.
+ * install.sh and install.ps1 build the same names; keep them in step.
+ */
+export function assetName(version, part) {
+  return `monochrome-unicorn-${version}-${part}`;
+}
+
+/** The installer's file name for a target. */
+export function binaryName(target, version) {
+  return assetName(version, target.name + (target.ext || ''));
+}
+
+/*
+ * The install scripts as released: their one line naming a version, which
+ * in the repository is empty (so they fetch the latest release), names
+ * this one.
+ */
+export function stampScript(text, version) {
+  const stamped = text
+    .replace(
+      /^VERSION=\$\{MONOCHROME_UNICORN_VERSION:-\}$/m,
+      `VERSION=\${MONOCHROME_UNICORN_VERSION:-${version}}`,
+    )
+    .replace(
+      /^\$version = \$env:MONOCHROME_UNICORN_VERSION$/m,
+      `$version = if ($env:MONOCHROME_UNICORN_VERSION) { $env:MONOCHROME_UNICORN_VERSION } else { '${version}' }`,
+    );
+  if (stamped === text) throw new Error('no version line to fill in');
+  return stamped;
+}
 
 /** The target this computer runs, for the live tests. */
 export function hostTarget() {
@@ -208,8 +230,10 @@ function main() {
   if (existsSync(BIN)) rmSync(BIN, { recursive: true });
   mkdirSync(BIN, { recursive: true });
 
+  const { version } = staged;
   for (const target of targets) {
-    const out = join(BIN, target.file);
+    const file = binaryName(target, version);
+    const out = join(BIN, file);
     execFileSync(
       bun,
       [
@@ -223,19 +247,26 @@ function main() {
       ],
       { cwd: ROOT, stdio: ['ignore', 'ignore', 'inherit'] },
     );
-    if (!target.file.endsWith('.exe')) chmodSync(out, 0o755);
-    let line = `  ${target.file.padEnd(36)} ${(statSync(out).size / 1048576).toFixed(1)} MB`;
+    if (!target.ext) chmodSync(out, 0o755);
+    let line = `  ${file.padEnd(44)} ${(statSync(out).size / 1048576).toFixed(1)} MB`;
     if (target.zip) {
-      const zip = zipOne(target.file, readFileSync(out));
+      const zip = zipOne(file, readFileSync(out));
       writeFileSync(`${out}.zip`, zip);
       line += `, zipped ${(zip.length / 1048576).toFixed(1)} MB`;
     }
     console.log(line);
   }
 
+  for (const script of ['install.sh', 'install.ps1']) {
+    const out = join(BIN, assetName(version, script));
+    writeFileSync(out, stampScript(readFileSync(join(ROOT, script), 'utf8'), version));
+    if (script.endsWith('.sh')) chmodSync(out, 0o755);
+  }
+
   // What install.sh and install.ps1 check a download against.
+  const sumsFile = assetName(version, 'SHA256SUMS');
   const sums = readdirSync(BIN)
-    .filter((f) => f.startsWith('monochrome-unicorn-'))
+    .filter((f) => f.startsWith(assetName(version, '')) && f !== sumsFile)
     .sort()
     .map(
       (f) =>
@@ -243,7 +274,7 @@ function main() {
           .update(readFileSync(join(BIN, f)))
           .digest('hex')}  ${f}`,
     );
-  writeFileSync(join(BIN, 'SHA256SUMS'), sums.join('\n') + '\n');
+  writeFileSync(join(BIN, sumsFile), sums.join('\n') + '\n');
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

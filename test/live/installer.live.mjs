@@ -24,18 +24,22 @@
  * line, and double-clicked -- its page, driven in Chrome.
  *
  * Each install is checked on the printer: the page it serves must carry
- * this version and a build stamp newer than before. Both installs put
+ * this version and a build stamp newer than before. The release's
+ * install.sh is run too, against the files the compile left in dist/bin/
+ * served from this computer as a release would serve them. Both installs put
  * back the same working tree the run deployed, so the printer ends as it
  * began.
  */
 
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { http } from './lib/printer.mjs';
 import { skip } from './lib/harness.mjs';
-import { hostTarget } from '../../tools/installer/package.mjs';
+import { hostTarget, binaryName, assetName } from '../../tools/installer/package.mjs';
 import { readVersion } from '../../tools/version.mjs';
 
 export const name = 'Installer';
@@ -51,10 +55,34 @@ async function served(ip) {
   return { version: footer[1], stamp: footer[2] };
 }
 
+/**
+ * Serve dist/bin/ on 127.0.0.1 as a release's download URL would, noting
+ * what was asked for; `replace` swaps in other contents for a file name.
+ */
+async function serveRelease(dir, replace = {}) {
+  const asked = [];
+  const server = createServer((req, res) => {
+    const file = decodeURIComponent(new URL(req.url, 'http://x').pathname.slice(1));
+    asked.push(file);
+    const path = join(dir, file);
+    if (!(file in replace) && (file.includes('/') || !existsSync(path))) {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200).end(file in replace ? replace[file] : readFileSync(path));
+  });
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+  return {
+    url: `http://127.0.0.1:${server.address().port}`,
+    asked,
+    close: () => server.listening && server.close(),
+  };
+}
+
 /** Run the installer to the end, collecting what it prints. */
-function runInstaller(bin, args) {
+function runInstaller(bin, args, env = process.env) {
   return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
     let out = '';
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (out += d));
@@ -82,8 +110,9 @@ function startGui(bin) {
 export default function register(s, ctx) {
   const { cfg, root, browser } = ctx;
   const target = hostTarget();
-  const bin = target && join(root, 'dist/bin', target.file);
   const version = readVersion();
+  const binDir = join(root, 'dist/bin');
+  const bin = target && join(binDir, binaryName(target, version));
   let gui = null;
 
   s.test(
@@ -98,6 +127,44 @@ export default function register(s, ctx) {
     },
     { timeout: 600000 },
   );
+
+  s.test("the release's install.sh fetches this version's installer, and checks it", async () => {
+    if (!bin || !existsSync(bin)) skip('no installer was built');
+    if (process.platform === 'win32') skip('install.sh is for macOS and Linux');
+    const script = join(binDir, assetName(version, 'install.sh'));
+    const sums = assetName(version, 'SHA256SUMS');
+    const home = mkdtempSync(join(tmpdir(), 'zebra-install-'));
+    const env = { ...process.env, XDG_DATA_HOME: home };
+    let release = await serveRelease(binDir);
+    try {
+      const ok = await runInstaller('sh', [script, '--version'], {
+        ...env,
+        MONOCHROME_UNICORN_URL: release.url,
+      });
+      assert.equal(ok.code, 0, ok.out);
+      assert.match(
+        ok.out,
+        new RegExp(`^${version.replaceAll('.', '\\.')}$`, 'm'),
+        'it ran the installer it fetched',
+      );
+      assert.deepEqual(release.asked, [binaryName(target, version), sums]);
+      release.close();
+
+      // A download that does not match the checksums is refused, not run.
+      release = await serveRelease(binDir, {
+        [sums]: `${'0'.repeat(64)}  ${binaryName(target, version)}\n`,
+      });
+      const bad = await runInstaller('sh', [script, '--version'], {
+        ...env,
+        MONOCHROME_UNICORN_URL: release.url,
+      });
+      assert.notEqual(bad.code, 0);
+      assert.match(bad.out, new RegExp(`does not match ${sums}`));
+    } finally {
+      release.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
 
   s.test(
     'from the command line, it installs this version on the printer',

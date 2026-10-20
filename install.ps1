@@ -20,7 +20,7 @@
 # install.ps1 -- fetch the Windows installer and run it, as install.sh
 # does elsewhere. In PowerShell:
 #
-#   irm https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.ps1 | iex
 #
 # which opens the installer's page in your browser. To install from the
 # command line instead, pass the address:
@@ -28,21 +28,30 @@
 #   & ([scriptblock]::Create((irm https://.../install.ps1))) 192.168.1.81
 #
 # The installer is kept in %LOCALAPPDATA%\monochrome-unicorn\ for next
-# time. $env:MONOCHROME_UNICORN_URL fetches from somewhere other than the
-# latest release.
+# time. This copy fetches the latest release; a release carries its own,
+# monochrome-unicorn-<version>-install.ps1, with $version below filled in.
+# $env:MONOCHROME_UNICORN_VERSION picks another release, and
+# $env:MONOCHROME_UNICORN_URL fetches the files from somewhere else.
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is far slower drawing it
 
+$repo = 'TylerWhittaker/monochrome-unicorn'
+$version = $env:MONOCHROME_UNICORN_VERSION
+if (-not $version) {
+  $version = (Invoke-RestMethod -UseBasicParsing "https://api.github.com/repos/$repo/releases/latest").tag_name -replace '^v', ''
+}
 $base = if ($env:MONOCHROME_UNICORN_URL) { $env:MONOCHROME_UNICORN_URL } else {
-  'https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest/download'
+  "https://github.com/$repo/releases/download/v$version"
 }
 if (-not [Environment]::Is64BitOperatingSystem) {
   throw 'The installer needs 64-bit Windows.'
 }
 
-# x64 runs on ARM64 Windows too, under its emulation.
-$name = 'monochrome-unicorn-windows-x64.exe'
+# x64 runs on ARM64 Windows too, under its emulation. The release's file
+# names, as tools/installer/package.mjs makes them.
+$name = "monochrome-unicorn-$version-windows-x64.exe"
+$sumsName = "monochrome-unicorn-$version-SHA256SUMS"
 $dir = Join-Path $env:LOCALAPPDATA 'monochrome-unicorn'
 $exe = Join-Path $dir 'monochrome-unicorn.exe'
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -50,14 +59,14 @@ New-Item -ItemType Directory -Force -Path $dir | Out-Null
 Write-Host "Downloading $name ..."
 Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile "$exe.part"
 
-$sums = (Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS").Content
+$sums = (Invoke-WebRequest -UseBasicParsing -Uri "$base/$sumsName").Content
 if ($sums -is [byte[]]) { $sums = [Text.Encoding]::ASCII.GetString($sums) }
 $expected = ($sums -split "`n" | Where-Object { $_ -match "^([0-9a-f]{64})  $([regex]::Escape($name))\s*$" } |
   ForEach-Object { $Matches[1] }) | Select-Object -First 1
 $actual = (Get-FileHash -Algorithm SHA256 "$exe.part").Hash.ToLower()
 if (-not $expected -or $actual -ne $expected) {
   Remove-Item -Force "$exe.part"
-  throw "The download does not match the release's SHA256SUMS; try again."
+  throw "The download does not match $sumsName; try again."
 }
 
 Move-Item -Force "$exe.part" $exe
