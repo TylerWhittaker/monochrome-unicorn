@@ -122,6 +122,16 @@ export default function register(s, ctx) {
     assert.equal(shown[1], version);
   });
 
+  s.test('the footer offers the source, as the AGPL asks of a network program', async () => {
+    const link = con.page.locator('footer #source-link');
+    assert.equal(
+      await link.getAttribute('href'),
+      'https://github.com/TylerWhittaker/monochrome-unicorn',
+    );
+    const repo = await fetch(await link.getAttribute('href'), { method: 'HEAD' });
+    assert.equal(repo.status, 200, 'the source it points at is there');
+  });
+
   s.test('every tab mounts without a script error, and the hash follows', async () => {
     const { page, ui } = con;
     const tabs = await page.locator('.tab-btn').evaluateAll((n) => n.map((b) => b.dataset.tab));

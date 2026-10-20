@@ -714,6 +714,14 @@ in an HTML comment at the top. If you give out a printer or a build, you
 also owe the recipient the corresponding source — this repository, at the
 commit the build came from; `make release` packs exactly that.
 
+The AGPL goes one step further than the GPL, and it matters here because
+the console is a program people use over a network: anyone who uses a
+**modified** version from a printer must be offered that version's
+source. The footer's "source code" link (`src/index.html`) does that for
+this repository; if you change the console and deploy it, point the link
+at your changed source -- a fork, or a `make release` tarball on a server
+those users can reach.
+
 Third-party code, all AGPL-compatible and under its own terms:
 
 - [htmx](https://htmx.org) 2.0.4 (`vendor/htmx.min.js`), inlined into the
