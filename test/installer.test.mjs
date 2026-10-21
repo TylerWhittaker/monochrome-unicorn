@@ -129,8 +129,12 @@ await check('errors are put plainly, by what went wrong', () => {
   const say = (message) => explainError(new Error(message), '10.0.0.9');
   assert.match(say('getaddrinfo ENOTFOUND zebra'), /no computer called "10.0.0.9"/);
   assert.match(say('connect ECONNREFUSED 10.0.0.9:9100'), /refused port 9100/);
-  assert.match(say('~HI got no answer (Timed out waiting for 10.0.0.9:9100)'), /Nothing answered/);
+  assert.match(say('Timed out waiting for 10.0.0.9:9100'), /Nothing answered/);
   assert.match(say('connect EHOSTUNREACH 10.0.0.9:9100'), /same network/);
+  assert.match(
+    say('10.0.0.9 answered neither the JSON question nor allcv: is it a Zebra printer?'),
+    /did not answer as a Zebra printer/,
+  );
   assert.match(say('The printer answered 500 for INDEX.SHTML after the upload'), /restart/);
   assert.match(say('something else'), /did not finish/);
 });

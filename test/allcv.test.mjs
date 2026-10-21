@@ -28,13 +28,17 @@ import {
   typeFromEntry,
   accessFromEntry,
   mergeUserVars,
+  answersJsonProbe,
+  speaksJson,
+  fetchSchema,
   LINK_OS_FIRMWARE,
 } from '../tools/fetch-schema.mjs';
+import net from 'node:net';
 
 let failures = 0;
-function check(name, fn) {
+async function check(name, fn) {
   try {
-    fn();
+    await fn();
     console.log(`  ok   ${name}`);
   } catch (err) {
     failures++;
@@ -242,6 +246,118 @@ check('user variables, which allconfig leaves out, are added from the branch', (
   assert.equal(config['device.user_vars.test_string'].type, 'string');
   assert.equal(config['device.user_vars.test_string'].access, 'RW', 'writable, not RW?');
   assert.equal(config['device.user_vars.create'].access, 'W', 'what allconfig said stands');
+});
+
+/* ------------------------------------------------------------------ *
+ * Asking the printer whether it speaks JSON, rather than going by its
+ * firmware: a fake printer on 127.0.0.1 that answers what it is told to,
+ * and hangs up on the rest -- as quick a "nothing" as a real printer's
+ * silence, without the wait.
+ * ------------------------------------------------------------------ */
+
+/** Start a fake printer; `answers` maps what a command starts with to its reply. */
+async function fakePrinter(answers) {
+  const heard = [];
+  const server = net.createServer((socket) => {
+    socket.on('data', (data) => {
+      const text = data.toString('latin1');
+      heard.push(text);
+      const key = Object.keys(answers).find((k) => text.startsWith(k));
+      if (key === undefined) socket.destroy();
+      else socket.end(answers[key]);
+    });
+  });
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+  return { port: server.address().port, heard, close: () => server.close() };
+}
+
+const ALLCONFIG = JSON.stringify({
+  allconfig: {
+    'media.darkness': { type: 'integer', range: '0-30', access: 'RW', value: '20', default: '20' },
+  },
+});
+const ALLCV = 'media.\r\nmedia.darkness : 20 , Choices: 0-30\r\n"';
+const quiet = () => {};
+
+await check('a JSON answer to the probe means JSON; anything else does not', () => {
+  assert.equal(answersJsonProbe('{"appl.name":"V84.20.23Z"}'), true);
+  assert.equal(answersJsonProbe(''), false);
+  assert.equal(answersJsonProbe('"V54.16.3Z"'), false, 'a getvar answer is not JSON');
+  assert.equal(answersJsonProbe('{"other":1}'), false);
+  assert.equal(answersJsonProbe('{"appl.name":'), false);
+});
+
+await check('a printer that answers the JSON probe is read with allconfig', async () => {
+  const fake = await fakePrinter({
+    '~HI': '\x02ZD620-203dpi,V84.20.23Z,8,8176KB\x03',
+    '{}{"appl.name"': '{"appl.name":"V84.20.23Z"}',
+    '{}{"allconfig"': ALLCONFIG,
+    '! U1 getvar "device.user_vars"': '"device.user_vars : "',
+  });
+  try {
+    assert.equal(await speaksJson('127.0.0.1', { port: fake.port }), true);
+    const schema = await fetchSchema('127.0.0.1', { port: fake.port, log: quiet });
+    assert.equal(schema.source, 'allconfig');
+    assert.ok(!fake.heard.some((t) => t.includes('allcv')));
+  } finally {
+    fake.close();
+  }
+});
+
+await check('Link-OS firmware with no JSON answer is read with allcv, and says why', async () => {
+  // Firmware the version check would have sent to JSON.
+  const fake = await fakePrinter({
+    '~HI': '\x02ZD500R-300dpi,V74.20.23Z,12,4096KB\x03',
+    '! U1 getvar "allcv"': ALLCV,
+  });
+  let said = '';
+  try {
+    const schema = await fetchSchema('127.0.0.1', {
+      port: fake.port,
+      log: (t) => (said += t),
+    });
+    assert.equal(schema.source, 'allcv');
+    assert.ok('media.darkness' in schema.settings);
+    assert.match(said, /no JSON answer, trying allcv/);
+    assert.match(said, /JSON channel may be turned off/);
+    assert.ok(!fake.heard.some((t) => t.includes('allconfig')), 'allconfig never asked for');
+  } finally {
+    fake.close();
+  }
+});
+
+await check('old firmware that does answer JSON is read with allconfig after all', async () => {
+  const fake = await fakePrinter({
+    '~HI': '\x02QL320 Plus,V54.16.3Z,8,1024KB\x03',
+    '{}{"appl.name"': '{"appl.name":"V54.16.3Z"}',
+    '{}{"allconfig"': ALLCONFIG,
+    '! U1 getvar "device.user_vars"': '"device.user_vars : "',
+  });
+  try {
+    const schema = await fetchSchema('127.0.0.1', { port: fake.port, log: quiet });
+    assert.equal(schema.source, 'allconfig');
+  } finally {
+    fake.close();
+  }
+});
+
+await check('no answer to ~HI does not stop it; no answer to anything does', async () => {
+  const fake = await fakePrinter({ '! U1 getvar "allcv"': ALLCV });
+  try {
+    const schema = await fetchSchema('127.0.0.1', { port: fake.port, log: quiet });
+    assert.equal(schema.source, 'allcv');
+  } finally {
+    fake.close();
+  }
+  const silent = await fakePrinter({});
+  try {
+    await assert.rejects(
+      fetchSchema('127.0.0.1', { port: silent.port, log: quiet }),
+      /answered neither the JSON question nor allcv/,
+    );
+  } finally {
+    silent.close();
+  }
 });
 
 console.log(failures ? `\n${failures} failure(s)` : '\nall passed');

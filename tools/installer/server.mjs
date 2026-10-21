@@ -59,7 +59,9 @@ export function explainError(err, ip) {
     return `There is no computer called "${ip}" on this network. Check the printer's address: it is on its configuration label, and most printers show it on the front panel.`;
   if (/ECONNREFUSED/.test(message))
     return `Something at ${ip} answered, but not as a Zebra printer: it refused port 9100. Check the address.`;
-  if (/EHOSTUNREACH|ENETUNREACH|ETIMEDOUT|Timed out|No response|~HI got no answer/.test(message))
+  if (/answered neither the JSON question nor allcv/.test(message))
+    return `Something at ${ip} took the connection on port 9100 but did not answer as a Zebra printer does. Check the address.`;
+  if (/EHOSTUNREACH|ENETUNREACH|ETIMEDOUT|Timed out|No response/.test(message))
     return `Nothing answered at ${ip}. Check that the printer is on, that the address is right, and that this computer is on the same network as the printer.`;
   if (/after the upload/.test(message))
     return 'The files went up, but the printer is not serving the page. Try again; if it keeps happening, restart the printer and try once more.';

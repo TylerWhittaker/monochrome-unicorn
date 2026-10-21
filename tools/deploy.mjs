@@ -28,11 +28,11 @@
  *                   printer's SGD catalogue (faster; use when you know the
  *                   target printer matches the captured one)
  *     --allcv       read the catalogue with `! U1 getvar "allcv"` rather
- *                   than the JSON allconfig. Pre-Link-OS printers (firmware
- *                   below V68) have no JSON channel and are detected by ~HI,
- *                   so this is only needed to force it on a printer that
- *                   would otherwise be asked for JSON
- *     --allconfig   force the JSON catalogue, skipping the ~HI check
+ *                   than the JSON allconfig. A printer that does not answer
+ *                   the JSON question {}{"appl.name":null} -- pre-Link-OS
+ *                   (firmware below V68), or with JSON turned off -- gets
+ *                   allcv anyway, so this only forces it on one that does
+ *     --allconfig   force the JSON catalogue, skipping the JSON question
  *     --no-upload   build only, leave the printer alone
  *     --packed      gzip the page, about 170 KB instead of 440, for a slow
  *                   link; the browser then needs DecompressionStream

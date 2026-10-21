@@ -678,7 +678,10 @@ a 500).
   from inside a `file.run`: nothing arrives.)
 - Printers older than the QLn series (firmware below V68, i.e. before
   Link-OS) have no JSON channel, so their catalogue comes from
-  `! U1 getvar "allcv"` instead. `~HI` decides which to use;
+  `! U1 getvar "allcv"` instead. The deploy asks rather than going by
+  the firmware: a printer that answers `{}{"appl.name":null}` in JSON is
+  read with allconfig, and one that does not -- a Link-OS printer with
+  its JSON channel turned off included -- with allcv.
   `--allcv`/`--allconfig` force it. allcv lists no factory defaults and
   no access flags, so nothing is marked as changed from default and a
   setting with no list of choices is tagged `read/write?` -- editable,

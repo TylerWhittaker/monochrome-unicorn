@@ -54,7 +54,7 @@ ${USAGE}
     --no-clean    keep the helper files a previous install left
     --no-upload   build only, leave the printer alone
     --allcv       read the catalogue as a pre-Link-OS printer must
-    --allconfig   force the JSON catalogue, skipping the ~HI check
+    --allconfig   force the JSON catalogue, skipping the JSON question
     --gui         open the installer page even with other options
     --no-open     with the page: print its address, do not open a browser
     --version     print the version

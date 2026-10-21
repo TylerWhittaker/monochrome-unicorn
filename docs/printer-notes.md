@@ -593,9 +593,19 @@ says which generation a printer is:
 ~HI  ->  \x02ZD500R-300dpi,V74.20.23Z,12,4096KB,CUTTER DETECTED\x03
 ```
 
-The second field is the firmware version; the number after the `V` is
-what decides. The build picks the catalogue command from that, and
-`./deploy.sh <ip> --allcv` (or `--allconfig`) forces it either way.
+**Update, 2026-10-20: the build no longer goes by that version.** What
+a printer answers is the better evidence -- a Link-OS printer may have
+its JSON channel turned off -- so it asks a short JSON question first:
+
+```
+{}{"appl.name":null}  ->  {"appl.name":"V84.20.23Z"}     (ZD620, at once)
+```
+
+An answer in JSON means allconfig; nothing, or anything else, means
+allcv, and if allcv gets nothing either the deploy stops and says the
+address answered neither. `~HI` is still read, but only for the log
+line, which also says when Link-OS firmware gave no JSON answer.
+`./deploy.sh <ip> --allcv` (or `--allconfig`) skips the question.
 
 ### allcv
 

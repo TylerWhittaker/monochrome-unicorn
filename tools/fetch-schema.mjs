@@ -31,16 +31,21 @@
  * There are two ways to ask, because there are two generations of
  * printer:
  *
- *   {}{"allconfig":null}      Link-OS (firmware V68 and later). JSON,
- *                             and complete: type, range, access and the
- *                             factory default of every setting.
+ *   {}{"allconfig":null}      a printer that speaks JSON: Link-OS
+ *                             (firmware V68 and later), unless its JSON
+ *                             channel is turned off. Complete: type,
+ *                             range, access and the factory default of
+ *                             every setting.
  *   ! U1 getvar "allcv"       every printer, including the pre-Link-OS
  *                             ones that have no JSON channel at all.
  *                             Plain text, and much less of it: a value,
  *                             and a list of choices for some settings.
  *
- * ~HI says which generation this is, so the choice is made for you
- * unless --allcv or --allconfig says otherwise.
+ * Which one is decided by asking, not by the firmware version: a short
+ * JSON question, {}{"appl.name":null}, that a printer speaking JSON
+ * answers at once ({"appl.name":"V84.20.23Z"}). No JSON answer, and it
+ * is allcv. ~HI is still read, but only to say what the printer is.
+ * --allcv or --allconfig skip the question.
  *
  *   node tools/fetch-schema.mjs <printer-ip> [--out dist/sgd-schema.json]
  *                              [--allcv | --allconfig]
@@ -76,6 +81,9 @@ export const SLOW_SETTINGS = new Set([
 
 /** Firmware below this major version predates Link-OS, and has no JSON. */
 export const LINK_OS_FIRMWARE = 68;
+
+/** The JSON question: one setting every printer has, answered at once. */
+export const JSON_PROBE = '{}{"appl.name":null}\r\n';
 
 /**
  * Send something to the print port and collect what comes back.
@@ -143,8 +151,39 @@ export function readFromPrinter(
 }
 
 /** Kept for callers that just want a reply and a quiet period. */
-export function queryPrinter(ip, payload, { timeout = 60000, quiet = 3 } = {}) {
-  return readFromPrinter(ip, payload, { idleMs: quiet * 1000, timeout });
+export function queryPrinter(ip, payload, { timeout = 60000, quiet = 3, port } = {}) {
+  return readFromPrinter(ip, payload, { idleMs: quiet * 1000, timeout, port });
+}
+
+/** Whether a reply is a JSON object that answers the probe. */
+export function answersJsonProbe(reply) {
+  try {
+    const parsed = JSON.parse(reply);
+    return parsed !== null && typeof parsed === 'object' && 'appl.name' in parsed;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ask the printer the JSON question. Resolves true if it answers in
+ * JSON, false if it says nothing (or something else) -- which is how a
+ * printer without a JSON channel, or with it turned off, replies.
+ * Failing to reach the printer at all is still an error.
+ */
+export async function speaksJson(ip, { idleMs = 3000, port } = {}) {
+  try {
+    const reply = await readFromPrinter(ip, JSON_PROBE, {
+      idleMs,
+      isComplete: answersJsonProbe,
+      timeout: 20000,
+      port,
+    });
+    return answersJsonProbe(reply.trim());
+  } catch (err) {
+    if (/^No response from/.test(err.message)) return false;
+    throw err;
+  }
 }
 
 /*
@@ -175,7 +214,7 @@ export function parseHostIdentification(reply) {
   };
 }
 
-/** Ask the printer what it is. */
+/** Ask the printer what it is (only to report it: see speaksJson). */
 export async function identifyPrinter(ip, options = {}) {
   const reply = await readFromPrinter(ip, '~HI\r\n', { idleMs: 2000, timeout: 20000, ...options });
   return parseHostIdentification(reply);
@@ -397,35 +436,44 @@ export function compactSchema(allconfig, source = 'allconfig') {
 
 /**
  * Read a printer's catalogue and compact it (compactSchema). `source` is
- * 'allcv', 'allconfig', or null to let ~HI decide; `log` is told what is
- * happening, a fragment at a time, as the CLI prints it.
+ * 'allcv', 'allconfig', or null to ask the printer whether it speaks
+ * JSON (speaksJson); `log` is told what is happening, a fragment at a
+ * time, as the CLI prints it. `port` is for the tests' fake printer.
  */
 export async function fetchSchema(
   ip,
-  { source = null, log = (text) => process.stderr.write(text) } = {},
+  { source = null, log = (text) => process.stderr.write(text), port } = {},
 ) {
+  let detected = false;
   if (!source) {
     log(`Asking ${ip} what it is ... `);
-    let printer;
-    try {
-      printer = await identifyPrinter(ip);
-    } catch (err) {
-      throw new Error(
-        `~HI got no answer (${err.message}). Force a format with --allcv or --allconfig.`,
-      );
+    // Only to say what it is: a printer that will not answer ~HI may
+    // still answer the questions that matter.
+    const printer = await identifyPrinter(ip, { port }).catch(() => null);
+    const json = await speaksJson(ip, { port });
+    source = json ? 'allconfig' : 'allcv';
+    detected = true;
+    const what = printer
+      ? `${printer.model || 'printer'} ${printer.version || '(no version)'}`
+      : 'no answer to ~HI';
+    log(`${what}; ${json ? 'speaks JSON, using allconfig' : 'no JSON answer, trying allcv'}\n`);
+    if (!json && printer && printer.major !== null && !printer.preLinkOs) {
+      log('  (Link-OS firmware, so its JSON channel may be turned off)\n');
     }
-    source = printer.preLinkOs ? 'allcv' : 'allconfig';
-    log(
-      `${printer.model || 'printer'} ${printer.version || '(no version)'}` +
-        `${printer.preLinkOs ? ' -- pre-Link-OS' : ''}, using ${source}\n`,
-    );
   }
 
   log(`Reading SGD catalogue from ${ip} via ${source} ... `);
   let config;
 
   if (source === 'allcv') {
-    const raw = await fetchAllcv(ip);
+    const raw = await fetchAllcv(ip, { port }).catch((err) => {
+      if (detected && /^No response from/.test(err.message)) {
+        throw new Error(
+          `${ip} answered neither the JSON question nor allcv: is it a Zebra printer?`,
+        );
+      }
+      throw err;
+    });
     if (!allcvLooksComplete(raw)) {
       log("\n  warning: the listing did not end with allcv's quote line; it may be short\n  ");
     }
@@ -434,7 +482,7 @@ export async function fetchSchema(
       throw new Error(`Nothing in the allcv reply looked like a setting (${raw.length} bytes)`);
     }
   } else {
-    const raw = await queryPrinter(ip, '{}{"allconfig":null}\r\n');
+    const raw = await queryPrinter(ip, '{}{"allconfig":null}\r\n', { port });
     let parsed;
     try {
       parsed = JSON.parse(raw);
@@ -448,7 +496,7 @@ export async function fetchSchema(
     config = parsed.allconfig;
     const added = mergeUserVars(
       config,
-      await readFromPrinter(ip, '! U1 getvar "device.user_vars"\r\n', { idleMs: 1500 }),
+      await readFromPrinter(ip, '! U1 getvar "device.user_vars"\r\n', { idleMs: 1500, port }),
     );
     if (added) log(`plus ${added} user variable${added === 1 ? '' : 's'}, `);
   }
