@@ -245,29 +245,6 @@ function wireTextCommit(input, original, commit) {
   });
 }
 
-/**
- * What the catalogue could not tell us, said once at the top.
- *
- * A pre-Link-OS printer has no JSON channel, so the catalogue comes
- * from allcv, which lists neither factory defaults nor access flags.
- * Without a word of explanation the missing "not default" tags read as
- * a broken page rather than a printer that never said.
- */
-function sourceNotice() {
-  if (!printer.schema || printer.schema.source !== 'allcv') return null;
-  return el(
-    'p',
-    {
-      class: 'border-b border-ink-200 bg-ink-50 px-3 py-2 text-[12px] text-ink-600',
-    },
-    [
-      'This printer\u2019s settings were read with allcv, which is all a pre-Link-OS printer ' +
-        'offers: no factory defaults, so nothing is marked as changed, and no access flags, ' +
-        'so anything without a list of choices is tagged read/write? and can be tried.',
-    ],
-  );
-}
-
 /* ------------------------------------------------------------------ *
  * Sorting
  *
@@ -1167,13 +1144,15 @@ export function mountSettings(panel) {
 
   allView.append(
     el('div', { class: 'card overflow-hidden' }, [
-      sourceNotice(),
       el('div', { class: 'toolbar' }, [
         filterInput,
         sortSelect,
-        toggle('changed from default', (v) => {
-          modifiedOnly = v;
-        }),
+        // allcv lists no factory defaults, so nothing could ever match.
+        printer.schema?.source === 'allcv'
+          ? null
+          : toggle('changed from default', (v) => {
+              modifiedOnly = v;
+            }),
         el('div', { class: 'ml-auto flex items-center gap-3' }, [
           countNode,
           el('button', { class: 'btn-secondary btn-sm', onclick: () => openBackupDialog() }, [

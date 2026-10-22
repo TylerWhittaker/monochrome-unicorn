@@ -685,7 +685,8 @@ a 500).
   `--allcv`/`--allconfig` force it. allcv lists no factory defaults and
   no access flags, so nothing is marked as changed from default and a
   setting with no list of choices is tagged `read/write?` -- editable,
-  and confirmed by the read-back. The Settings tab says so at the top.
+  and confirmed by the read-back. The Settings tab leaves out its
+  "changed from default" filter, which could match nothing.
 - The setting catalogue is captured at build time. Deploying a build to
   a different printer model may show settings it does not have; re-run
   `./deploy.sh <ip>` against that printer to recapture.

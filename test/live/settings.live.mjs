@@ -271,6 +271,15 @@ export default function register(s, ctx) {
     await page.getByRole('checkbox', { name: 'changed from default' }).uncheck();
   });
 
+  s.test('"changed from default" is offered only when the catalogue knows defaults', async () => {
+    const source = await page.evaluate(
+      () => JSON.parse(document.getElementById('sgd-schema').textContent).source,
+    );
+    const boxes = await page.getByRole('checkbox', { name: 'changed from default' }).count();
+    assert.equal(boxes, source === 'allcv' ? 0 : 1, `catalogue read with ${source}`);
+    assert.equal(await page.getByText('settings were read with allcv').count(), 0);
+  });
+
   s.test('Refresh values shows a change made behind the page’s back', async () => {
     const outside = `ext-${ctx.runId}`.toLowerCase();
     await setvar(cfg.ip, full('test_string'), outside);
