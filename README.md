@@ -308,6 +308,7 @@ than checked in: a fresh clone has none until a deploy -- or
 --no-clean    keep previously installed helper files (by default
               they are removed before the new set is uploaded)
 --packed      gzip the page, about 170 KB instead of 440; below
+--no-telemetry  do not report the deploy; see Telemetry, below
 ```
 
 The page is plain by default: the styles, htmx, the app and the
@@ -342,6 +343,23 @@ Saving and deleting labels from the UI need the printer's 4-digit
 password. The page tries the factory default, `1234`, first and only
 asks if the printer rejects it; a password that works is kept in
 `sessionStorage` for the rest of the browser session.
+
+### Telemetry
+
+To count deployments, each deploy that uploads (`./deploy.sh`, `make
+deploy`, the installer) ends by sending four things to
+`http://www.grizzlor.org/monochrome-unicorn/telemetry`: the printer's
+model, serial number and firmware version, and the console's version.
+The server logs them with the time and the address the report came
+from. Nothing else is sent, and a build with `--no-upload` sends
+nothing. The deploy prints what it sent, and it is never failed by a
+report that could not be sent.
+
+To stop it, pass `--no-telemetry`, or set
+`MONOCHROME_UNICORN_NO_TELEMETRY=1` in the environment, or untick
+**Count this install** on the installer's page. The live tests set the
+variable for their own deploys. The server is in `telemetry/`, with how
+to run it behind nginx (`telemetry/README.md`).
 
 ## Why it is built this way
 
@@ -500,6 +518,7 @@ tools/
 test/                 unit tests: the ZPL model, the helper-file
                       parser and the other pure logic
   live/               every mode, in Chrome, against a real printer
+telemetry/            the server deploys report to: FastAPI, behind nginx
 docs/printer-notes.md what the printer does, measured
 docs/screenshots/     the README's pictures (tools/screenshots.mjs)
 reference/            the ZPL, CPCL and EPL2 programming manuals (and

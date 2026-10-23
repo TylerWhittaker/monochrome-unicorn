@@ -1,0 +1,26 @@
+# systemd unit for the telemetry server: /etc/systemd/system/mu-telemetry.service
+# It listens on 127.0.0.1 only; nginx is what the internet reaches.
+
+[Unit]
+Description=Monochrome Unicorn deploy telemetry
+After=network.target
+
+[Service]
+User=mu-telemetry
+Group=mu-telemetry
+WorkingDirectory=/opt/mu-telemetry
+# /var/lib/mu-telemetry, created and owned by the user above.
+StateDirectory=mu-telemetry
+Environment=TELEMETRY_LOG=/var/lib/mu-telemetry/telemetry.jsonl
+ExecStart=/opt/mu-telemetry/venv/bin/uvicorn server:app \
+    --host 127.0.0.1 --port 8701 \
+    --proxy-headers --forwarded-allow-ips=127.0.0.1 \
+    --no-server-header
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

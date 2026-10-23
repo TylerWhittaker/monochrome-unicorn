@@ -35,7 +35,8 @@
  * installer's own host, against DNS rebinding.
  *
  *   GET  /?t=<token>   the page (gui.html)
- *   POST /deploy       { ip, packed }: the deploy, as NDJSON events
+ *   POST /deploy       { ip, packed, telemetry }: the deploy, as NDJSON
+ *                      events; telemetry is on unless it is false
  *   POST /ping         the page is still open
  *   POST /quit         the page's Quit button
  */
@@ -178,6 +179,7 @@ export async function startGui({
           clean: true,
           packed: Boolean(body.packed),
           source: null,
+          telemetry: body.telemetry !== false && !process.env.MONOCHROME_UNICORN_NO_TELEMETRY,
         },
         { staged, emit: send },
       );

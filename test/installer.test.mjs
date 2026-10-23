@@ -24,7 +24,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
-import { parseArgs, USAGE, STEPS } from '../tools/deploy.mjs';
+import { parseArgs, USAGE, STEPS, telemetryFromPage, sendTelemetry } from '../tools/deploy.mjs';
 import { assemble, STAGED_PARTS } from '../tools/assemble.mjs';
 import { startGui, validAddress, explainError } from '../tools/installer/server.mjs';
 import {
@@ -35,6 +35,9 @@ import {
   assetName,
   stampScript,
 } from '../tools/installer/package.mjs';
+
+// The tests' own environment must not turn telemetry off for them.
+delete process.env.MONOCHROME_UNICORN_NO_TELEMETRY;
 
 let failures = 0;
 async function check(name, fn) {
@@ -55,6 +58,7 @@ await check('the deploy command line keeps deploy.sh options', () => {
     clean: true,
     packed: false,
     source: null,
+    telemetry: true,
     help: false,
   });
   const o = parseArgs(['--packed', '10.0.0.5', '--no-clean', '--allcv', '--unpacked', '--clean']);
@@ -69,6 +73,65 @@ await check('the deploy command line keeps deploy.sh options', () => {
   );
   assert.throws(() => parseArgs(['1.2.3.4', '--bogus']), /unknown option: --bogus/);
   assert.equal(parseArgs(['--help']).help, true);
+  assert.equal(parseArgs(['1.2.3.4', '--no-telemetry']).telemetry, false);
+  process.env.MONOCHROME_UNICORN_NO_TELEMETRY = '1';
+  try {
+    assert.equal(parseArgs(['1.2.3.4']).telemetry, false, 'the environment turns it off too');
+  } finally {
+    delete process.env.MONOCHROME_UNICORN_NO_TELEMETRY;
+  }
+});
+
+await check('telemetry reports what the served page says, and only that', () => {
+  const page =
+    '<script type="text/plain" id="boot-vars">\n\n' +
+    '@device.product_name=ZD620&amp;R@\n' +
+    '@device.friendly_name=Bench@\n' +
+    '@device.unique_id=D2J123456789@\r\n' +
+    '@appl.name=V84.20.23Z@\n' +
+    '@ip.addr=192.168.1.81@\n</script>';
+  assert.deepEqual(telemetryFromPage(page, '1.2.3'), {
+    model: 'ZD620&R',
+    serial: 'D2J123456789',
+    firmware: 'V84.20.23Z',
+    version: '1.2.3',
+  });
+  assert.deepEqual(telemetryFromPage('<p>no boot vars</p>', '1.2.3'), {
+    model: '',
+    serial: '',
+    firmware: '',
+    version: '1.2.3',
+  });
+});
+
+await check('telemetry is POSTed as JSON, and a failure is a reason, not a throw', async () => {
+  const http = await import('node:http');
+  let got = null;
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => (body += d));
+    req.on('end', () => {
+      got = { method: req.method, type: req.headers['content-type'], body: JSON.parse(body) };
+      res.writeHead(req.url === '/down' ? 503 : 204).end();
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const report = { model: 'ZD500R', serial: 'X', firmware: 'V74', version: '1.2.3' };
+    assert.equal(await sendTelemetry(report, { url: `${base}/telemetry` }), 'sent');
+    assert.deepEqual(got, { method: 'POST', type: 'application/json', body: report });
+    assert.equal(await sendTelemetry(report, { url: `${base}/down` }), 'the server answered 503');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+  // A port nothing listens on: one just given up by a fresh server.
+  const closed = http.createServer();
+  await new Promise((resolve) => closed.listen(0, '127.0.0.1', resolve));
+  const { port } = closed.address();
+  await new Promise((resolve) => closed.close(resolve));
+  const url = `http://127.0.0.1:${port}/telemetry`;
+  assert.equal(await sendTelemetry({}, { url }), 'ECONNREFUSED');
 });
 
 // A catalogue as fetch-schema.mjs compacts it, cut down to three settings.
@@ -234,6 +297,21 @@ await check('a deploy streams its events, then done; one at a time', async () =>
     assert.equal(events[2].url, 'http://10.0.0.9/');
     assert.equal(opts.packed, true);
     assert.equal(opts.fetchSchema, true);
+    assert.equal(opts.telemetry, true, 'on unless the page says otherwise');
+  } finally {
+    gui.close();
+  }
+});
+
+await check("the installer page's telemetry box reaches the deploy", async () => {
+  let opts;
+  const gui = await fakeGui(async (o) => {
+    opts = o;
+    return { url: `http://${o.ip}/`, version: '9.8.7', served: '9.8.7' };
+  });
+  try {
+    await (await gui.post('/deploy', { ip: '10.0.0.9', telemetry: false })).text();
+    assert.equal(opts.telemetry, false);
   } finally {
     gui.close();
   }

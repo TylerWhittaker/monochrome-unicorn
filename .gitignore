@@ -8,3 +8,4 @@ lcd.bmp*
 # The live tests' own settings: a printer address and its password.
 test/live/config.json
 tools/githooks/post-commit
+__pycache__/

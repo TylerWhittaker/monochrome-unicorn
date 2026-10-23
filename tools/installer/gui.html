@@ -149,6 +149,10 @@
         <span>Smaller page, for printers on a slow link<br>
           <span class="muted">About 170 KB instead of 440. Needs Chrome 86, Safari 16.4 or
             Firefox 113 or later on the computers that open it.</span></span></label>
+      <label class="check"><input id="telemetry" type="checkbox" checked>
+        <span>Count this install<br>
+          <span class="muted">Sends the printer's model, serial number and firmware, and this
+            version, to the project's server; nothing else.</span></span></label>
     </form>
 
     <ol class="steps" id="steps" hidden></ol>
@@ -191,6 +195,7 @@
   try {
     $('ip').value = localStorage.getItem('printer') || '';
     $('packed').checked = localStorage.getItem('packed') === '1';
+    $('telemetry').checked = localStorage.getItem('telemetry') !== '0';
   } catch {}
   $('ip').focus();
 
@@ -236,9 +241,11 @@
     if (stopped) return;
     const ip = $('ip').value.trim();
     const packed = $('packed').checked;
+    const telemetry = $('telemetry').checked;
     try {
       localStorage.setItem('printer', ip);
       localStorage.setItem('packed', packed ? '1' : '');
+      localStorage.setItem('telemetry', telemetry ? '1' : '0');
     } catch {}
 
     $('go').disabled = true;
@@ -259,7 +266,7 @@
     };
 
     try {
-      const res = await post('/deploy', { ip, packed });
+      const res = await post('/deploy', { ip, packed, telemetry });
       if (!res.ok) {
         fail(await res.text());
         return;

@@ -41,6 +41,11 @@
  *                   By default they (E:V_*, E:S_* and E:LCD .SHTML) are
  *                   removed before the new set goes up, so a build that
  *                   packs the settings differently leaves nothing stale
+ *     --no-telemetry  do not report the deploy. After a successful
+ *                   upload, a deploy sends the printer's model, serial
+ *                   number and firmware, and this console's version, to
+ *                   www.grizzlor.org, to count deployments; nothing
+ *                   else. MONOCHROME_UNICORN_NO_TELEMETRY=1 does the same
  *
  * The printer is reached two ways: port 9100 for the catalogue and raw
  * file writes (CISDFCRC16 header, tools/upload.mjs), and port 80 to
@@ -56,7 +61,12 @@ import { assemble } from './assemble.mjs';
 import { sendRaw, uploadFile, deletePayload } from './upload.mjs';
 
 export const USAGE =
-  'usage: deploy <printer-ip> [--no-schema] [--no-upload] [--no-clean] [--packed] [--allcv|--allconfig]';
+  'usage: deploy <printer-ip> [--no-schema] [--no-upload] [--no-clean] [--packed] [--allcv|--allconfig] [--no-telemetry]';
+
+/** Where a deploy is reported; see sendTelemetry(). */
+export const TELEMETRY_URL =
+  process.env.MONOCHROME_UNICORN_TELEMETRY_URL ||
+  'http://www.grizzlor.org/monochrome-unicorn/telemetry';
 
 /*
  * What a deploy removes before uploading. ^ID takes a wildcard, and one
@@ -92,6 +102,7 @@ export function parseArgs(argv) {
     clean: true,
     packed: false,
     source: null,
+    telemetry: !process.env.MONOCHROME_UNICORN_NO_TELEMETRY,
     help: false,
   };
   for (const arg of argv) {
@@ -103,6 +114,7 @@ export function parseArgs(argv) {
     else if (arg === '--no-clean') opts.clean = false;
     else if (arg === '--allcv') opts.source = 'allcv';
     else if (arg === '--allconfig') opts.source = 'allconfig';
+    else if (arg === '--no-telemetry') opts.telemetry = false;
     else if (arg === '-h' || arg === '--help') opts.help = true;
     else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
     else opts.ip = arg;
@@ -119,6 +131,49 @@ export async function probe(url, timeoutMs = 60000) {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' });
   const body = Buffer.from(await res.arrayBuffer());
   return { status: res.status, bytes: body.length, body };
+}
+
+const ENTITIES = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>' };
+
+/**
+ * What a deploy reports, from the page the printer now serves: its
+ * boot-vars block has the model, serial and firmware filled in by the
+ * preprocessor, HTML-escaped as it escapes every value.
+ */
+export function telemetryFromPage(body, version) {
+  const vars = {};
+  for (const m of String(body).matchAll(/^@([a-z0-9_.]+)=([^@\r\n]*)@\r?$/gm)) {
+    vars[m[1]] = m[2]
+      .trim()
+      .replace(/&(?:([a-z]+)|#(\d+));/gi, (whole, name, dec) =>
+        name ? (ENTITIES[name.toLowerCase()] ?? whole) : String.fromCodePoint(parseInt(dec, 10)),
+      );
+  }
+  return {
+    model: vars['device.product_name'] || '',
+    serial: vars['device.unique_id'] || '',
+    firmware: vars['appl.name'] || '',
+    version,
+  };
+}
+
+/**
+ * POST a deploy's report to the telemetry server. Never throws: a
+ * deploy that worked is not failed by a server that is down. Resolves
+ * to 'sent', or to why it was not.
+ */
+export async function sendTelemetry(report, { url = TELEMETRY_URL, timeoutMs = 5000 } = {}) {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(report),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.ok ? 'sent' : `the server answered ${res.status}`;
+  } catch (err) {
+    return err.cause?.code || err.cause?.message || err.message;
+  }
 }
 
 /**
@@ -209,6 +264,15 @@ export async function deploy(
   const served = footer ? footer[1] : null;
   if (served !== result.version) {
     log(`  but it serves version ${served || '(none found)'}, not ${result.version}\n`);
+  }
+  if (opts.telemetry) {
+    const report = telemetryFromPage(page.body.toString('latin1'), result.version);
+    const outcome = await sendTelemetry(report);
+    log(
+      outcome === 'sent'
+        ? `Telemetry: sent ${report.model} ${report.serial} ${report.firmware} ${report.version} (--no-telemetry to stop)\n`
+        : `Telemetry: not sent (${outcome})\n`,
+    );
   }
   return { url: `http://${ip}/`, version: result.version, served };
 }

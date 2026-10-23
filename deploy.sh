@@ -21,7 +21,7 @@
 # deploy.sh -- build the console and install it on a Zebra printer.
 #
 #   ./deploy.sh <printer-ip> [--no-schema] [--no-upload] [--no-clean]
-#               [--packed] [--allcv|--allconfig]
+#               [--packed] [--allcv|--allconfig] [--no-telemetry]
 #
 # The work is done by tools/deploy.mjs, which lists the options
 # (./deploy.sh --help); this stays as the name everything has always

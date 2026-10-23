@@ -54,6 +54,9 @@ import { removeFile, getvar } from './lib/printer.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
+// The deploys a run makes, its own and the installer's, are not counted.
+process.env.MONOCHROME_UNICORN_NO_TELEMETRY = '1';
+
 const SUITE_MODULES = {
   app: './app.live.mjs',
   settings: './settings.live.mjs',
