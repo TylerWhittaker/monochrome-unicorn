@@ -1,22 +1,28 @@
 # The telemetry server
 
-What counts deployments. After each successful upload, `tools/deploy.mjs`
-(so `./deploy.sh` and the standalone installer) POSTs one JSON report to
-`https://www.grizzlor.org/monochrome-unicorn/telemetry`:
+What counts deployments, and which printers they fail on. Each deploy
+that uploads -- `tools/deploy.mjs`, so `./deploy.sh` and the standalone
+installer -- POSTs two JSON reports to
+`https://www.grizzlor.org/monochrome-unicorn/telemetry`, sharing a
+random `deploy_id`: one as it starts, and one as it ends, saying whether
+it worked and, if not, the step that failed:
 
 ```json
-{"model": "ZD500R", "serial": "40J132100037", "firmware": "V74.20.23Z", "version": "0.52.0"}
+{"model": "ZM400", "serial": "40J0001", "firmware": "V53.17.11Z", "version": "0.53.0", "event": "start", "deploy_id": "612fdd60fc96a70e"}
+{"model": "ZM400", "serial": "40J0001", "firmware": "V53.17.11Z", "version": "0.53.0", "event": "end", "deploy_id": "612fdd60fc96a70e", "ok": false, "step": "schema"}
 ```
 
-This server adds the time and the sender's address, and appends a line
-to a log:
+Before 0.53 a deploy sent one report, with only the first four fields,
+and only once it had worked; those are still taken, and count as
+deploys that worked. This server adds the time and the sender's
+address, and appends each report to a log as a line:
 
 ```json
-{"ts": "2026-10-22T02:41:07+00:00", "ip": "203.0.113.9", "model": "ZD500R", "serial": "40J132100037", "firmware": "V74.20.23Z", "version": "0.52.0"}
+{"ts": "2026-10-23T05:52:02+00:00", "ip": "203.0.113.9", "model": "ZM400", "serial": "40J0001", "firmware": "V53.17.11Z", "version": "0.53.0", "event": "start", "deploy_id": "612fdd60fc96a70e"}
 ```
 
-It refuses anything with a field more or less (422), so nothing else
-can end up in the log. `--no-telemetry`, `MONOCHROME_UNICORN_NO_TELEMETRY=1`
+It refuses an unknown field, a missing one, or a value outside what a
+deploy sends (422), so nothing else can end up in the log. `--no-telemetry`, `MONOCHROME_UNICORN_NO_TELEMETRY=1`
 or the installer's checkbox stop a deploy from sending, and
 `MONOCHROME_UNICORN_TELEMETRY_URL` sends it somewhere else.
 
@@ -88,8 +94,13 @@ After changing `server.py`, copy it to `/opt/mu-telemetry/` again and
 ## The summary page
 
 `https://www.grizzlor.org/monochrome-unicorn/telemetry/summary` shows
-the log counted: deploys, distinct printers and senders, by version,
-model, firmware and month, and the latest 50 (`?recent=200` for more).
+the log as deploys, each start paired with its end. **Summary** has the
+totals (deploys, succeeded, failed, printers, senders), the deploys that
+worked by version, model, firmware and month, and the latest 50 of all
+of them, each with its outcome (`?recent=200` for more). **Failed**
+(`?view=failed`) has only the ones that did not work -- failed at a
+step, or never finished (no end within 15 minutes) -- counted by model
+and firmware, by step and by version, and listed.
 It asks for a user name, `admin`, and the password in
 `/etc/mu-telemetry.env`, which only root can read:
 
@@ -109,13 +120,22 @@ the password never crosses the internet in clear text.
 
 ## Reading the log
 
+The summary page does this for you; by hand, with `jq`
+(`yum install jq`). Each deploy is a start and an end now, so pick one:
+
 ```sh
 LOG=/var/lib/mu-telemetry/telemetry.jsonl
-wc -l < $LOG                                         # deployments
-jq -r .version $LOG | sort | uniq -c | sort -rn      # by version
-jq -r .model $LOG | sort | uniq -c | sort -rn        # by printer model
-jq -r .serial $LOG | sort -u | wc -l                 # distinct printers
-jq -r '.ts[:7]' $LOG | sort | uniq -c                # by month
+STARTS='select(.event != "end")'               # one per deploy (and old reports)
+WORKED='select(.event == null or .ok == true)'
+FAILED='select(.ok == false)'
+
+jq -c "$STARTS" $LOG | wc -l                                   # deploys
+jq -c "$WORKED" $LOG | wc -l                                   # that worked
+jq -r "$WORKED | .version" $LOG | sort | uniq -c | sort -rn    # by version
+jq -r "$WORKED | .model" $LOG | sort | uniq -c | sort -rn      # by model
+jq -r "$WORKED | .serial" $LOG | sort -u | wc -l               # distinct printers
+jq -r "$FAILED | \"\(.model) \(.firmware) \(.step)\"" $LOG | sort | uniq -c   # failures
+tail -f $LOG                                                   # as they come in
 ```
 
 ## Rotating it

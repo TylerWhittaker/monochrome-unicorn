@@ -103,3 +103,70 @@ def test_no_password_no_summary(client, monkeypatch):
 
     monkeypatch.setattr(server, "SUMMARY_PASSWORD", "")
     assert client.get("/telemetry/summary", auth=("admin", "")).status_code == 404
+
+
+START = {**REPORT, "event": "start", "deploy_id": "0123456789abcdef"}
+
+
+def test_a_start_and_its_end_are_logged_as_sent(client):
+    client.post("/telemetry", json=START)
+    client.post("/telemetry", json={**START, "event": "end", "ok": False, "step": "schema"})
+    start, end = lines(client)
+    assert start["event"] == "start" and "ok" not in start and "step" not in start
+    assert (end["event"], end["ok"], end["step"]) == ("end", False, "schema")
+    # A report from before 0.53 is logged as it always was.
+    client.post("/telemetry", json=REPORT)
+    assert set(lines(client)[-1]) == {"ts", "ip", *REPORT}
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"event": "middle"},
+        {"deploy_id": "not-hex"},
+        {"step": "Upload; DROP"},
+        {"ok": "perhaps"},
+    ],
+)
+def test_the_new_fields_take_only_what_a_deploy_sends(client, fields):
+    assert client.post("/telemetry", json={**START, **fields}).status_code == 422
+
+
+def test_deploys_pairs_starts_with_ends():
+    import server
+
+    now = server.datetime(2026, 10, 23, 12, 0, tzinfo=server.timezone.utc)
+    at = lambda minutes: (now - server.timedelta(minutes=minutes)).isoformat()
+    log = [
+        {**REPORT, "ts": at(60)},  # before 0.53: a success
+        {**START, "ts": at(50), "deploy_id": "a" * 16},
+        {**START, "ts": at(49), "deploy_id": "a" * 16, "event": "end", "ok": True},
+        # The end fills in what the start could not ask the printer.
+        {**START, "ts": at(40), "deploy_id": "b" * 16, "model": ""},
+        {**START, "ts": at(39), "deploy_id": "b" * 16, "model": "ZM400", "event": "end", "ok": False, "step": "upload"},
+        {**START, "ts": at(30), "deploy_id": "c" * 16},  # never came back
+        {**START, "ts": at(1), "deploy_id": "d" * 16},  # still going
+    ]
+    got = server.deploys(log, now)
+    assert [d["outcome"] for d in got] == ["ok", "ok", "failed", "unfinished", "running"]
+    assert got[2]["model"] == "ZM400" and got[2]["step"] == "upload"
+    assert got[1]["ts"] == at(50) and got[1]["ended"] == at(49)
+
+
+def test_the_failed_view(client):
+    client.post("/telemetry", json=REPORT)
+    client.post("/telemetry", json={**START, "model": "ZM400", "firmware": "V53.17.11Z"})
+    client.post(
+        "/telemetry",
+        json={**START, "model": "ZM400", "firmware": "V53.17.11Z", "event": "end", "ok": False, "step": "schema"},
+    )
+    summary = client.get("/telemetry/summary", auth=("admin", "s3cret")).text
+    assert "Deploys<b>2</b>" in summary and "Succeeded<b>1</b>" in summary
+    assert "Failed<b>1</b>" in summary
+    failed = client.get("/telemetry/summary?view=failed", auth=("admin", "s3cret")).text
+    assert 'aria-current=page>Failed' in failed
+    assert "<td>ZM400 V53.17.11Z</td><td class=n>1</td>" in failed
+    assert "<td>schema</td><td class=n>1</td>" in failed
+    assert "failed at schema" in failed
+    assert "<td>ZD500R</td>" not in failed, "a deploy that worked is not listed"
+    assert client.get("/telemetry/summary?view=nope", auth=("admin", "s3cret")).status_code == 422

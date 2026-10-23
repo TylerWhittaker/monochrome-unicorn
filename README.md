@@ -346,14 +346,20 @@ asks if the printer rejects it; a password that works is kept in
 
 ### Telemetry
 
-To count deployments, each deploy that uploads (`./deploy.sh`, `make
-deploy`, the installer) ends by sending four things to
-`https://www.grizzlor.org/monochrome-unicorn/telemetry`: the printer's
-model, serial number and firmware version, and the console's version.
-The server logs them with the time and the address the report came
-from. Nothing else is sent, and a build with `--no-upload` sends
-nothing. The deploy prints what it sent, and it is never failed by a
-report that could not be sent.
+To count deployments, and to see which printers they fail on, each
+deploy that uploads (`./deploy.sh`, `make deploy`, the installer) reports
+twice to `https://www.grizzlor.org/monochrome-unicorn/telemetry`: when
+it starts, and when it ends. Each report carries the printer's model,
+serial number and firmware version and the console's version; the end
+adds whether the deploy worked and, if not, which step failed (`schema`,
+`build`, `clean`, `upload` or `verify`). A random ID ties the two
+together. The serial number counts distinct printers. The server logs
+each report with the time and the address it came from. Nothing else
+is sent -- no settings, labels, files, network details or error
+messages -- and a build with `--no-upload` sends nothing. The printer's
+identity is asked over port 9100 before anything is uploaded (`getvar`,
+or `~HI` on a printer that will not answer it), and the deploy prints
+it. A report that cannot be sent never fails the deploy.
 
 To stop it, pass `--no-telemetry`, or set
 `MONOCHROME_UNICORN_NO_TELEMETRY=1` in the environment, or untick

@@ -41,11 +41,12 @@
  *                   By default they (E:V_*, E:S_* and E:LCD .SHTML) are
  *                   removed before the new set goes up, so a build that
  *                   packs the settings differently leaves nothing stale
- *     --no-telemetry  do not report the deploy. After a successful
- *                   upload, a deploy sends the printer's model, serial
- *                   number and firmware, and this console's version, to
- *                   www.grizzlor.org, to count deployments; nothing
- *                   else. MONOCHROME_UNICORN_NO_TELEMETRY=1 does the same
+ *     --no-telemetry  do not report the deploy. A deploy that uploads
+ *                   tells www.grizzlor.org when it starts and how it
+ *                   ended (and at which step, if it failed), with the
+ *                   printer's model, serial number and firmware and this
+ *                   console's version; nothing else.
+ *                   MONOCHROME_UNICORN_NO_TELEMETRY=1 does the same
  *
  * The printer is reached two ways: port 9100 for the catalogue and raw
  * file writes (CISDFCRC16 header, tools/upload.mjs), and port 80 to
@@ -56,7 +57,8 @@
  * catalogue and the page in memory instead of in dist/.
  */
 
-import { fetchSchema, writeSchema } from './fetch-schema.mjs';
+import { randomBytes } from 'node:crypto';
+import { fetchSchema, writeSchema, readFromPrinter, identifyPrinter } from './fetch-schema.mjs';
 import { assemble } from './assemble.mjs';
 import { sendRaw, uploadFile, deletePayload } from './upload.mjs';
 
@@ -157,6 +159,46 @@ export function telemetryFromPage(body, version) {
   };
 }
 
+/** The three settings a report names the printer by, asked in one go. */
+export const IDENTITY_QUERY = ['device.product_name', 'device.unique_id', 'appl.name']
+  .map((name) => `! U1 getvar "${name}"\r\n`)
+  .join('');
+
+/** The answers to IDENTITY_QUERY: quoted values back to back, "?" for one not known. */
+export function parseIdentity(reply) {
+  const [model = '', serial = '', firmware = ''] = [...String(reply).matchAll(/"([^"]*)"/g)].map(
+    (m) => (m[1] === '?' ? '' : m[1].trim()),
+  );
+  return { model, serial, firmware };
+}
+
+/**
+ * What the printer is, for the report a deploy sends as it starts:
+ * before anything is uploaded, so a deploy that then fails still says
+ * which printer it failed on. A printer that will not answer the
+ * getvars is asked ~HI, which any ZPL printer knows. Never throws.
+ */
+export async function identifyForTelemetry(ip, { port } = {}) {
+  let id = { model: '', serial: '', firmware: '' };
+  try {
+    id = parseIdentity(
+      await readFromPrinter(ip, IDENTITY_QUERY, { idleMs: 1000, timeout: 10000, port }),
+    );
+  } catch (err) {
+    // Not there at all: the deploy will say so, with no ~HI to wait for.
+    if (/^(Could not reach|Timed out)/.test(err.message)) return id;
+    // Otherwise it is deaf to SGD: ~HI, and then whatever we have.
+  }
+  if (!id.model || !id.firmware) {
+    const hi = await identifyPrinter(ip, { port, timeout: 10000 }).catch(() => null);
+    if (hi) {
+      id.model ||= hi.model;
+      id.firmware ||= hi.version || '';
+    }
+  }
+  return id;
+}
+
 /**
  * POST a deploy's report to the telemetry server. Never throws: a
  * deploy that worked is not failed by a server that is down. Resolves
@@ -189,9 +231,65 @@ export async function sendTelemetry(report, { url = TELEMETRY_URL, timeoutMs = 5
  *               piece of output ({ type: 'log', text }, not always a
  *               whole line)
  *
- * Resolves to { url, version, served } once the printer serves the page.
+ *   version     this console's version, for the report a deploy sends
+ *               before it has built anything (staged.version otherwise)
+ *
+ * Resolves to { url, version, served, printer } once the printer serves
+ * the page; printer is what that page says the printer is.
+ *
+ * Unless opts.telemetry is false, or nothing is to be uploaded, a deploy
+ * reports its start, and its end: whether it worked, and if not, at
+ * which step. The two share a random deploy_id, so a start with no end
+ * is a deploy that never finished.
  */
-export async function deploy(
+export async function deploy(opts, context) {
+  if (!opts.telemetry || !opts.upload) return runDeploy(opts, context);
+  const log = (text) => context.emit({ type: 'log', text });
+  const { staged } = context;
+  const report = {
+    // opts.port is for the tests' fake printer.
+    ...(await identifyForTelemetry(opts.ip, { port: opts.port })),
+    version: context.version ?? (typeof staged === 'function' ? '' : staged.version),
+    event: 'start',
+    deploy_id: randomBytes(8).toString('hex'),
+  };
+  const send = async (fields) => {
+    const outcome = await sendTelemetry({ ...report, ...fields });
+    if (outcome !== 'sent') log(`Telemetry: not sent (${outcome})\n`);
+  };
+  const printer = [report.model, report.serial, report.firmware].filter(Boolean).join(' ');
+  log(
+    `Telemetry: reporting this deploy's start and end, for ` +
+      `${printer || 'a printer that did not say what it is'} (--no-telemetry to stop)\n`,
+  );
+  await send({});
+
+  let current = null;
+  const emit = (event) => {
+    if (event.type === 'step') current = event.id;
+    context.emit(event);
+  };
+  try {
+    const result = await runDeploy(opts, { ...context, emit });
+    // What the served page says fills in what the printer would not.
+    const page = result.printer || {};
+    await send({
+      event: 'end',
+      ok: true,
+      model: report.model || page.model || '',
+      serial: report.serial || page.serial || '',
+      firmware: report.firmware || page.firmware || '',
+      version: result.version,
+    });
+    return result;
+  } catch (err) {
+    await send({ event: 'end', ok: false, step: current || '' });
+    throw err;
+  }
+}
+
+/** deploy() without the telemetry. */
+async function runDeploy(
   opts,
   { staged, schemaPath = null, outDir = null, readSchema = null, writeBuild = null, emit },
 ) {
@@ -265,16 +363,12 @@ export async function deploy(
   if (served !== result.version) {
     log(`  but it serves version ${served || '(none found)'}, not ${result.version}\n`);
   }
-  if (opts.telemetry) {
-    const report = telemetryFromPage(page.body.toString('latin1'), result.version);
-    const outcome = await sendTelemetry(report);
-    log(
-      outcome === 'sent'
-        ? `Telemetry: sent ${report.model} ${report.serial} ${report.firmware} ${report.version} (--no-telemetry to stop)\n`
-        : `Telemetry: not sent (${outcome})\n`,
-    );
-  }
-  return { url: `http://${ip}/`, version: result.version, served };
+  return {
+    url: `http://${ip}/`,
+    version: result.version,
+    served,
+    printer: telemetryFromPage(page.body.toString('latin1'), result.version),
+  };
 }
 
 /** The CLI: print what deploy() reports, as deploy.sh always has. */
@@ -317,12 +411,14 @@ if (import.meta.main ?? import.meta.url === `file://${process.argv[1]}`) {
   const { stage, readSchema, writeBuild } = await import(
     new URL('build.mjs', import.meta.url).href
   );
+  const { readVersion } = await import(new URL('version.mjs', import.meta.url).href);
   const outDir = resolve('dist');
   const help = readFileSync(new URL(import.meta.url), 'utf8')
     .match(/\/\*\n \* deploy\.mjs --[\s\S]*?\n \*\n([\s\S]*?) \* The printer/)[1]
     .replace(/^ \* ?/gm, '');
   process.exitCode = await runCli(process.argv.slice(2), {
     staged: () => stage({ outDir }),
+    version: readVersion(),
     schemaPath: resolve(outDir, 'sgd-schema.json'),
     outDir,
     readSchema,
