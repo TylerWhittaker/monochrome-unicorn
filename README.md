@@ -348,7 +348,7 @@ asks if the printer rejects it; a password that works is kept in
 
 To count deployments, each deploy that uploads (`./deploy.sh`, `make
 deploy`, the installer) ends by sending four things to
-`http://www.grizzlor.org/monochrome-unicorn/telemetry`: the printer's
+`https://www.grizzlor.org/monochrome-unicorn/telemetry`: the printer's
 model, serial number and firmware version, and the console's version.
 The server logs them with the time and the address the report came
 from. Nothing else is sent, and a build with `--no-upload` sends

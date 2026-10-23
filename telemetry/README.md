@@ -2,7 +2,7 @@
 
 What counts deployments. After each successful upload, `tools/deploy.mjs`
 (so `./deploy.sh` and the standalone installer) POSTs one JSON report to
-`http://www.grizzlor.org/monochrome-unicorn/telemetry`:
+`https://www.grizzlor.org/monochrome-unicorn/telemetry`:
 
 ```json
 {"model": "ZD500R", "serial": "40J132100037", "firmware": "V74.20.23Z", "version": "0.52.0"}
@@ -65,7 +65,7 @@ nginx -t && systemctl reload nginx
 and from anywhere:
 
 ```sh
-curl -i -X POST http://www.grizzlor.org/monochrome-unicorn/telemetry \
+curl -i -X POST https://www.grizzlor.org/monochrome-unicorn/telemetry \
   -H 'Content-Type: application/json' \
   -d '{"model":"test","serial":"test","firmware":"test","version":"0.0.0"}'
 # HTTP/1.1 204 No Content
@@ -74,13 +74,13 @@ tail -1 /var/lib/mu-telemetry/telemetry.jsonl
 
 Delete that test line from the log afterwards if it should not count.
 
-**If the site redirects http:// to https://,** put the `location` in the
-port-80 `server { }` block as well, ahead of the redirect (a `return 301`
-in that block's own `location /` is fine; one at `server` level is
-not). A client that follows a redirect turns the POST into a GET, which
-this URL refuses. Better still, with HTTPS in place, change
-`TELEMETRY_URL` in `tools/deploy.mjs` to `https://`, since serial numbers
-otherwise cross the internet in clear text.
+Deploys send to `https://`, so serial numbers do not cross the internet
+in clear text, and the `location` is only needed in the port-443
+`server { }` block. Having it in the port-80 one too does no harm, and
+serves anyone who points `MONOCHROME_UNICORN_TELEMETRY_URL` at
+`http://`; if that block redirects to https://, the `location` must
+come ahead of the redirect, since a client that follows one turns the
+POST into a GET, which this URL refuses.
 
 After changing `server.py`, copy it to `/opt/mu-telemetry/` again and
 `systemctl restart mu-telemetry`.

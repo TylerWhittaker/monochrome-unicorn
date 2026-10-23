@@ -66,7 +66,7 @@ export const USAGE =
 /** Where a deploy is reported; see sendTelemetry(). */
 export const TELEMETRY_URL =
   process.env.MONOCHROME_UNICORN_TELEMETRY_URL ||
-  'http://www.grizzlor.org/monochrome-unicorn/telemetry';
+  'https://www.grizzlor.org/monochrome-unicorn/telemetry';
 
 /*
  * What a deploy removes before uploading. ^ID takes a wildcard, and one
