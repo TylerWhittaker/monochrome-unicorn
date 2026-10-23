@@ -90,6 +90,8 @@
   }
   button:disabled { opacity: 0.5; cursor: default; }
   button.quiet { background: transparent; color: var(--muted); border-color: var(--line); font-weight: 500; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .result .actions button { padding: 8px 14px; }
   .check { display: flex; gap: 8px; align-items: flex-start; margin-top: 14px; font-size: 14px; }
   .check input { margin-top: 4px; }
   ol.steps { list-style: none; padding: 0; margin: 20px 0 0; }
@@ -165,6 +167,16 @@
       <p><strong>That did not work.</strong></p>
       <p id="bad-text"></p>
       <p class="muted" id="bad-detail"></p>
+      <div id="diag" hidden>
+        <p>The installer kept a log of what the printer said. Sending it to the developer helps
+          fix this for your printer. It holds the printer's model, serial number, address and
+          settings listing, with passwords and keys taken out.</p>
+        <div class="actions">
+          <button id="send-log" type="button">Send log to the developer</button>
+          <button class="quiet" id="save-log" type="button">Save log…</button>
+        </div>
+        <p class="muted" id="diag-note"></p>
+      </div>
     </div>
 
     <details id="details" hidden>
@@ -236,6 +248,41 @@
     list.hidden = false;
   }
 
+  $('send-log').addEventListener('click', async () => {
+    $('send-log').disabled = true;
+    $('diag-note').textContent = 'Sending…';
+    try {
+      const res = await post('/log/send');
+      const outcome = res.ok ? await res.json() : { error: await res.text() };
+      if (outcome.reference) {
+        $('diag-note').textContent =
+          `Sent, thank you. If you ask about it, quote reference ${outcome.reference}.`;
+      } else {
+        $('send-log').disabled = false;
+        $('diag-note').textContent =
+          `It was not sent (${outcome.error}). Save it instead, and attach it to an issue on GitHub.`;
+      }
+    } catch (err) {
+      $('send-log').disabled = false;
+      $('diag-note').textContent = `The installer is not answering: ${err.message}`;
+    }
+  });
+  $('save-log').addEventListener('click', async () => {
+    try {
+      const res = await post('/log');
+      if (!res.ok) throw new Error(await res.text());
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = `monochrome-unicorn-deploy-failed-${new Date().toISOString().slice(0, 10)}.log`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    } catch (err) {
+      $('diag-note').textContent = `Could not save it: ${err.message}`;
+    }
+  });
+
   $('form').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (stopped) return;
@@ -256,11 +303,14 @@
     let current = null;
     drawSteps(states);
 
-    const fail = (message, detail) => {
+    const fail = (message, detail, log) => {
       if (current) states[current] = 'failed';
       drawSteps(states);
       $('bad-text').textContent = message;
       $('bad-detail').textContent = detail || '';
+      $('diag').hidden = !log;
+      $('send-log').disabled = false;
+      $('diag-note').textContent = log && log.path ? `Also saved as ${log.path}` : '';
       $('bad').hidden = false;
       $('details').open = true;
     };
@@ -305,7 +355,7 @@
             $('ok').hidden = false;
           } else if (event.type === 'error') {
             ended = true;
-            fail(event.message, event.detail);
+            fail(event.message, event.detail, event.log);
           }
         }
       }

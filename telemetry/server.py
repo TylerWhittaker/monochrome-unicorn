@@ -21,6 +21,10 @@ server.py -- receive the deploy telemetry tools/deploy.mjs sends.
 
     POST /telemetry         {"model", "serial", "firmware", "version",
                              "event", "deploy_id", "ok", "step"}
+    POST /telemetry/log     {"deploy_id", "version", "log"}: a failed
+                            deploy's diagnostic log, which the user chose
+                            to send; answers {"reference": deploy_id}
+    GET  /telemetry/log/<f> one of those logs, behind the summary's login
     GET  /telemetry/health  "ok"
     GET  /telemetry/summary the log, counted: an HTML page behind HTTP
                             Basic auth, as $TELEMETRY_USER (default
@@ -38,11 +42,18 @@ the sender's address added here: the client never sends them, so it
 cannot get them wrong. Behind nginx, run uvicorn with --proxy-headers
 --forwarded-allow-ips=127.0.0.1 so the address is the client's, not
 nginx's; telemetry/README.md has the rest.
+
+A diagnostic log is a file of its own in $TELEMETRY_LOGS, readable only
+by this service, and a line in $TELEMETRY_LOG with event "log" saying
+which deploy it belongs to. Once the files there add up to
+$TELEMETRY_LOG_LIMIT bytes, more are refused (507) until some are
+deleted.
 """
 
 import asyncio
 import json
 import os
+import re
 import secrets
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -50,13 +61,20 @@ from html import escape
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 LOG_PATH = os.environ.get("TELEMETRY_LOG", "/var/lib/mu-telemetry/telemetry.jsonl")
 SUMMARY_USER = os.environ.get("TELEMETRY_USER", "admin")
 SUMMARY_PASSWORD = os.environ.get("TELEMETRY_PASSWORD", "")
+LOGS_DIR = os.environ.get("TELEMETRY_LOGS", "/var/lib/mu-telemetry/logs")
+LOGS_LIMIT = int(os.environ.get("TELEMETRY_LOG_LIMIT", str(500 * 1024 * 1024)))
+
+# The most of a log a deploy sends (tools/deploy.mjs LOG_LIMIT).
+LOG_MAX = 1_000_000
+# What a stored log is called: when it came, and whose it is.
+LOG_NAME = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{16}\.log$")
 
 Field = Annotated[str, StringConstraints(max_length=64)]
 
@@ -79,6 +97,16 @@ class Report(BaseModel):
     step: Annotated[str, StringConstraints(pattern=r"^[a-z]{0,16}$")] | None = None
 
 
+class LogUpload(BaseModel):
+    """A failed deploy's diagnostic log: an extra field is a 422 here too."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    deploy_id: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{16}$")]
+    version: Field
+    log: Annotated[str, StringConstraints(max_length=LOG_MAX)]
+
+
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 write_lock = asyncio.Lock()
 
@@ -94,6 +122,33 @@ async def telemetry(report: Report, request: Request) -> Response:
         with open(LOG_PATH, "a", encoding="utf-8") as log:
             log.write(json.dumps(line, ensure_ascii=False) + "\n")
     return Response(status_code=204)
+
+
+@app.post("/telemetry/log")
+async def upload_log(upload: LogUpload, request: Request) -> dict:
+    now = datetime.now(timezone.utc)
+    data = upload.log.encode("utf-8")
+    name = f"{now:%Y%m%dT%H%M%SZ}-{upload.deploy_id}.log"
+    async with write_lock:
+        os.makedirs(LOGS_DIR, exist_ok=True)
+        used = sum(e.stat().st_size for e in os.scandir(LOGS_DIR) if e.is_file())
+        if used + len(data) > LOGS_LIMIT:
+            raise HTTPException(status_code=507, detail="No room for more logs just now.")
+        fd = os.open(os.path.join(LOGS_DIR, name), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as out:
+            out.write(data)
+        line = {
+            "ts": now.isoformat(timespec="seconds"),
+            "ip": request.client.host if request.client else None,
+            "event": "log",
+            "deploy_id": upload.deploy_id,
+            "version": upload.version,
+            "bytes": len(data),
+            "file": name,
+        }
+        with open(LOG_PATH, "a", encoding="utf-8") as log:
+            log.write(json.dumps(line, ensure_ascii=False) + "\n")
+    return {"reference": upload.deploy_id}
 
 
 @app.get("/telemetry/health")
@@ -119,6 +174,19 @@ def summary_login(credentials: HTTPBasicCredentials | None = Depends(basic)) -> 
         )
 
 
+@app.get("/telemetry/log/{name}", dependencies=[Depends(summary_login)])
+async def read_diagnostic_log(name: str) -> FileResponse:
+    """One diagnostic log, by the name the summary links it by."""
+    path = os.path.join(LOGS_DIR, name)
+    if not LOG_NAME.match(name) or not os.path.isfile(path):
+        raise HTTPException(status_code=404)
+    return FileResponse(
+        path,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 def read_log() -> list[dict]:
     """Every report logged, oldest first; a line that will not parse is skipped."""
     try:
@@ -139,12 +207,16 @@ def deploys(reports: list[dict], now: datetime | None = None) -> list[dict]:
     """
     The log as deploys, oldest first: a start and its end made one, with
     an outcome of "ok", "failed", "unfinished" (a start whose end never
-    came) or "running" (one that may yet).
+    came) or "running" (one that may yet). A deploy whose diagnostic
+    log was sent has its file name as "log".
     """
     now = now or datetime.now(timezone.utc)
-    out, by_id = [], {}
+    out, by_id, logs = [], {}, {}
     for r in reports:
         event, deploy_id = r.get("event"), r.get("deploy_id")
+        if event == "log":
+            logs[deploy_id] = r.get("file")
+            continue
         if event is None:  # before 0.53: one report, of a deploy that worked
             out.append({**r, "outcome": "ok"})
         elif event == "start" or deploy_id not in by_id:
@@ -160,6 +232,8 @@ def deploys(reports: list[dict], now: datetime | None = None) -> list[dict]:
             d["ended"] = r.get("ts")
             d["outcome"] = "ok" if r.get("ok") else "failed"
     for d in out:
+        if d.get("deploy_id") in logs:
+            d["log"] = logs[d["deploy_id"]]
         if d["outcome"] is None:
             try:
                 started = datetime.fromisoformat(d.get("ts", ""))
@@ -187,6 +261,28 @@ def outcome_text(d: dict) -> str:
     return {"ok": "ok", "unfinished": "never finished", "running": "running"}[d["outcome"]]
 
 
+def log_link(name: str | None) -> str:
+    """A link to a diagnostic log, relative to the summary page's URL."""
+    if not name or not LOG_NAME.match(name):
+        return ""
+    return f' &middot; <a href="log/{escape(name)}">log</a>'
+
+
+def logs_table(rows: list[dict]) -> str:
+    """Diagnostic logs from deploys that sent no telemetry of their own."""
+    body = "".join(
+        f"<tr><td>{escape(r.get('ts', ''))}</td><td>{escape(str(r.get('ip', '')))}</td>"
+        f"<td>{escape(r.get('version', ''))}</td><td class=n>{r.get('bytes', 0)}</td>"
+        f"<td>{log_link(r.get('file')).replace(' &middot; ', '')}</td></tr>"
+        for r in reversed(rows)
+    )
+    return (
+        "<section><h2>Logs from deploys without telemetry</h2><div class=scroll><table>"
+        "<tr><th>Sent (UTC)</th><th>From</th><th>Version</th><th class=n>Bytes</th><th>Log</th></tr>"
+        f"{body}</table></div></section>"
+    )
+
+
 def deploy_table(title: str, rows: list[dict]) -> str:
     body = "".join(
         f"<tr class={d['outcome']}>"
@@ -194,7 +290,7 @@ def deploy_table(title: str, rows: list[dict]) -> str:
             f"<td>{escape(str(d.get(k, '')))}</td>"
             for k in ("ts", "ip", "model", "serial", "firmware", "version")
         )
-        + f"<td>{escape(outcome_text(d))}</td></tr>"
+        + f"<td>{escape(outcome_text(d))}{log_link(d.get('log'))}</td></tr>"
         for d in reversed(rows)
     )
     return (
@@ -269,19 +365,23 @@ async def summary(view: Literal["summary", "failed"] = "summary", recent: int = 
     newest = lambda rows: rows[len(rows) - min(recent, len(rows)) :]
     outcomes = Counter(d["outcome"] for d in all_deploys)
     failed = [d for d in all_deploys if d["outcome"] in ("failed", "unfinished")]
+    known = {d.get("deploy_id") for d in all_deploys}
+    lone_logs = [r for r in reports if r.get("event") == "log" and r.get("deploy_id") not in known]
 
     if view == "failed":
         totals = [
             ("Failed", outcomes["failed"], "bad"),
             ("Never finished", outcomes["unfinished"], "bad"),
             ("Printers affected", len({d.get("serial") for d in failed}), ""),
+            ("Logs sent", sum(1 for d in failed if d.get("log")) + len(lone_logs), ""),
         ]
         body = (
             "<p>A deploy that failed says at which step: schema (reading the printer's "
             "settings), build, clean, upload or verify. One that never finished started "
             f"and did not report back within {int(UNFINISHED_AFTER.total_seconds() // 60)} "
             "minutes: stopped, or crashed. Deploys before 0.53 reported only success, so "
-            "their failures are not here.</p>"
+            "their failures are not here. Where the user sent the deploy's diagnostic log "
+            "(0.54 and later), its outcome links to it.</p>"
             + totals_html(totals)
             + "<div class=grid>"
             + count_table(
@@ -299,6 +399,7 @@ async def summary(view: Literal["summary", "failed"] = "summary", recent: int = 
             + count_table("By version", "Version", Counter(d.get("version", "") for d in failed), "Failures")
             + "</div>"
             + deploy_table(f"The latest {len(newest(failed))}", newest(failed))
+            + (logs_table(newest(lone_logs)) if lone_logs else "")
         )
         return page(view, body, last)
 

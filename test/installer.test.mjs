@@ -22,7 +22,9 @@
 // server, with a fake deploy, and the zip its macOS builds go out in.
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { parseArgs, USAGE, STEPS, telemetryFromPage, sendTelemetry } from '../tools/deploy.mjs';
 import { assemble, STAGED_PARTS } from '../tools/assemble.mjs';
@@ -59,6 +61,8 @@ await check('the deploy command line keeps deploy.sh options', () => {
     packed: false,
     source: null,
     telemetry: true,
+    sendLog: false,
+    sendLogFile: null,
     help: false,
   });
   const o = parseArgs(['--packed', '10.0.0.5', '--no-clean', '--allcv', '--unpacked', '--clean']);
@@ -203,12 +207,13 @@ await check('errors are put plainly, by what went wrong', () => {
 });
 
 /** Start the page's server with a deploy that only reports. */
-async function fakeGui(deploy) {
+async function fakeGui(deploy, more = {}) {
   const gui = await startGui({
     staged: STAGED,
     page: '<p>{{VERSION}} {{TOKEN}}</p><script>const S = {{STEPS}};</script>',
     version: '9.8.7',
     deploy,
+    ...more,
   });
   const base = new URL(gui.url).origin;
   const post = (path, body, headers = {}) =>
@@ -331,6 +336,51 @@ await check('a failed deploy ends in a plain error, with the detail', async () =
     assert.match(events.at(-1).detail, /ECONNREFUSED/);
   } finally {
     gui.close();
+  }
+});
+
+await check("a failed deploy's log can be saved and sent, with the token", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mu-gui-'));
+  const sent = [];
+  const gui = await fakeGui(
+    async () => {
+      throw Object.assign(new Error('Nothing in the allcv reply looked like a setting'), {
+        diagnosticLog: 'the diagnostic log\n',
+        deployId: '0123456789abcdef',
+      });
+    },
+    {
+      logDir: dir,
+      sendLog: async (text, fields) => {
+        sent.push({ text, ...fields });
+        return { reference: fields.deployId };
+      },
+    },
+  );
+  try {
+    assert.equal((await gui.post('/log')).status, 404, 'no log before a failure');
+    const events = (await (await gui.post('/deploy', { ip: '10.0.0.9' })).text())
+      .trim()
+      .split('\n')
+      .map(JSON.parse);
+    const { log } = events.at(-1);
+    assert.equal(log.bytes, 19);
+    assert.equal(readFileSync(log.path, 'utf8'), 'the diagnostic log\n');
+
+    const noToken = await fetch(gui.base + '/log', { method: 'POST' });
+    assert.equal(noToken.status, 404);
+    const saved = await gui.post('/log');
+    assert.equal(saved.status, 200);
+    assert.equal(await saved.text(), 'the diagnostic log\n');
+
+    const res = await gui.post('/log/send');
+    assert.deepEqual(await res.json(), { reference: '0123456789abcdef' });
+    assert.deepEqual(sent, [
+      { text: 'the diagnostic log\n', deployId: '0123456789abcdef', version: '9.8.7' },
+    ]);
+  } finally {
+    gui.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

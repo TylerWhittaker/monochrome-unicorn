@@ -40,6 +40,8 @@ import { runCli, USAGE } from '../deploy.mjs';
 import { startGui } from './server.mjs';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 const HELP = `Monochrome Unicorn installer, version ${assets.staged.version}
 
@@ -55,12 +57,33 @@ ${USAGE}
     --no-upload   build only, leave the printer alone
     --allcv       read the catalogue as a pre-Link-OS printer must
     --allconfig   force the JSON catalogue, skipping the JSON question
+    --send-log    if the install fails, send its diagnostic log without
+                  asking. A failed install always writes one, in
+                  ${logDir()}: what the printer said, with
+                  passwords and keys taken out
+    --send-log-file <file>  send a diagnostic log a failed install wrote
     --gui         open the installer page even with other options
     --no-open     with the page: print its address, do not open a browser
     --version     print the version
 
 Source and licence (GNU AGPL v3 or later):
   https://github.com/TylerWhittaker/monochrome-unicorn`;
+
+/** Where a failed install's diagnostic log goes: beside the installer install.sh keeps. */
+function logDir() {
+  if (process.platform === 'win32') {
+    return join(
+      process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'),
+      'monochrome-unicorn',
+      'logs',
+    );
+  }
+  return join(
+    process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'),
+    'monochrome-unicorn',
+    'logs',
+  );
+}
 
 /** Linux under WSL, whose browser is the Windows one. */
 function isWsl() {
@@ -97,6 +120,7 @@ async function gui(args) {
     page: assets.page,
     version: assets.staged.version,
     port: portArg === -1 ? 0 : Number(args[portArg + 1]),
+    logDir: logDir(),
   });
   console.log(`Monochrome Unicorn installer ${assets.staged.version}`);
   console.log(`\nThe installer is open in your browser at\n\n  ${url}\n`);
@@ -119,7 +143,12 @@ async function main(args) {
   const rest = args.filter((a, i) => !guiFlags.includes(a) && args[i - 1] !== '--port');
   if (args.includes('--gui') || rest.length === 0) return gui(args);
   // No dist/ to keep things in: the catalogue and the page stay in memory.
-  return runCli(rest, { staged: assets.staged, help: HELP });
+  return runCli(rest, {
+    staged: assets.staged,
+    help: HELP,
+    logDir: logDir(),
+    command: JSON.stringify(process.execPath),
+  });
 }
 
 process.exitCode = await main(process.argv.slice(2));

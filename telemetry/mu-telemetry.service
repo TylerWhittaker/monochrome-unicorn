@@ -13,6 +13,7 @@ WorkingDirectory=/opt/mu-telemetry
 # README.md): StateDirectory= would do it, but not on systemd before 235,
 # such as Amazon Linux 2's 219.
 Environment=TELEMETRY_LOG=/var/lib/mu-telemetry/telemetry.jsonl
+Environment=TELEMETRY_LOGS=/var/lib/mu-telemetry/logs
 # TELEMETRY_PASSWORD (and TELEMETRY_USER, if not admin) for the summary
 # page, in a file only root reads; without one there is no summary page.
 EnvironmentFile=-/etc/mu-telemetry.env

@@ -47,6 +47,7 @@
 
 import net from 'node:net';
 import { readFileSync } from 'node:fs';
+import { traceConnection } from './diag.mjs';
 
 /** CRLF-normalize and wrap a payload in a CISDFCRC16 header. */
 export function buildPayload(contents, destName) {
@@ -60,7 +61,11 @@ export function buildPayload(contents, destName) {
     `! CISDFCRC16\r\n0000\r\n${destName}\r\n${size}\r\n0000\r\n`,
     'binary',
   );
-  return { payload: Buffer.concat([header, normalized]), bytes: normalized.length };
+  return {
+    payload: Buffer.concat([header, normalized]),
+    bytes: normalized.length,
+    header: header.toString('binary'),
+  };
 }
 
 /**
@@ -68,15 +73,20 @@ export function buildPayload(contents, destName) {
  * until the printer closes its own, or `quiet` seconds pass -- it keeps
  * the connection open after it has taken what it was sent, so the wait
  * is what gives it time to finish reading (as `nc -q` used to).
+ *
+ * `describe` is what the diagnostic log shows as sent, for a payload too
+ * big to show (an upload's header, and its size).
  */
-export function sendRaw(ip, buffer, { timeout = 120000, quiet = 3, port = 9100 } = {}) {
+export function sendRaw(ip, buffer, { timeout = 120000, quiet = 3, port = 9100, describe } = {}) {
   return new Promise((resolvePromise, rejectPromise) => {
     const socket = net.createConnection({ host: ip, port });
+    const traced = traceConnection(`${ip}:${port}`, describe ?? buffer.toString('binary'));
     let done = false;
     let quietTimer = null;
-    const finish = (err) => {
+    const finish = (err, how) => {
       if (done) return;
       done = true;
+      traced.end(err ? `error: ${err.message}` : how);
       clearTimeout(overall);
       clearTimeout(quietTimer);
       socket.destroy();
@@ -88,22 +98,24 @@ export function sendRaw(ip, buffer, { timeout = 120000, quiet = 3, port = 9100 }
       timeout,
     );
     socket.on('connect', () => {
+      traced.connected();
       socket.end(buffer, () => {
-        quietTimer = setTimeout(() => finish(), quiet * 1000);
+        quietTimer = setTimeout(() => finish(null, `quiet for ${quiet} s`), quiet * 1000);
       });
     });
-    // Whatever the printer says back is not wanted, but must be read.
-    socket.on('data', () => {});
-    socket.on('end', () => finish());
-    socket.on('close', () => finish());
+    // Whatever the printer says back is not wanted, but must be read --
+    // and goes in the diagnostic log, where an error message would help.
+    socket.on('data', (chunk) => traced.data(chunk));
+    socket.on('end', () => finish(null, 'closed by the printer'));
+    socket.on('close', () => finish(null, 'closed'));
     socket.on('error', (err) => finish(new Error(`${ip}:${port}: ${err.message}`)));
   });
 }
 
 /** Upload one file and report the byte count actually sent. */
 export async function uploadFile(ip, contents, destName, opts) {
-  const { payload, bytes } = buildPayload(contents, destName);
-  await sendRaw(ip, payload, opts);
+  const { payload, bytes, header } = buildPayload(contents, destName);
+  await sendRaw(ip, payload, { ...opts, describe: `${header}<${bytes} bytes of ${destName}>` });
   return bytes;
 }
 

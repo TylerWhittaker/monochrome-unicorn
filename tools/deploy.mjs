@@ -47,6 +47,12 @@
  *                   printer's model, serial number and firmware and this
  *                   console's version; nothing else.
  *                   MONOCHROME_UNICORN_NO_TELEMETRY=1 does the same
+ *     --send-log    if the deploy fails, send its diagnostic log without
+ *                   asking. A failed deploy always writes one (dist/,
+ *                   deploy-failed-*.log): every exchange with the printer,
+ *                   with passwords and keys taken out. In a terminal it
+ *                   asks whether to send it; otherwise it says how
+ *     --send-log-file <file>  send a diagnostic log a failed deploy wrote
  *
  * The printer is reached two ways: port 9100 for the catalogue and raw
  * file writes (CISDFCRC16 header, tools/upload.mjs), and port 80 to
@@ -58,12 +64,16 @@
  */
 
 import { randomBytes } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { startTrace, stopTrace, trace, formatTrace, capText } from './diag.mjs';
 import { fetchSchema, writeSchema, readFromPrinter, identifyPrinter } from './fetch-schema.mjs';
 import { assemble } from './assemble.mjs';
 import { sendRaw, uploadFile, deletePayload } from './upload.mjs';
 
 export const USAGE =
-  'usage: deploy <printer-ip> [--no-schema] [--no-upload] [--no-clean] [--packed] [--allcv|--allconfig] [--no-telemetry]';
+  'usage: deploy <printer-ip> [--no-schema] [--no-upload] [--no-clean] [--packed] [--allcv|--allconfig] [--no-telemetry] [--send-log]\n' +
+  '       deploy --send-log-file <file>';
 
 /** Where a deploy is reported; see sendTelemetry(). */
 export const TELEMETRY_URL =
@@ -105,9 +115,12 @@ export function parseArgs(argv) {
     packed: false,
     source: null,
     telemetry: !process.env.MONOCHROME_UNICORN_NO_TELEMETRY,
+    sendLog: false,
+    sendLogFile: null,
     help: false,
   };
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
     if (arg === '--no-schema') opts.fetchSchema = false;
     else if (arg === '--no-upload') opts.upload = false;
     else if (arg === '--packed') opts.packed = true;
@@ -117,11 +130,17 @@ export function parseArgs(argv) {
     else if (arg === '--allcv') opts.source = 'allcv';
     else if (arg === '--allconfig') opts.source = 'allconfig';
     else if (arg === '--no-telemetry') opts.telemetry = false;
-    else if (arg === '-h' || arg === '--help') opts.help = true;
+    else if (arg === '--send-log') opts.sendLog = true;
+    else if (arg === '--send-log-file') {
+      opts.sendLogFile = argv[++i];
+      if (!opts.sendLogFile) throw new Error('--send-log-file needs the log to send');
+    } else if (arg === '-h' || arg === '--help') opts.help = true;
     else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
     else opts.ip = arg;
   }
-  if (!opts.help && !opts.ip && (opts.upload || opts.fetchSchema)) throw new Error(USAGE);
+  if (!opts.help && !opts.sendLogFile && !opts.ip && (opts.upload || opts.fetchSchema)) {
+    throw new Error(USAGE);
+  }
   return opts;
 }
 
@@ -130,8 +149,23 @@ export function parseArgs(argv) {
  * The printer can take a while: it serves one request at a time.
  */
 export async function probe(url, timeoutMs = 60000) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' });
-  const body = Buffer.from(await res.arrayBuffer());
+  const started = Date.now();
+  let res, body;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' });
+    body = Buffer.from(await res.arrayBuffer());
+  } catch (err) {
+    trace('http', { url, error: err.cause?.code || err.cause?.message || err.message });
+    throw err;
+  }
+  trace('http', {
+    url,
+    status: res.status,
+    bytes: body.length,
+    elapsed: Date.now() - started,
+    headers: [...res.headers],
+    head: body.subarray(0, 2048).toString('latin1'),
+  });
   return { status: res.status, bytes: body.length, body };
 }
 
@@ -241,17 +275,57 @@ export async function sendTelemetry(report, { url = TELEMETRY_URL, timeoutMs = 5
  * reports its start, and its end: whether it worked, and if not, at
  * which step. The two share a random deploy_id, so a start with no end
  * is a deploy that never finished.
+ *
+ * Every exchange with the printer is traced (diag.mjs). A deploy that
+ * fails throws with the trace as text on the error, err.diagnosticLog,
+ * and its id as err.deployId -- the same as telemetry's -- for
+ * sendDiagnosticLog(); one that works keeps nothing.
  */
 export async function deploy(opts, context) {
+  const deployId = randomBytes(8).toString('hex');
+  const { staged } = context;
+  const version = context.version ?? (typeof staged === 'function' ? '' : staged.version);
+  const { ip, port, ...options } = opts;
+  startTrace({
+    version,
+    deploy_id: deployId,
+    runtime: process.versions.bun ? `bun ${process.versions.bun}` : `node ${process.version}`,
+    os: `${process.platform} ${process.arch}`,
+    options,
+  });
+  let current = null;
+  const emit = (event) => {
+    if (event.type === 'step') {
+      current = event.id;
+      trace('step', { id: event.id });
+    } else if (event.type === 'log') trace('log', { text: event.text });
+    context.emit(event);
+  };
+  try {
+    return await reportedDeploy(
+      opts,
+      { ...context, emit },
+      { deployId, version, step: () => current },
+    );
+  } catch (err) {
+    err.deployId = deployId;
+    err.diagnosticLog = formatTrace(stopTrace(), { error: err, step: current });
+    throw err;
+  } finally {
+    stopTrace();
+  }
+}
+
+/** deploy(), with its start and end reported. */
+async function reportedDeploy(opts, context, { deployId, version, step }) {
   if (!opts.telemetry || !opts.upload) return runDeploy(opts, context);
   const log = (text) => context.emit({ type: 'log', text });
-  const { staged } = context;
   const report = {
     // opts.port is for the tests' fake printer.
     ...(await identifyForTelemetry(opts.ip, { port: opts.port })),
-    version: context.version ?? (typeof staged === 'function' ? '' : staged.version),
+    version,
     event: 'start',
-    deploy_id: randomBytes(8).toString('hex'),
+    deploy_id: deployId,
   };
   const send = async (fields) => {
     const outcome = await sendTelemetry({ ...report, ...fields });
@@ -264,13 +338,8 @@ export async function deploy(opts, context) {
   );
   await send({});
 
-  let current = null;
-  const emit = (event) => {
-    if (event.type === 'step') current = event.id;
-    context.emit(event);
-  };
   try {
-    const result = await runDeploy(opts, { ...context, emit });
+    const result = await runDeploy(opts, context);
     // What the served page says fills in what the printer would not.
     const page = result.printer || {};
     await send({
@@ -283,9 +352,62 @@ export async function deploy(opts, context) {
     });
     return result;
   } catch (err) {
-    await send({ event: 'end', ok: false, step: current || '' });
+    await send({ event: 'end', ok: false, step: step() || '' });
     throw err;
   }
+}
+
+/** The most of a diagnostic log the telemetry server takes. */
+export const LOG_LIMIT = 1000000;
+
+/**
+ * Send a failed deploy's diagnostic log to the telemetry server, which
+ * keeps it for whoever is fixing that printer. Never throws: resolves
+ * to { reference } -- what to quote when asking about it -- or to
+ * { error }, why it was not sent.
+ */
+export async function sendDiagnosticLog(
+  text,
+  { deployId, version = '', url = `${TELEMETRY_URL}/log`, timeoutMs = 15000 } = {},
+) {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deploy_id: /^[0-9a-f]{16}$/.test(deployId || '')
+          ? deployId
+          : randomBytes(8).toString('hex'),
+        version: String(version).slice(0, 64),
+        log: capText(String(text), LOG_LIMIT - 100),
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return { error: `the server answered ${res.status}` };
+    const { reference } = await res.json();
+    return { reference };
+  } catch (err) {
+    return { error: err.cause?.code || err.cause?.message || err.message };
+  }
+}
+
+/** A diagnostic log's deploy_id and version, from its header. */
+export function logHeader(text) {
+  const field = (name) => (new RegExp(`^${name}: (.*)$`, 'm').exec(text) || [])[1] || '';
+  return { deployId: field('deploy_id'), version: field('version') };
+}
+
+/**
+ * Write a diagnostic log into `dir`, and say where: named for when, and
+ * for its deploy, so two failures in the same second keep both.
+ */
+export function writeDiagnosticLog(text, dir) {
+  mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const id = logHeader(text).deployId.replace(/[^0-9a-f]/g, '');
+  const path = join(dir, `deploy-failed-${stamp}Z${id ? `-${id}` : ''}.log`);
+  writeFileSync(path, text);
+  return path;
 }
 
 /** deploy() without the telemetry. */
@@ -300,7 +422,7 @@ async function runDeploy(
   step('schema');
   let schema;
   if (opts.fetchSchema) {
-    schema = await fetchSchema(ip, { source: opts.source, log });
+    schema = await fetchSchema(ip, { source: opts.source, log, port: opts.port });
     if (schemaPath) writeSchema(schema, schemaPath);
   } else {
     if (!readSchema) throw new Error('--no-schema needs a catalogue from an earlier deploy');
@@ -371,7 +493,35 @@ async function runDeploy(
   };
 }
 
-/** The CLI: print what deploy() reports, as deploy.sh always has. */
+/** Ask a yes-or-no question on the terminal; no is the answer to anything else. */
+async function confirm(question) {
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return /^y(es)?$/i.test((await rl.question(question)).trim());
+  } finally {
+    rl.close();
+  }
+}
+
+/** Send a diagnostic log and say how that went; 0 if it went. */
+async function sendLogCli(text, fields) {
+  process.stdout.write('Sending the diagnostic log ... ');
+  const { reference, error } = await sendDiagnosticLog(text, fields);
+  if (error) {
+    console.log(`not sent (${error})`);
+    return 1;
+  }
+  console.log(`sent; its reference is ${reference}`);
+  return 0;
+}
+
+/**
+ * The CLI: print what deploy() reports, as deploy.sh always has.
+ *
+ *   logDir    where a failed deploy's diagnostic log is written
+ *   command   how to run this again, for the hint to send a log later
+ */
 export async function runCli(argv, context) {
   let opts;
   try {
@@ -384,6 +534,16 @@ export async function runCli(argv, context) {
     console.log(context.help || USAGE);
     return 0;
   }
+  if (opts.sendLogFile) {
+    let text;
+    try {
+      text = readFileSync(opts.sendLogFile, 'utf8');
+    } catch (err) {
+      console.error(`Could not read ${opts.sendLogFile}: ${err.message}`);
+      return 1;
+    }
+    return sendLogCli(text, logHeader(text));
+  }
   try {
     const { url } = await deploy(opts, {
       ...context,
@@ -395,6 +555,30 @@ export async function runCli(argv, context) {
     return 0;
   } catch (err) {
     console.error(`\ndeploy failed: ${err.message}`);
+    if (!err.diagnosticLog) return 1;
+    let path = null;
+    if (context.logDir) {
+      try {
+        path = writeDiagnosticLog(err.diagnosticLog, context.logDir);
+        console.error(`\nDiagnostic log: ${path}`);
+      } catch (writeErr) {
+        console.error(`\nCould not write the diagnostic log: ${writeErr.message}`);
+      }
+    }
+    const fields = { deployId: err.deployId, version: logHeader(err.diagnosticLog).version };
+    if (opts.sendLog) {
+      await sendLogCli(err.diagnosticLog, fields);
+    } else if (opts.telemetry && process.stdin.isTTY && process.stdout.isTTY) {
+      const yes = await confirm(
+        '\nSend this log to the developer, to help fix it? It holds what the printer\n' +
+          'said, including its settings listing, with passwords and keys removed. [y/N] ',
+      );
+      if (yes) await sendLogCli(err.diagnosticLog, fields);
+    } else if (path) {
+      console.error(
+        `To send it to the developer: ${context.command || 'node tools/deploy.mjs'} --send-log-file '${path}'`,
+      );
+    }
     return 1;
   }
 }
@@ -423,6 +607,8 @@ if (import.meta.main ?? import.meta.url === `file://${process.argv[1]}`) {
     outDir,
     readSchema,
     writeBuild,
+    logDir: outDir,
+    command: './deploy.sh',
     help: `${USAGE}\n\n${help}`,
   });
 }

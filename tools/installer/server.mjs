@@ -37,13 +37,21 @@
  *   GET  /?t=<token>   the page (gui.html)
  *   POST /deploy       { ip, packed, telemetry }: the deploy, as NDJSON
  *                      events; telemetry is on unless it is false
+ *   POST /log          the last failed deploy's diagnostic log, as text
+ *   POST /log/send     send it to the telemetry server: { reference } or
+ *                      { error }
  *   POST /ping         the page is still open
  *   POST /quit         the page's Quit button
  */
 
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { deploy as realDeploy, STEPS } from '../deploy.mjs';
+import {
+  deploy as realDeploy,
+  sendDiagnosticLog as realSendLog,
+  writeDiagnosticLog,
+  STEPS,
+} from '../deploy.mjs';
 
 /** A printer address: an IPv4 address or a host name, nothing that needs quoting. */
 export function validAddress(ip) {
@@ -75,6 +83,9 @@ export function explainError(err, ip) {
  *   staged   what tools/build.mjs stage() made
  *   page     gui.html
  *   deploy   tools/deploy.mjs deploy(), replaced in tests
+ *   sendLog  tools/deploy.mjs sendDiagnosticLog(), likewise
+ *   logDir   where a failed deploy's diagnostic log is written; null
+ *            keeps it in memory only
  *   idleMs   quit this long after the page last pinged
  *
  * Resolves to { url, close, closed } once listening; `closed` resolves
@@ -85,12 +96,16 @@ export async function startGui({
   page,
   version,
   deploy = realDeploy,
+  sendLog = realSendLog,
+  logDir = null,
   port = 0,
   idleMs = 5 * 60 * 1000,
 }) {
   const token = randomBytes(16).toString('hex');
   let busy = false;
   let lastPing = Date.now();
+  // The last failed deploy's diagnostic log: { text, deployId }.
+  let failedLog = null;
   let finish;
   const closed = new Promise((resolveClosed) => (finish = resolveClosed));
 
@@ -143,6 +158,28 @@ export async function startGui({
       shutdown();
       return;
     }
+    if (url.pathname === '/log' || url.pathname === '/log/send') {
+      if (!failedLog) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('There is no diagnostic log: no install has failed.');
+        return;
+      }
+      if (url.pathname === '/log') {
+        res.writeHead(200, {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-store',
+        });
+        res.end(failedLog.text);
+        return;
+      }
+      const outcome = await sendLog(failedLog.text, {
+        deployId: failedLog.deployId,
+        version,
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(outcome));
+      return;
+    }
     if (url.pathname !== '/deploy') {
       res.writeHead(404).end();
       return;
@@ -168,6 +205,7 @@ export async function startGui({
     }
 
     busy = true;
+    failedLog = null;
     res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' });
     const send = (event) => res.write(JSON.stringify(event) + '\n');
     try {
@@ -185,7 +223,17 @@ export async function startGui({
       );
       send({ type: 'done', ...result });
     } catch (err) {
-      send({ type: 'error', message: explainError(err, ip), detail: err.message });
+      let log = null;
+      if (err.diagnosticLog) {
+        failedLog = { text: err.diagnosticLog, deployId: err.deployId };
+        log = { bytes: Buffer.byteLength(err.diagnosticLog), path: null };
+        try {
+          if (logDir) log.path = writeDiagnosticLog(err.diagnosticLog, logDir);
+        } catch {
+          // Still in memory, for Save log and Send.
+        }
+      }
+      send({ type: 'error', message: explainError(err, ip), detail: err.message, log });
     } finally {
       busy = false;
       lastPing = Date.now();

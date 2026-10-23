@@ -26,6 +26,18 @@ deploy sends (422), so nothing else can end up in the log. `--no-telemetry`, `MO
 or the installer's checkbox stop a deploy from sending, and
 `MONOCHROME_UNICORN_TELEMETRY_URL` sends it somewhere else.
 
+A failed deploy can also send its diagnostic log, if the user says so
+(the main README, "When a deploy fails"): `POST` to `.../telemetry/log`
+with `{"deploy_id", "version", "log"}`, a megabyte of text at most. The
+server keeps it as a file of its own and notes it in the log:
+
+```json
+{"ts": "2026-10-23T05:53:10+00:00", "ip": "203.0.113.9", "event": "log", "deploy_id": "612fdd60fc96a70e", "version": "0.54.0", "bytes": 48211, "file": "20261023T055310Z-612fdd60fc96a70e.log"}
+```
+
+and answers `{"reference": "612fdd60fc96a70e"}`, the deploy's ID, for
+the user to quote.
+
 ```
 server.py              the FastAPI app
 requirements.txt       fastapi and uvicorn, pinned
@@ -48,9 +60,10 @@ cp server.py requirements.txt /opt/mu-telemetry/
 python3 -m venv /opt/mu-telemetry/venv
 /opt/mu-telemetry/venv/bin/pip install -r /opt/mu-telemetry/requirements.txt
 
-# Where the log goes
-mkdir -p /var/lib/mu-telemetry
-chown mu-telemetry: /var/lib/mu-telemetry
+# Where the log goes, and the diagnostic logs
+mkdir -p /var/lib/mu-telemetry/logs
+chown -R mu-telemetry: /var/lib/mu-telemetry
+chmod 700 /var/lib/mu-telemetry/logs
 
 # The service. A copy, not a link to a checkout: root runs what is in it.
 install -m 644 -o root -g root mu-telemetry.service /etc/systemd/system/
@@ -59,10 +72,13 @@ systemctl enable --now mu-telemetry
 curl http://127.0.0.1:8701/telemetry/health        # "ok"
 ```
 
-Then nginx. `nginx.conf` here has two parts: the `limit_req_zone` line
-goes in the `http { }` block (`/etc/nginx/nginx.conf`, or a new file in
+Then nginx. `nginx.conf` here has two parts: the `limit_req_zone` lines
+go in the `http { }` block (`/etc/nginx/nginx.conf`, or a new file in
 `/etc/nginx/conf.d/`), and the `location` block goes inside the existing
-`server { }` for www.grizzlor.org, beside its other locations. Then:
+`server { }` for www.grizzlor.org, beside its other locations (the
+diagnostic logs' `location = .../telemetry/log` with the others, and its
+`location ^~ .../telemetry/log/` for reading them in the port-443 one
+only, as for the summary). Then:
 
 ```sh
 nginx -t && systemctl reload nginx
@@ -118,6 +134,26 @@ password set, the page is not there (404). The `location` for it, the
 third part of `nginx.conf`, goes in the port-443 `server { }` only, so
 the password never crosses the internet in clear text.
 
+## Diagnostic logs
+
+Each is a file in `/var/lib/mu-telemetry/logs/`, named for when it came
+and the deploy it belongs to, readable only by the service (and root).
+In the summary's **Failed** view a deploy that sent one has a **log**
+link after its outcome, behind the same password; logs from deploys
+that sent no telemetry are listed under the table. By hand:
+
+```sh
+ls -lt /var/lib/mu-telemetry/logs/ | head
+less /var/lib/mu-telemetry/logs/*-612fdd60fc96a70e.log      # by reference
+```
+
+They hold what a user's printer said -- its address, serial number and
+settings listing, with secret-looking values taken out before sending --
+so delete each once it has served its purpose. Together they are kept
+under 500 MB: past that the server refuses more (507) until some are
+deleted. `TELEMETRY_LOGS` and `TELEMETRY_LOG_LIMIT` (bytes) in
+`/etc/mu-telemetry.env` move or resize that.
+
 ## Reading the log
 
 The summary page does this for you; by hand, with `jq`
@@ -125,7 +161,7 @@ The summary page does this for you; by hand, with `jq`
 
 ```sh
 LOG=/var/lib/mu-telemetry/telemetry.jsonl
-STARTS='select(.event != "end")'               # one per deploy (and old reports)
+STARTS='select(.event == null or .event == "start")'   # one per deploy (and old reports)
 WORKED='select(.event == null or .ok == true)'
 FAILED='select(.ok == false)'
 

@@ -54,6 +54,7 @@
 import net from 'node:net';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { traceConnection } from './diag.mjs';
 
 export const TYPES = ['string', 'enum', 'integer', 'bool', 'double', 'ipv4-address', 'json'];
 export const ACCESS = ['R', 'W', 'RW', 'RW?'];
@@ -104,13 +105,18 @@ export function readFromPrinter(
 ) {
   return new Promise((resolvePromise, rejectPromise) => {
     const socket = net.createConnection({ host: ip, port });
+    const traced = traceConnection(`${ip}:${port}`, String(payload));
     const chunks = [];
     let idle = null;
     let settled = false;
+    // Why the read ended, for the diagnostic log: the printer closed it,
+    // or the idle or settle window ran out.
+    let why = 'idle';
 
-    const finish = () => {
+    const finish = (how = why) => {
       if (settled) return;
       settled = true;
+      traced.end(how);
       clearTimeout(idle);
       clearTimeout(overall);
       socket.destroy();
@@ -121,6 +127,7 @@ export function readFromPrinter(
 
     const overall = setTimeout(() => {
       settled = true;
+      traced.end(`timeout after ${timeout} ms`);
       socket.destroy();
       rejectPromise(new Error(`Timed out waiting for ${ip}:${port}`));
     }, timeout);
@@ -128,25 +135,29 @@ export function readFromPrinter(
     const arm = () => {
       clearTimeout(idle);
       const done = isComplete && isComplete(Buffer.concat(chunks).toString('latin1'));
+      why = done ? `settled after ${settleMs} ms` : `idle for ${idleMs} ms`;
       idle = setTimeout(finish, done ? settleMs : idleMs);
     };
 
     socket.on('connect', () => {
+      traced.connected();
       socket.write(payload);
       arm();
     });
     socket.on('data', (chunk) => {
+      traced.data(chunk);
       chunks.push(chunk);
       arm();
     });
     socket.on('error', (err) => {
       if (settled) return;
       settled = true;
+      traced.end(`error: ${err.code || err.message}`);
       clearTimeout(idle);
       clearTimeout(overall);
       rejectPromise(new Error(`Could not reach ${ip}:${port}: ${err.message}`));
     });
-    socket.on('close', finish);
+    socket.on('close', () => finish('closed by the printer'));
   });
 }
 

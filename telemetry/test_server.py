@@ -18,6 +18,8 @@ def client(tmp_path, monkeypatch):
     log = tmp_path / "telemetry.jsonl"
     monkeypatch.setenv("TELEMETRY_LOG", str(log))
     monkeypatch.setenv("TELEMETRY_PASSWORD", "s3cret")
+    monkeypatch.setenv("TELEMETRY_LOGS", str(tmp_path / "logs"))
+    monkeypatch.delenv("TELEMETRY_LOG_LIMIT", raising=False)
     import server
 
     importlib.reload(server)
@@ -170,3 +172,71 @@ def test_the_failed_view(client):
     assert "failed at schema" in failed
     assert "<td>ZD500R</td>" not in failed, "a deploy that worked is not listed"
     assert client.get("/telemetry/summary?view=nope", auth=("admin", "s3cret")).status_code == 422
+
+
+UPLOAD = {"deploy_id": "0123456789abcdef", "version": "0.54.0", "log": "the diagnostic log\n"}
+
+
+def test_a_diagnostic_log_is_kept_and_noted(client, tmp_path):
+    res = client.post("/telemetry/log", json=UPLOAD)
+    assert res.status_code == 200
+    assert res.json() == {"reference": "0123456789abcdef"}
+    [line] = lines(client)
+    assert line["event"] == "log" and line["deploy_id"] == UPLOAD["deploy_id"]
+    assert line["bytes"] == 19 and line["ip"] == "testclient"
+    [stored] = (tmp_path / "logs").iterdir()
+    assert stored.name == line["file"] and stored.name.endswith("-0123456789abcdef.log")
+    assert stored.read_text() == UPLOAD["log"]
+    assert stored.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {**UPLOAD, "ip": "1.2.3.4"},
+        {**UPLOAD, "deploy_id": "../../etc/passwd"},
+        {k: v for k, v in UPLOAD.items() if k != "version"},
+        {**UPLOAD, "log": "x" * 1_000_001},
+    ],
+)
+def test_a_log_upload_takes_only_what_a_deploy_sends(client, body, tmp_path):
+    assert client.post("/telemetry/log", json=body).status_code == 422
+    assert not client.log.exists()
+    assert not (tmp_path / "logs").exists()
+
+
+def test_logs_stop_at_the_limit(client, monkeypatch):
+    import server
+
+    monkeypatch.setattr(server, "LOGS_LIMIT", 30)
+    assert client.post("/telemetry/log", json=UPLOAD).status_code == 200
+    assert client.post("/telemetry/log", json=UPLOAD).status_code == 507
+    assert len(lines(client)) == 1
+
+
+def test_a_log_is_read_behind_the_password(client):
+    name = (client.post("/telemetry/log", json=UPLOAD), lines(client)[0]["file"])[1]
+    assert client.get(f"/telemetry/log/{name}").status_code == 401
+    res = client.get(f"/telemetry/log/{name}", auth=("admin", "s3cret"))
+    assert res.status_code == 200
+    assert res.text == UPLOAD["log"]
+    assert res.headers["content-type"].startswith("text/plain")
+    assert res.headers["x-content-type-options"] == "nosniff"
+    for bad in ("..%2Ftelemetry.jsonl", "20261023T000000Z-0123456789abcdef.log", "x.log"):
+        assert client.get(f"/telemetry/log/{bad}", auth=("admin", "s3cret")).status_code == 404
+
+
+def test_the_failed_view_links_the_log(client):
+    client.post("/telemetry", json={**START, "model": "ZM400"})
+    client.post("/telemetry", json={**START, "model": "ZM400", "event": "end", "ok": False, "step": "schema"})
+    client.post("/telemetry/log", json=UPLOAD)
+    # One from a deploy that sent no telemetry.
+    client.post("/telemetry/log", json={**UPLOAD, "deploy_id": "f" * 16})
+    name = lines(client)[2]["file"]
+    failed = client.get("/telemetry/summary?view=failed", auth=("admin", "s3cret")).text
+    assert f'failed at schema &middot; <a href="log/{name}">log</a>' in failed
+    assert "Logs sent<b>2</b>" in failed
+    assert "Logs from deploys without telemetry" in failed and "f" * 16 in failed
+    # A log is not a deploy.
+    summary = client.get("/telemetry/summary", auth=("admin", "s3cret")).text
+    assert "Deploys<b>1</b>" in summary

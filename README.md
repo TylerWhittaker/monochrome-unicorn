@@ -309,6 +309,7 @@ than checked in: a fresh clone has none until a deploy -- or
               they are removed before the new set is uploaded)
 --packed      gzip the page, about 170 KB instead of 440; below
 --no-telemetry  do not report the deploy; see Telemetry, below
+--send-log    if it fails, send its diagnostic log without asking; below
 ```
 
 The page is plain by default: the styles, htmx, the app and the
@@ -356,7 +357,8 @@ adds whether the deploy worked and, if not, which step failed (`schema`,
 together. The serial number counts distinct printers. The server logs
 each report with the time and the address it came from. Nothing else
 is sent -- no settings, labels, files, network details or error
-messages -- and a build with `--no-upload` sends nothing. The printer's
+messages -- unless a deploy fails and you choose to send its diagnostic
+log (below), and a build with `--no-upload` sends nothing. The printer's
 identity is asked over port 9100 before anything is uploaded (`getvar`,
 or `~HI` on a printer that will not answer it), and the deploy prints
 it. A report that cannot be sent never fails the deploy.
@@ -366,6 +368,31 @@ To stop it, pass `--no-telemetry`, or set
 **Count this install** on the installer's page. The live tests set the
 variable for their own deploys. The server is in `telemetry/`, with how
 to run it behind nginx (`telemetry/README.md`).
+
+### When a deploy fails
+
+A deploy that fails leaves a diagnostic log, for whoever is fixing it
+on a printer they do not have: every exchange with the printer -- what
+went out on port 9100, each piece of the reply and when it came, how the
+read ended, and the reply itself byte for byte -- each request on port
+80, what the deploy printed, the options, the operating system and
+runtime, and the error with its stack. It is written to
+`dist/deploy-failed-<time>-<id>.log` (by the installer, to its folder's
+`logs/`), and the deploy says where. A deploy that works writes
+nothing.
+
+The log holds what the printer said, which includes its address, serial
+number and settings listing -- network names among them. Before it is
+written, the values of settings that look like secrets (passwords, keys,
+PSKs, PINs, SNMP communities) are replaced with `<redacted>`.
+
+It is sent only if the user says so: in a terminal the deploy asks;
+`--send-log` sends it without asking; and `--send-log-file <file>`
+sends one written earlier. The installer's page has **Send log to the
+developer** and **Save log…** under the error. A log is sent to
+`https://www.grizzlor.org/monochrome-unicorn/telemetry/log`, and the
+reference that comes back -- the deploy's ID -- is what to quote when
+asking about it.
 
 ## Why it is built this way
 
@@ -506,6 +533,7 @@ install.sh            fetch the release's installer for this computer
 install.ps1           and run it; the same for Windows PowerShell
 tools/
   deploy.mjs          catalogue, assemble, upload, verify: the deploy
+  diag.mjs            the diagnostic log a failed deploy leaves
   fetch-schema.mjs    read the SGD catalogue over port 9100
   build.mjs           stage: Tailwind, the bundler, prettier
   assemble.mjs        fit a staged build to one printer's catalogue
@@ -565,6 +593,7 @@ node test/store.test.mjs    # the state store
 node test/filewrite.test.mjs # file.append requests, chunks and text encodings
 node test/syslog.test.mjs   # syslog lines, destinations and alerts
 node test/installer.test.mjs # the deploy's options, the installer's page server
+node test/diag.test.mjs     # a failed deploy's diagnostic log, and sending it
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 make binaries               # the standalone installers, in dist/bin/

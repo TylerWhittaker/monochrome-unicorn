@@ -91,9 +91,37 @@ function runInstaller(bin, args, env = process.env) {
   });
 }
 
+/**
+ * Stand in for the telemetry server, so a diagnostic log a test sends
+ * goes no further than this computer; `logs` is what it was sent.
+ */
+async function fakeTelemetry() {
+  const logs = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => (body += d));
+    req.on('end', () => {
+      if (!req.url.endsWith('/log')) return res.writeHead(204).end();
+      const upload = JSON.parse(body);
+      logs.push(upload);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ reference: upload.deploy_id }));
+    });
+  });
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+  return {
+    url: `http://127.0.0.1:${server.address().port}/telemetry`,
+    logs,
+    close: () => server.listening && server.close(),
+  };
+}
+
 /** Start the installer's page without a browser; resolves to its address. */
-function startGui(bin) {
-  const child = spawn(bin, ['--gui', '--no-open'], { stdio: ['ignore', 'pipe', 'inherit'] });
+function startGui(bin, env = process.env) {
+  const child = spawn(bin, ['--gui', '--no-open'], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+    env,
+  });
   const exited = new Promise((resolveExit) => child.on('close', resolveExit));
   const url = new Promise((resolveUrl, rejectUrl) => {
     let out = '';
@@ -114,6 +142,9 @@ export default function register(s, ctx) {
   const binDir = join(root, 'dist/bin');
   const bin = target && join(binDir, binaryName(target, version));
   let gui = null;
+  let telemetry = null;
+  // The installer's data folder, so the logs it writes are the tests' own.
+  const dataHome = mkdtempSync(join(tmpdir(), 'mu-installer-data-'));
 
   s.test(
     'the installer compiles for this computer',
@@ -182,11 +213,60 @@ export default function register(s, ctx) {
   );
 
   s.test(
+    'a failed install from the command line writes its diagnostic log, and sends it if told',
+    async () => {
+      if (!bin || !existsSync(bin)) skip('no installer was built');
+      telemetry ??= await fakeTelemetry();
+      const env = {
+        ...process.env,
+        XDG_DATA_HOME: dataHome,
+        LOCALAPPDATA: dataHome,
+        MONOCHROME_UNICORN_TELEMETRY_URL: telemetry.url,
+      };
+      // Nothing on this computer listens on 9100.
+      const quiet = await runInstaller(bin, ['127.0.0.1'], env);
+      assert.equal(quiet.code, 1, quiet.out);
+      const path = /Diagnostic log: (.+\.log)/.exec(quiet.out)?.[1];
+      assert.ok(path, `it says where the log is:\n${quiet.out}`);
+      assert.ok(path.startsWith(join(dataHome, 'monochrome-unicorn', 'logs')), path);
+      const log = readFileSync(path, 'utf8');
+      assert.match(log, new RegExp(`^version: ${version.replaceAll('.', '\\.')}$`, 'm'));
+      assert.match(log, /^failed at step: schema$/m);
+      assert.match(log, /ended: error: ECONNREFUSED/);
+      assert.match(log, /^error:\nError: Could not reach 127\.0\.0\.1:9100/m);
+      // No terminal to ask in, so it says how to send it.
+      assert.match(quiet.out, /--send-log-file/);
+      assert.equal(telemetry.logs.length, 0, 'nothing is sent unasked');
+
+      const told = await runInstaller(bin, ['127.0.0.1', '--send-log'], env);
+      assert.equal(told.code, 1, told.out);
+      assert.equal(telemetry.logs.length, 1, told.out);
+      const [sent] = telemetry.logs;
+      assert.equal(sent.version, version);
+      assert.match(sent.log, /^failed at step: schema$/m);
+      assert.match(told.out, new RegExp(`its reference is ${sent.deploy_id}`));
+
+      // And one written earlier, sent afterwards.
+      const later = await runInstaller(bin, ['--send-log-file', path], env);
+      assert.equal(later.code, 0, later.out);
+      assert.equal(telemetry.logs.length, 2);
+      assert.equal(telemetry.logs[1].log, log);
+    },
+    { timeout: 120000 },
+  );
+
+  s.test(
     'double-clicked, its page installs on the printer typed in',
     async () => {
       if (!bin || !existsSync(bin)) skip('no installer was built');
       const before = await served(cfg.ip);
-      gui = startGui(bin);
+      telemetry ??= await fakeTelemetry();
+      gui = startGui(bin, {
+        ...process.env,
+        XDG_DATA_HOME: dataHome,
+        LOCALAPPDATA: dataHome,
+        MONOCHROME_UNICORN_TELEMETRY_URL: telemetry.url,
+      });
       const context = await browser.newContext();
       try {
         const page = await context.newPage();
@@ -219,6 +299,37 @@ export default function register(s, ctx) {
       await page.locator('#bad').waitFor({ timeout: 60000 });
       assert.match(await page.locator('#bad-text').textContent(), /refused port 9100/);
       assert.equal(await page.locator('#steps li.failed').count(), 1);
+    } finally {
+      await context.close();
+    }
+  });
+
+  s.test("its page saves a failed install's diagnostic log, and sends it", async () => {
+    if (!gui) skip('the page did not start');
+    const context = await browser.newContext({ acceptDownloads: true });
+    try {
+      const page = await context.newPage();
+      await page.goto(await gui.url);
+      await page.locator('#ip').fill('127.0.0.1');
+      await page.locator('#go').click();
+      await page.locator('#diag').waitFor({ timeout: 60000 });
+      assert.match(await page.locator('#diag-note').textContent(), /Also saved as .*\.log/);
+
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.locator('#save-log').click(),
+      ]);
+      const saved = readFileSync(await download.path(), 'utf8');
+      assert.match(saved, /^Monochrome Unicorn: diagnostic log of a failed deploy/);
+      assert.match(saved, /^failed at step: schema$/m);
+
+      const before = telemetry.logs.length;
+      await page.locator('#send-log').click();
+      await page.locator('#diag-note', { hasText: 'Sent, thank you' }).waitFor({ timeout: 20000 });
+      assert.equal(telemetry.logs.length, before + 1);
+      const sent = telemetry.logs.at(-1);
+      assert.equal(sent.log, saved, 'what was sent is what was saved');
+      assert.match(await page.locator('#diag-note').textContent(), new RegExp(sent.deploy_id));
     } finally {
       await context.close();
     }
@@ -257,5 +368,7 @@ export default function register(s, ctx) {
 
   s.cleanup(() => {
     if (gui) gui.child.kill();
+    telemetry?.close();
+    rmSync(dataHome, { recursive: true, force: true });
   }, 'stop the installer');
 }
