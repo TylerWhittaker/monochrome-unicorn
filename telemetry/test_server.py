@@ -17,6 +17,7 @@ REPORT = {"model": "ZD500R", "serial": "40J132100037", "firmware": "V74.20.23Z",
 def client(tmp_path, monkeypatch):
     log = tmp_path / "telemetry.jsonl"
     monkeypatch.setenv("TELEMETRY_LOG", str(log))
+    monkeypatch.setenv("TELEMETRY_PASSWORD", "s3cret")
     import server
 
     importlib.reload(server)
@@ -63,3 +64,42 @@ def test_only_post(client):
     assert client.get("/telemetry").status_code == 405
     assert client.get("/telemetry/health").json() == "ok"
     assert client.get("/docs").status_code == 404
+
+
+def test_the_summary_needs_the_password(client):
+    res = client.get("/telemetry/summary")
+    assert res.status_code == 401
+    assert res.headers["www-authenticate"].startswith("Basic")
+    assert client.get("/telemetry/summary", auth=("admin", "wrong")).status_code == 401
+    assert client.get("/telemetry/summary", auth=("root", "s3cret")).status_code == 401
+
+
+def test_the_summary_counts_the_log(client):
+    client.post("/telemetry", json=REPORT)
+    client.post("/telemetry", json=REPORT)
+    client.post("/telemetry", json={**REPORT, "model": "<b>ZD620</b>", "serial": "OTHER"})
+    res = client.get("/telemetry/summary", auth=("admin", "s3cret"))
+    assert res.status_code == 200
+    assert res.headers["cache-control"] == "no-store"
+    page = res.text
+    assert "Deploys<b>3</b>" in page
+    assert "Printers<b>2</b>" in page
+    assert "<td>0.52.0</td><td class=n>3</td>" in page
+    assert "&lt;b&gt;ZD620&lt;/b&gt;" in page and "<b>ZD620</b>" not in page
+    assert "The latest 3" in page
+    one = client.get("/telemetry/summary?recent=1", auth=("admin", "s3cret")).text
+    assert "The latest 1<" in one and one.count("<td>OTHER</td>") == 1
+    none = client.get("/telemetry/summary?recent=0", auth=("admin", "s3cret")).text
+    assert "The latest 0<" in none and "<td>OTHER</td>" not in none
+
+
+def test_the_summary_of_an_empty_log(client):
+    page = client.get("/telemetry/summary", auth=("admin", "s3cret")).text
+    assert "Deploys<b>0</b>" in page and "None yet" in page
+
+
+def test_no_password_no_summary(client, monkeypatch):
+    import server
+
+    monkeypatch.setattr(server, "SUMMARY_PASSWORD", "")
+    assert client.get("/telemetry/summary", auth=("admin", "")).status_code == 404

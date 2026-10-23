@@ -85,6 +85,28 @@ POST into a GET, which this URL refuses.
 After changing `server.py`, copy it to `/opt/mu-telemetry/` again and
 `systemctl restart mu-telemetry`.
 
+## The summary page
+
+`https://www.grizzlor.org/monochrome-unicorn/telemetry/summary` shows
+the log counted: deploys, distinct printers and senders, by version,
+model, firmware and month, and the latest 50 (`?recent=200` for more).
+It asks for a user name, `admin`, and the password in
+`/etc/mu-telemetry.env`, which only root can read:
+
+```sh
+# Once, as root: a random password
+umask 077
+echo "TELEMETRY_PASSWORD=$(openssl rand -base64 18)" > /etc/mu-telemetry.env
+systemctl restart mu-telemetry
+
+cat /etc/mu-telemetry.env        # to see it
+```
+
+Change it by editing that file and restarting the service. With no
+password set, the page is not there (404). The `location` for it, the
+third part of `nginx.conf`, goes in the port-443 `server { }` only, so
+the password never crosses the internet in clear text.
+
 ## Reading the log
 
 ```sh
