@@ -31,7 +31,8 @@ test_server.py         pytest telemetry/ (with pytest and httpx)
 ## Installing it on www.grizzlor.org
 
 The server listens on 127.0.0.1 only, and nginx passes it the one URL.
-Needs Python 3.10 or later. As root:
+Needs Python 3.10 or later and systemd 219 or later (Amazon Linux 2 has
+219). As root, from this directory:
 
 ```sh
 # A user of its own, and the code in /opt
@@ -41,8 +42,12 @@ cp server.py requirements.txt /opt/mu-telemetry/
 python3 -m venv /opt/mu-telemetry/venv
 /opt/mu-telemetry/venv/bin/pip install -r /opt/mu-telemetry/requirements.txt
 
-# The service (it makes /var/lib/mu-telemetry for the log itself)
-cp mu-telemetry.service /etc/systemd/system/
+# Where the log goes
+mkdir -p /var/lib/mu-telemetry
+chown mu-telemetry: /var/lib/mu-telemetry
+
+# The service. A copy, not a link to a checkout: root runs what is in it.
+install -m 644 -o root -g root mu-telemetry.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now mu-telemetry
 curl http://127.0.0.1:8701/telemetry/health        # "ok"

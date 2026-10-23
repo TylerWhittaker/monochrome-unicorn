@@ -9,8 +9,9 @@ After=network.target
 User=mu-telemetry
 Group=mu-telemetry
 WorkingDirectory=/opt/mu-telemetry
-# /var/lib/mu-telemetry, created and owned by the user above.
-StateDirectory=mu-telemetry
+# The log's directory, /var/lib/mu-telemetry, is made by hand (see
+# README.md): StateDirectory= would do it, but not on systemd before 235,
+# such as Amazon Linux 2's 219.
 Environment=TELEMETRY_LOG=/var/lib/mu-telemetry/telemetry.jsonl
 ExecStart=/opt/mu-telemetry/venv/bin/uvicorn server:app \
     --host 127.0.0.1 --port 8701 \
@@ -18,8 +19,11 @@ ExecStart=/opt/mu-telemetry/venv/bin/uvicorn server:app \
     --no-server-header
 Restart=on-failure
 NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
+# full rather than strict, which needs systemd 232; /var stays writable.
+ProtectSystem=full
+# read-only, not yes: a Python installed by uv lives in the user's home,
+# and the venv's interpreter is a link to it.
+ProtectHome=read-only
 PrivateTmp=yes
 
 [Install]
