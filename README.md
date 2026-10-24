@@ -12,8 +12,7 @@ where its onboard web server serves it at `http://<printer>/`. Nothing
 to install on the computers, phones or tablets that use it -- open the
 printer's address in a browser.
 
-**Install:** [download and double-click](#download-and-double-click) ·
-[one line in a terminal](#from-a-terminal) ·
+**Install:** [one line in a terminal](#from-a-terminal) ·
 [from the source](#from-the-source)
 
 ![The Label Editor: a label on the canvas, the selected barcode's options, and the printer's own render](docs/screenshots/editor.png)
@@ -24,7 +23,9 @@ printer's address in a browser.
 [Working on it](#working-on-it) · [Known limits](#known-limits) ·
 [Licence](#licence)
 
-## Screenshots
+<br>
+
+# Screenshots
 
 **Printer Settings** -- every setting (aka SGD) on the printer, filtered, explained and edited in place.
 
@@ -104,41 +105,42 @@ pixels:
 
 ![The LCD Viewer drawing the printer's own pixels, with the helper running](docs/screenshots/lcd.png)
 
-## Installing
+<br>
+
+# Installing
 
 You install it once, from any computer on the same network as the
 printer; after that, anything with a browser uses it at
 `http://<printer>/`.
 
 **The printer:** a Zebra Link-OS printer with its web server on (the
-factory setting), whose address you know -- most show it on the front
-panel, and it is on the printer's configuration label. Built and tested against a ZD500R (firmware V74.20.23Z) and a
-ZD620 (V84.20.23Z); older printers (firmware below V68) work with fewer
-details -- see [Known limits](#known-limits).
+factory setting). Built and tested against a ZD500R (firmware
+V74.20.23Z) and a ZD620 (V84.20.23Z); older printers (firmware below
+V68) work with fewer details -- see [Known limits](#known-limits).
 
 **The computer you install from** needs to reach the printer on port 80
 and port 9100. Nothing else: the installer is one file that carries
 what it needs.
 
-### Download and double-click
+## From a terminal
 
-On the [latest release](https://github.com/TylerWhittaker/monochrome-unicorn/releases/latest), under **Assets**,
-download the file for your computer. Each is named for the version it
-installs, so for 0.50.1 the Windows one is
-`monochrome-unicorn-0.50.1-windows-x64.exe`:
+On macOS, Linux or WSL, this fetches the latest release's installer for
+your computer, checks it against the release's checksums, and runs it:
 
-| Your computer | The file ending in |
-|---|---|
-| Windows 10 or 11 | `-windows-x64.exe` |
-| Mac with Apple silicon (M1 and later) | `-macos-arm64.zip` |
-| Mac with an Intel processor | `-macos-x64.zip` |
-| Linux, 64-bit PC | `-linux-x64` |
-| Linux, 64-bit ARM (a Raspberry Pi on 64-bit Raspberry Pi OS) | `-linux-arm64` |
+```sh
+curl -fsSL https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.sh | sh
+```
 
-Open it. It opens a page in your browser that lists the Zebra printers
-it found on your network. Tick the ones to install on -- or type a
-printer's address, or a range of addresses to scan for printers, and
-press **Add** -- then press **Install**, and when it says so, **Open the
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.ps1 | iex
+```
+
+It opens a page in your browser that lists the Zebra printers it found
+on your network. Tick the ones to install on -- or type a printer's
+address, or a range of addresses to scan for printers, and press
+**Add** -- then press **Install**, and when it says so, **Open the
 console**. Several printers are installed on one after another, each
 with its own result. The installer stops when you press Quit or close
 its window. Run it again after a printer's firmware is updated -- each
@@ -155,75 +157,29 @@ for "Zebra". Nothing is sent to the port that prints until an address
 is known to be a Zebra: another make of network printer would print
 it. A scan takes up to 4096 addresses, and a /24 about 15 seconds.
 
-The installer is not signed, so the first time, your computer asks
-whether to trust it:
-
-- **Windows** says "Windows protected your PC": choose **More info**,
-  then **Run anyway**.
-- **macOS** says it cannot check the app for malicious software: press
-  **Done**, then in **System Settings → Privacy & Security** press
-  **Open Anyway** next to its name, and open it again. (Before macOS 15,
-  right-click it and choose **Open**.)
-- **Linux** needs it marked as a program first: in the file manager,
-  **Properties → Permissions → Allow executing**, or
-  `chmod +x monochrome-unicorn-*-linux-*`.
-
-### From a terminal
-
-On macOS, Linux or WSL, this fetches the latest release's installer for
-your computer, checks it against the release's checksums, and runs it:
+Given printers' addresses or a range, the installer works on the
+command line instead, with the same options as `./deploy.sh` (see
+[Deploying](#deploying)):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.sh | sh
-```
-
-On Windows, in PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.ps1 | iex
+curl -fsSL https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.sh | sh -s -- 192.168.1.81 --packed
 ```
 
 A release carries its own copy of each script,
 `monochrome-unicorn-<version>-install.sh` and `.ps1`, which fetches that
 release rather than the latest; so does `MONOCHROME_UNICORN_VERSION=0.50.1`
-in front of either.
+in front of either. Nothing is installed besides the installer itself,
+kept in `~/.local/share/monochrome-unicorn/`
+(`%LOCALAPPDATA%\monochrome-unicorn\` on Windows) for next time.
 
-Either opens the installer's page. Given a printer's address, the
-installer works on the command line instead, with the same options as
-`./deploy.sh` (see [Deploying](#deploying)):
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/TylerWhittaker/monochrome-unicorn/main/install.sh | sh -s -- 192.168.1.81 --packed
-./monochrome-unicorn-0.50.1-linux-x64 192.168.1.81      # a downloaded one
-```
-
-Nothing is installed besides the installer itself, kept in
-`~/.local/share/monochrome-unicorn/` (`%LOCALAPPDATA%\monochrome-unicorn\`
-on Windows) for next time.
-
-### Uninstalling
-
-At the bottom of **Printer Settings**, **Uninstall…** takes the console
-off the printer: it deletes every `.SHTML` file on the printer's `E:`
-drive -- `INDEX.SHTML`, its helper files, and any other `.SHTML` stored
-there -- after you tick that you understand, and the printer's web
-server serves its factory pages at `http://<printer>/` again. Settings,
-stored labels, pictures and fonts are left as they are. To use the
-console again, install it again. Without the page, the same from a
-computer on the network:
-
-```sh
-node tools/upload.mjs <printer-ip> --delete 'E:*.SHTML'
-```
-
-### From the source
+## From the source
 
 For working on the console, or to build what you install yourself. This
 needs [Node.js](https://nodejs.org) 20 or later with npm, git and bash
 (`make` for the shortcuts, optional), and internet access once for
 `npm install`.
 
-#### Linux
+### Linux
 
 Install Node.js, git and curl from your distribution if its Node.js is
 20 or later (`node --version`):
@@ -245,7 +201,7 @@ nvm install --lts
 
 Then [deploy](#deploy-it).
 
-#### macOS
+### macOS
 
 Install Apple's command-line tools (git, curl and make), then Node.js
 from [Homebrew](https://brew.sh):
@@ -258,7 +214,7 @@ brew install node
 The macOS bash 3.2 is enough for `deploy.sh` and
 `lcd_display_helper.sh`. Then [deploy](#deploy-it).
 
-#### Windows (WSL2)
+### Windows (WSL2)
 
 The scripts are bash, so on Windows they run under WSL2. In PowerShell,
 as administrator:
@@ -285,7 +241,7 @@ configuring; on a VPN that hides the LAN from WSL, turn on
 [mirrored networking](https://learn.microsoft.com/windows/wsl/networking#mirrored-mode-networking).
 Open the console in your usual Windows browser.
 
-#### Deploy it
+### Deploy it
 
 The same on every platform:
 
@@ -300,7 +256,24 @@ Then open `http://<printer-ip>/`. A printer's catalogue of settings is
 read as part of the deploy, so run it again for each printer, and after
 a firmware update. More on what it does and its options below.
 
-## Deploying
+## Uninstalling
+
+At the bottom of **Printer Settings**, **Uninstall…** takes the console
+off the printer: it deletes every `.SHTML` file on the printer's `E:`
+drive -- `INDEX.SHTML`, its helper files, and any other `.SHTML` stored
+there -- after you tick that you understand, and the printer's web
+server serves its factory pages at `http://<printer>/` again. Settings,
+stored labels, pictures and fonts are left as they are. To use the
+console again, install it again. Without the page, the same from a
+computer on the network:
+
+```sh
+node tools/upload.mjs <printer-ip> --delete 'E:*.SHTML'
+```
+
+<br>
+
+# Deploying
 
 ```sh
 npm install                      # once, for the Tailwind CLI
@@ -372,7 +345,7 @@ password. The page tries the factory default, `1234`, first and only
 asks if the printer rejects it; a password that works is kept in
 `sessionStorage` for the rest of the browser session.
 
-### Telemetry
+## Telemetry
 
 To count deployments, and to see which printers they fail on, each
 deploy that uploads (`./deploy.sh`, `make deploy`, the installer) reports
@@ -396,7 +369,7 @@ To stop it, pass `--no-telemetry`, or set
 variable for their own deploys. The server is in `telemetry/`, with how
 to run it behind nginx (`telemetry/README.md`).
 
-### When a deploy fails
+## When a deploy fails
 
 A deploy that fails leaves a diagnostic log, for whoever is fixing it
 on a printer they do not have: every exchange with the printer -- what
@@ -421,7 +394,9 @@ developer** and **Save log…** under the error. A log is sent to
 reference that comes back -- the deploy's ID -- is what to quote when
 asking about it.
 
-## Why it is built this way
+<br>
+
+# Why it is built this way
 
 The printer sets hard constraints, and most of the design follows from
 them. The measurements behind each are in
@@ -507,14 +482,20 @@ release stages once and compiles `tools/installer/` with
 JavaScript runtime and the staged build. Its window is a page served on
 127.0.0.1 to the computer's own browser, rather than a GUI toolkit per
 platform; the page's requests carry a token from the address it was
-opened at, so no other page in that browser can drive it.
+opened at, so no other page in that browser can drive it. The
+one-liners fetch the executable for the computer they run on. The
+macOS builds can also be zipped, which keeps the executable bit a
+browser download would lose, for handing out a file to double-click:
+`make binaries-zip`. Releases leave the zips out.
 
 **The printer is the renderer.** Only it knows how its fonts and
 symbologies rasterize, and its `/zpl` endpoint will draw a label to a
 bitmap for free. The visual canvas is deliberately an editing proxy —
 good enough to position things — while the preview shows the truth.
 
-## Layout
+<br>
+
+# Layout
 
 ```
 src/index.html        page shell, with the {{...}} slots the build fills
@@ -587,7 +568,9 @@ reference/            the ZPL, CPCL and EPL2 programming manuals (and
                       zpl-zbi2-pg-en.txt, the ZPL one as searchable text)
 ```
 
-## Working on it
+<br>
+
+# Working on it
 
 `make` lists shortcuts for everything below -- `make deploy IP=...`,
 `make test`, `make test-live`, `make check` before a commit -- with the
@@ -626,12 +609,13 @@ node test/discover.test.mjs # discovery replies, ranges, and scanning one
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 make binaries               # the standalone installers, in dist/bin/
+make binaries-zip           # the same, and the macOS ones zipped to double-click
 npm run format              # lay out every .js/.mjs with prettier
 npm run test:live           # every mode, in Chrome, against a real printer
 node tools/screenshots.mjs  # retake docs/screenshots/, the same way
 ```
 
-### The live tests
+## The live tests
 
 `test/live/` drives the deployed console in a real browser against a
 real printer -- no mocks. It asks for the printer's address and
@@ -709,7 +693,9 @@ The printer caches aggressively despite `Expires: 0`. During development
 load `http://<printer>/INDEX.SHTML?v=2` (a query string on `/` itself is
 a 500).
 
-## Known limits
+<br>
+
+# Known limits
 
 - The visual editor models the subset of ZPL it can draw. Anything else
   is preserved verbatim and re-emitted, but is only editable in the
@@ -779,7 +765,9 @@ a 500).
   a different printer model may show settings it does not have; re-run
   `./deploy.sh <ip>` against that printer to recapture.
 
-## Versioning
+<br>
+
+# Versioning
 
 [Semantic Versioning](https://semver.org). The version lives in exactly
 one place, `package.json`'s `version` field; everything else asks for
@@ -816,7 +804,9 @@ themselves:
 git tag v$(node tools/version.mjs) && git push origin v$(node tools/version.mjs)
 ```
 
-## Licence
+<br>
+
+# Licence
 
 Copyright (C) 2026 Tyler Whittaker.
 

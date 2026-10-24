@@ -28,13 +28,15 @@
  * the version it installs:
  *
  *   monochrome-unicorn-<version>-windows-x64.exe
- *   monochrome-unicorn-<version>-macos-arm64(.zip)   Apple silicon
- *   monochrome-unicorn-<version>-macos-x64(.zip)     Intel
+ *   monochrome-unicorn-<version>-macos-arm64    Apple silicon
+ *   monochrome-unicorn-<version>-macos-x64      Intel
  *   monochrome-unicorn-<version>-linux-x64
  *   monochrome-unicorn-<version>-linux-arm64
  *
- * The macOS ones also go in a zip, which keeps the executable bit a
- * browser download would lose; install.sh fetches the bare files. Beside
+ * install.sh fetches the bare files. With --zip, the macOS ones also go
+ * in a zip, which keeps the executable bit a browser download would
+ * lose, for a file to hand out and double-click; releases leave those
+ * out, as install.sh and install.ps1 are the way in. Beside
  * them go install.sh and install.ps1 with the version filled in, as
  * monochrome-unicorn-<version>-install.sh and .ps1, and the checksums of
  * all of it, monochrome-unicorn-<version>-SHA256SUMS: every file in
@@ -45,7 +47,7 @@
  * one, otherwise the prebuilt @oven/bun-<platform> package (no install
  * script) is fetched once into dist/.bun.
  *
- *   node tools/installer/package.mjs [--only linux-x64,windows-x64]
+ *   node tools/installer/package.mjs [--only linux-x64,windows-x64] [--zip]
  */
 
 import { execFileSync } from 'node:child_process';
@@ -219,6 +221,7 @@ function main() {
   const onlyArg = args.indexOf('--only');
   const only = onlyArg === -1 ? null : args[onlyArg + 1].split(',');
   const targets = only ? TARGETS.filter((t) => only.includes(t.name)) : TARGETS;
+  const zip = args.includes('--zip');
   if (targets.length === 0) throw new Error(`No target called ${only.join(', ')}`);
 
   const staged = stage({ outDir: DIST });
@@ -249,10 +252,10 @@ function main() {
     );
     if (!target.ext) chmodSync(out, 0o755);
     let line = `  ${file.padEnd(44)} ${(statSync(out).size / 1048576).toFixed(1)} MB`;
-    if (target.zip) {
-      const zip = zipOne(file, readFileSync(out));
-      writeFileSync(`${out}.zip`, zip);
-      line += `, zipped ${(zip.length / 1048576).toFixed(1)} MB`;
+    if (zip && target.zip) {
+      const zipped = zipOne(file, readFileSync(out));
+      writeFileSync(`${out}.zip`, zipped);
+      line += `, zipped ${(zipped.length / 1048576).toFixed(1)} MB`;
     }
     console.log(line);
   }

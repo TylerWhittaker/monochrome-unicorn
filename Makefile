@@ -20,7 +20,7 @@ ARGS ?=
 .PHONY: help install build build-packed deploy deploy-quick deploy-packed deploy-all \
         schema test test-live \
         test-live-quick format format-check check lcd-helper lcd-shot version \
-        bump-patch bump-minor bump-major release binaries clean need-ip
+        bump-patch bump-minor bump-major release binaries binaries-zip clean need-ip
 
 help: ## list the targets
 	@awk 'BEGIN { FS = ":.*## " } /^[a-z-]+:.*## / { printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -105,12 +105,16 @@ release: ## dist/<name>-<version>.tar.gz of the committed source
 	git archive --format=tar.gz --prefix=$$name-$$version/ -o $$out HEAD -- . $(RELEASE_EXCLUDE) && \
 	echo "$$out  $$(tar -tzf $$out | grep -vc '/$$') files, $$(du -h $$out | cut -f1)"
 
-# The standalone installer, for people who will never open a terminal:
+# The standalone installer, which install.sh and install.ps1 fetch:
 # one executable per platform, carrying its own runtime and a staged
 # build (tools/installer/). Bun compiles them; one is fetched from npm
 # into dist/.bun the first time if there is none on PATH.
 binaries: ## the standalone installers for every platform, in dist/bin/
 	node tools/installer/package.mjs
+
+# The same, and the macOS ones zipped, to hand out and double-click.
+binaries-zip: ## the standalone installers, and the macOS ones zipped
+	node tools/installer/package.mjs --zip
 
 clean: ## remove the build output and the LCD helper's files
 	rm -rf dist lcd.bmp lcd.bmp.part lcd.png
