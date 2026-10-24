@@ -93,7 +93,9 @@ export const JSON_PROBE = '{}{"appl.name":null}\r\n';
  * so silence is the signal. `isComplete` is what tells the two kinds of
  * silence apart -- a reply that looks finished is given `settleMs` to
  * prove otherwise, and one that does not is given the longer `idleMs`
- * before we give up waiting and take what we have.
+ * before we give up waiting and take what we have. Before the first
+ * byte, the wait is `firstMs` (idleMs unless given): a printer can take
+ * far longer to start a long reply than to pause in the middle of one.
  *
  * A socket rather than nc: nc -C rewrites bare newlines, and a settings
  * value that contains one would come back altered.
@@ -101,7 +103,14 @@ export const JSON_PROBE = '{}{"appl.name":null}\r\n';
 export function readFromPrinter(
   ip,
   payload,
-  { idleMs = 3000, settleMs = 0, isComplete = null, timeout = 180000, port = 9100 } = {},
+  {
+    idleMs = 3000,
+    firstMs = idleMs,
+    settleMs = 0,
+    isComplete = null,
+    timeout = 180000,
+    port = 9100,
+  } = {},
 ) {
   return new Promise((resolvePromise, rejectPromise) => {
     const socket = net.createConnection({ host: ip, port });
@@ -134,6 +143,11 @@ export function readFromPrinter(
 
     const arm = () => {
       clearTimeout(idle);
+      if (chunks.length === 0) {
+        why = `no reply within ${firstMs} ms`;
+        idle = setTimeout(finish, firstMs);
+        return;
+      }
       const done = isComplete && isComplete(Buffer.concat(chunks).toString('latin1'));
       why = done ? `settled after ${settleMs} ms` : `idle for ${idleMs} ms`;
       idle = setTimeout(finish, done ? settleMs : idleMs);
@@ -225,9 +239,20 @@ export function parseHostIdentification(reply) {
   };
 }
 
-/** Ask the printer what it is (only to report it: see speaksJson). */
+/**
+ * Ask the printer what it is (only to report it: see speaksJson). The
+ * reply ends at its ETX, so a printer slow to start answering costs
+ * nothing on one that is quick.
+ */
 export async function identifyPrinter(ip, options = {}) {
-  const reply = await readFromPrinter(ip, '~HI\r\n', { idleMs: 2000, timeout: 20000, ...options });
+  const reply = await readFromPrinter(ip, '~HI\r\n', {
+    firstMs: 10000,
+    idleMs: 5000,
+    isComplete: (text) => text.includes('\x03'),
+    settleMs: 0,
+    timeout: 20000,
+    ...options,
+  });
   return parseHostIdentification(reply);
 }
 
@@ -245,7 +270,7 @@ export async function identifyPrinter(ip, options = {}) {
  *
  * and it ends with a line of nothing but quote characters, with no line
  * ending after it. That is not proof on its own -- a quote can be the
- * last line of a multi-line value -- so the reader waits five seconds
+ * last line of a multi-line value -- so the reader waits ten seconds
  * after seeing one before believing it.
  *
  * What it does not say is as important as what it does: no types, no
@@ -268,15 +293,19 @@ export function allcvLooksComplete(text) {
 /**
  * Ask a printer for allcv.
  *
- * Slow printers and long listings mean the idle window has to be
- * generous; the five-second settle is the rule that actually ends it.
+ * The printers that need allcv are the old, slow ones, and it is a long
+ * listing, so every wait is generous: two minutes for it to start, half
+ * a minute of silence in the middle (some values, like ip.netstat, are
+ * worked out as they are listed), and ten seconds after the closing
+ * quote line before believing it -- which is what actually ends it.
  */
 export async function fetchAllcv(ip, options = {}) {
   return readFromPrinter(ip, '! U1 getvar "allcv"\r\n', {
-    idleMs: 15000,
-    settleMs: 5000,
+    firstMs: 120000,
+    idleMs: 30000,
+    settleMs: 10000,
     isComplete: allcvLooksComplete,
-    timeout: 300000,
+    timeout: 600000,
     ...options,
   });
 }

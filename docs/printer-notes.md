@@ -627,7 +627,10 @@ Things that cost time to discover, all measured on the bench ZD500R:
 - **It ends with a quote character alone on a line, with no line ending
   after it** -- and that printer sends `""`, not `"`. A quote can also
   be the last line of a multi-line value, so seeing one is not proof:
-  wait five seconds for more data before believing it.
+  wait for more data before believing it. The reader waits ten seconds
+  (it was five; an older, slower printer may pause longer), half a
+  minute of silence mid-listing, and two minutes for the first byte --
+  all untested on a pre-Link-OS printer so far, and generous on purpose.
 - **A value may run over any number of lines** (`ip.netstat` runs to 34,
   `file.dir` to 192), and a continuation line can look like anything.
   Only a line that starts at column zero with a dotted lower-case name

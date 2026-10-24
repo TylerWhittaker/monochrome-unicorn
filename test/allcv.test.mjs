@@ -31,6 +31,8 @@ import {
   answersJsonProbe,
   speaksJson,
   fetchSchema,
+  readFromPrinter,
+  identifyPrinter,
   LINK_OS_FIRMWARE,
 } from '../tools/fetch-schema.mjs';
 import net from 'node:net';
@@ -357,6 +359,63 @@ await check('no answer to ~HI does not stop it; no answer to anything does', asy
     );
   } finally {
     silent.close();
+  }
+});
+
+/**
+ * A slow printer: says nothing for `delayMs`, then answers, and keeps
+ * the connection open, as a real one does -- so only our waits end it.
+ */
+async function slowPrinter(delayMs, reply) {
+  const sockets = new Set();
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('error', () => {});
+    socket.once('data', () => setTimeout(() => socket.write(reply), delayMs));
+  });
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+  return {
+    port: server.address().port,
+    close: () => {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+    },
+  };
+}
+
+await check('a printer slow to start answering is waited for, up to firstMs', async () => {
+  const slow = await slowPrinter(300, 'the reply');
+  try {
+    const started = Date.now();
+    const reply = await readFromPrinter('127.0.0.1', 'q', {
+      port: slow.port,
+      firstMs: 2000,
+      idleMs: 100,
+    });
+    assert.equal(reply, 'the reply');
+    assert.ok(Date.now() - started < 1500, 'and once it has, idleMs ends it');
+    // Without firstMs, the idle window is all it gets.
+    await assert.rejects(
+      readFromPrinter('127.0.0.1', 'q', { port: slow.port, idleMs: 100 }),
+      /No response/,
+    );
+  } finally {
+    slow.close();
+  }
+});
+
+await check('~HI ends at its ETX, however long the printer took to start', async () => {
+  const slow = await slowPrinter(300, '\x02ZM400-200dpi,V53.17.11Z,8,8176KB\x03');
+  try {
+    const started = Date.now();
+    const hi = await identifyPrinter('127.0.0.1', { port: slow.port });
+    assert.equal(hi.version, 'V53.17.11Z');
+    assert.ok(
+      Date.now() - started < 1500,
+      `${Date.now() - started} ms: no idle wait after the ETX`,
+    );
+  } finally {
+    slow.close();
   }
 });
 
