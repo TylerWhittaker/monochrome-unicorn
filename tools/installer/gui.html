@@ -126,6 +126,21 @@
     font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     white-space: pre-wrap; word-break: break-all;
   }
+  .list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  button.small { padding: 4px 10px; font-size: 13px; }
+  ul.printers { list-style: none; margin: 0 0 6px; padding: 0; border: 1px solid var(--line); border-radius: 8px; }
+  ul.printers:empty { display: none; }
+  ul.printers li { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--line); }
+  ul.printers li:first-child { border-top: 0; }
+  ul.printers label { display: flex; gap: 10px; align-items: baseline; flex: 1; min-width: 0; cursor: pointer; }
+  ul.printers .who { min-width: 0; overflow-wrap: anywhere; }
+  ul.printers .state { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  ul.printers .state.done { color: var(--ok); }
+  ul.printers .state.failed { color: var(--bad); }
+  #search-note { margin: 0 0 16px; }
+  .target { margin-top: 20px; }
+  .target h2 { font-size: 15px; margin: 0; }
+  .target ol.steps { margin-top: 8px; }
   footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; }
   footer a { color: var(--muted); }
   [hidden] { display: none !important; }
@@ -139,14 +154,24 @@
       network with a browser can open it at the printer's address.</p>
 
     <form id="form">
-      <label class="field" for="ip">Printer address</label>
+      <div class="list-head">
+        <span class="field" style="font-weight:600">Printers on this network</span>
+        <button class="quiet small" id="search" type="button">Search again</button>
+      </div>
+      <ul class="printers" id="printers"></ul>
+      <p class="muted" id="search-note">Looking for printers…</p>
+
+      <label class="field" for="ip">Add a printer by its address, or scan a range</label>
       <div class="row">
         <input id="ip" type="text" inputmode="url" autocomplete="off" autocapitalize="off"
-               spellcheck="false" placeholder="for example 192.168.1.81" required>
-        <button id="go" type="submit">Install</button>
+               spellcheck="false" placeholder="for example 192.168.1.81 or 192.168.1.0/24">
+        <button class="quiet" id="add" type="submit">Add</button>
       </div>
-      <p class="muted" style="margin:6px 0 0">The address is on the printer's configuration label,
-        and most printers show it on the front panel.</p>
+      <p class="muted" style="margin:6px 0 0">A printer's address is on its configuration label,
+        and most printers show it on the front panel. A range is checked address by address
+        for Zebra printers: a network, 192.168.1.0/24 or 192.168.1.0/255.255.255.0, or a range
+        in any of the four numbers, such as 192.168.1.10-50 or 192.168.1-2.1-254.</p>
+      <p class="muted" id="add-note" style="margin:6px 0 0" hidden></p>
       <label class="check"><input id="packed" type="checkbox">
         <span>Smaller page, for printers on a slow link<br>
           <span class="muted">About 170 KB instead of 440. Needs Chrome 86, Safari 16.4 or
@@ -155,29 +180,38 @@
         <span>Count this install<br>
           <span class="muted">Sends the printer's model, serial number and firmware, and this
             version, to the project's server; nothing else.</span></span></label>
+      <div class="actions" style="margin-top:16px">
+        <button id="go" type="submit">Install</button>
+      </div>
     </form>
 
-    <ol class="steps" id="steps" hidden></ol>
+    <div id="results"></div>
 
-    <div class="result ok" id="ok" hidden>
-      <p><strong>Installed.</strong> <span id="ok-note"></span></p>
-      <p><a class="open" id="open" href="#" target="_blank" rel="noopener">Open the console</a></p>
-    </div>
-    <div class="result bad" id="bad" hidden>
-      <p><strong>That did not work.</strong></p>
-      <p id="bad-text"></p>
-      <p class="muted" id="bad-detail"></p>
-      <div id="diag" hidden>
-        <p>The installer kept a log of what the printer said. Sending it to the developer helps
-          fix this for your printer. It holds the printer's model, serial number, address and
-          settings listing, with passwords and keys taken out.</p>
-        <div class="actions">
-          <button id="send-log" type="button">Send log to the developer</button>
-          <button class="quiet" id="save-log" type="button">Save log…</button>
+    <template id="target-template">
+      <div class="target">
+        <h2></h2>
+        <ol class="steps"></ol>
+        <div class="result ok" hidden>
+          <p><strong>Installed.</strong> <span class="ok-note"></span></p>
+          <p><a class="open" href="#" target="_blank" rel="noopener">Open the console</a></p>
         </div>
-        <p class="muted" id="diag-note"></p>
+        <div class="result bad" hidden>
+          <p><strong>That did not work.</strong></p>
+          <p class="bad-text"></p>
+          <p class="muted bad-detail"></p>
+          <div class="diag" hidden>
+            <p>The installer kept a log of what the printer said. Sending it to the developer helps
+              fix this for your printer. It holds the printer's model, serial number, address and
+              settings listing, with passwords and keys taken out.</p>
+            <div class="actions">
+              <button class="send-log" type="button">Send log to the developer</button>
+              <button class="quiet save-log" type="button">Save log…</button>
+            </div>
+            <p class="muted diag-note"></p>
+          </div>
+        </div>
       </div>
-    </div>
+    </template>
 
     <details id="details" hidden>
       <summary>Details</summary>
@@ -204,17 +238,180 @@
       body: body ? JSON.stringify(body) : undefined,
     });
 
+  // The printers listed, by address: { ip, model, name, firmware, checked, state }.
+  const printers = new Map();
+  let installing = false;
+  let stopped = false;
+
+  const ipKey = (ip) => {
+    const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(ip);
+    return m ? m.slice(1).reduce((n, p) => n * 256 + Number(p), 0) : Infinity;
+  };
+  const isRange = (text) => /^[\d.,/\s-]+$/.test(text) && /[,/-]/.test(text);
+  // As the list shows them: by address.
+  const sorted = () =>
+    [...printers.values()].sort((a, b) => ipKey(a.ip) - ipKey(b.ip) || a.ip.localeCompare(b.ip));
+  const selected = () => sorted().filter((p) => p.checked);
+  const store = (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {}
+  };
+
+  /** Add a printer to the list, or fill in what is known of one already there. */
+  function addPrinter(found, { check = false } = {}) {
+    const p = printers.get(found.ip) || { ip: found.ip, checked: false, state: '' };
+    for (const key of ['model', 'name', 'firmware']) if (found[key]) p[key] = found[key];
+    if (check) p.checked = true;
+    printers.set(p.ip, p);
+    drawPrinters();
+  }
+
+  function drawPrinters() {
+    const list = $('printers');
+    list.replaceChildren(
+      ...sorted().map((p) => {
+        const li = document.createElement('li');
+        li.dataset.ip = p.ip;
+        const label = document.createElement('label');
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = p.checked;
+        box.disabled = installing;
+        box.addEventListener('change', () => {
+          p.checked = box.checked;
+          drawGo();
+        });
+        const who = document.createElement('span');
+        who.className = 'who';
+        const model = document.createElement('strong');
+        model.textContent = p.model || p.ip;
+        const more = document.createElement('span');
+        more.className = 'muted';
+        more.textContent = ' ' + [p.model ? p.ip : '', p.name, p.firmware].filter(Boolean).join(' · ');
+        who.append(model, more);
+        label.append(box, who);
+        const state = document.createElement('span');
+        state.className = `state ${p.state || ''}`;
+        state.textContent =
+          { waiting: 'waiting', running: 'installing…', done: 'installed ✓', failed: 'failed ✗' }[
+            p.state
+          ] || '';
+        li.append(label, state);
+        return li;
+      }),
+    );
+    drawGo();
+  }
+
+  function drawGo() {
+    const n = selected().length;
+    $('go').textContent = n > 1 ? `Install on ${n} printers` : 'Install';
+  }
+
+  async function search() {
+    $('search').disabled = true;
+    $('search-note').textContent = 'Looking for printers…';
+    try {
+      const res = await post('/discover');
+      const { printers: found, error } = await res.json();
+      for (const p of found) addPrinter(p);
+      $('search-note').textContent = error
+        ? `Could not search the network (${error}). Add a printer by its address instead.`
+        : found.length
+          ? `${found.length} printer${found.length === 1 ? '' : 's'} answered. Tick the ones to install on.`
+          : 'No printers answered. Add yours by its address below, or scan its range: a printer on another network, or with discovery turned off, does not answer a search.';
+    } catch (err) {
+      $('search-note').textContent = `The installer is not answering: ${err.message}`;
+    } finally {
+      $('search').disabled = stopped;
+    }
+  }
+
+  /** What is typed in the address box, added: one address as it is, a range scanned. */
+  async function addTyped() {
+    const text = $('ip').value.trim();
+    if (!text) return true;
+    const note = $('add-note');
+    note.hidden = false;
+    if (!isRange(text)) {
+      addPrinter({ ip: text }, { check: true });
+      $('ip').value = '';
+      note.hidden = true;
+      return true;
+    }
+    $('add').disabled = $('go').disabled = true;
+    note.textContent = `Scanning ${text}…`;
+    try {
+      const res = await post('/scan', { range: text });
+      if (!res.ok) {
+        note.textContent = await res.text();
+        return false;
+      }
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = '';
+      let outcome = null;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += value;
+        let nl;
+        while ((nl = buffer.indexOf('\n')) !== -1) {
+          const event = JSON.parse(buffer.slice(0, nl));
+          buffer = buffer.slice(nl + 1);
+          if (event.type === 'progress') {
+            note.textContent =
+              event.phase === 'discovery'
+                ? `Scanning ${text}: asking ${event.done} of ${event.total} addresses…`
+                : `Scanning ${text}: checking the web pages of those that did not answer, ${event.done} of ${event.total}…`;
+          } else if (event.type === 'printer') {
+            addPrinter(event.printer, { check: true });
+          } else if (event.type === 'done') {
+            outcome = event;
+          } else if (event.type === 'error') {
+            note.textContent = `The scan failed: ${event.message}`;
+            return false;
+          }
+        }
+      }
+      if (!outcome) {
+        note.textContent = 'The scan stopped partway through.';
+        return false;
+      }
+      const n = outcome.printers.length;
+      note.textContent = n
+        ? `${text}: ${n} Zebra printer${n === 1 ? '' : 's'} in ${outcome.total} addresses, added and ticked.`
+        : `${text}: no Zebra printers in ${outcome.total} addresses.`;
+      store('range', text);
+      $('ip').value = '';
+      return true;
+    } catch (err) {
+      note.textContent = `The installer is not answering: ${err.message}`;
+      return false;
+    } finally {
+      $('add').disabled = $('go').disabled = stopped;
+    }
+  }
+
   try {
-    $('ip').value = localStorage.getItem('printer') || '';
+    // The printers installed on last time, ticked again.
+    const last = JSON.parse(localStorage.getItem('printers') || 'null');
+    const old = localStorage.getItem('printer');
+    for (const ip of Array.isArray(last) ? last : old ? [old] : []) {
+      if (typeof ip === 'string' && ip) addPrinter({ ip }, { check: true });
+    }
     $('packed').checked = localStorage.getItem('packed') === '1';
     $('telemetry').checked = localStorage.getItem('telemetry') !== '0';
   } catch {}
   $('ip').focus();
+  search();
+  $('search').addEventListener('click', search);
 
-  let stopped = false;
   function stop() {
     stopped = true;
     $('go').disabled = true;
+    $('add').disabled = true;
+    $('search').disabled = true;
     $('quit').disabled = true;
     $('gone').hidden = false;
   }
@@ -230,8 +427,7 @@
     stop();
   });
 
-  function drawSteps(states) {
-    const list = $('steps');
+  function drawSteps(list, states) {
     list.replaceChildren(
       ...STEPS.map((s) => {
         const li = document.createElement('li');
@@ -245,85 +441,80 @@
         return li;
       }),
     );
-    list.hidden = false;
   }
 
-  $('send-log').addEventListener('click', async () => {
-    $('send-log').disabled = true;
-    $('diag-note').textContent = 'Sending…';
-    try {
-      const res = await post('/log/send');
-      const outcome = res.ok ? await res.json() : { error: await res.text() };
-      if (outcome.reference) {
-        $('diag-note').textContent =
-          `Sent, thank you. If you ask about it, quote reference ${outcome.reference}.`;
-      } else {
-        $('send-log').disabled = false;
-        $('diag-note').textContent =
-          `It was not sent (${outcome.error}). Save it instead, and attach it to an issue on GitHub.`;
+  /** The Send and Save buttons under one failed install, for its own log. */
+  function wireDiag(box, deployId) {
+    const q = (cls) => box.querySelector(cls);
+    const note = q('.diag-note');
+    q('.send-log').addEventListener('click', async () => {
+      q('.send-log').disabled = true;
+      note.textContent = 'Sending…';
+      try {
+        const res = await post('/log/send', { deployId });
+        const outcome = res.ok ? await res.json() : { error: await res.text() };
+        if (outcome.reference) {
+          note.textContent = `Sent, thank you. If you ask about it, quote reference ${outcome.reference}.`;
+        } else {
+          q('.send-log').disabled = false;
+          note.textContent = `It was not sent (${outcome.error}). Save it instead, and attach it to an issue on GitHub.`;
+        }
+      } catch (err) {
+        q('.send-log').disabled = false;
+        note.textContent = `The installer is not answering: ${err.message}`;
       }
-    } catch (err) {
-      $('send-log').disabled = false;
-      $('diag-note').textContent = `The installer is not answering: ${err.message}`;
-    }
-  });
-  $('save-log').addEventListener('click', async () => {
-    try {
-      const res = await post('/log');
-      if (!res.ok) throw new Error(await res.text());
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(await res.blob());
-      a.download = `monochrome-unicorn-deploy-failed-${new Date().toISOString().slice(0, 10)}.log`;
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-    } catch (err) {
-      $('diag-note').textContent = `Could not save it: ${err.message}`;
-    }
-  });
+    });
+    q('.save-log').addEventListener('click', async () => {
+      try {
+        const res = await post('/log', { deployId });
+        if (!res.ok) throw new Error(await res.text());
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(await res.blob());
+        a.download = `monochrome-unicorn-deploy-failed-${new Date().toISOString().slice(0, 10)}.log`;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      } catch (err) {
+        note.textContent = `Could not save it: ${err.message}`;
+      }
+    });
+  }
 
-  $('form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (stopped) return;
-    const ip = $('ip').value.trim();
-    const packed = $('packed').checked;
-    const telemetry = $('telemetry').checked;
-    try {
-      localStorage.setItem('printer', ip);
-      localStorage.setItem('packed', packed ? '1' : '');
-      localStorage.setItem('telemetry', telemetry ? '1' : '0');
-    } catch {}
-
-    $('go').disabled = true;
-    $('ok').hidden = $('bad').hidden = true;
-    $('log').textContent = '';
-    $('details').hidden = false;
+  /** Install on one printer, drawn in its own section of the results; true if it worked. */
+  async function installOn(p, { packed, telemetry, of }) {
+    const section = $('target-template').content.firstElementChild.cloneNode(true);
+    section.dataset.ip = p.ip;
+    const q = (cls) => section.querySelector(cls);
+    q('h2').textContent =
+      (p.model ? `${p.model} at ${p.ip}` : p.ip) + (of ? ` (${of})` : '');
+    $('results').append(section);
     const states = {};
     let current = null;
-    drawSteps(states);
+    drawSteps(q('.steps'), states);
+    const log = $('log');
+    log.textContent += `${log.textContent ? '\n' : ''}== ${p.ip} ==\n`;
 
-    const fail = (message, detail, log) => {
+    const fail = (message, detail, diag) => {
       if (current) states[current] = 'failed';
-      drawSteps(states);
-      $('bad-text').textContent = message;
-      $('bad-detail').textContent = detail || '';
-      $('diag').hidden = !log;
-      $('send-log').disabled = false;
-      $('diag-note').textContent = log && log.path ? `Also saved as ${log.path}` : '';
-      $('bad').hidden = false;
+      drawSteps(q('.steps'), states);
+      q('.bad-text').textContent = message;
+      q('.bad-detail').textContent = detail || '';
+      q('.diag').hidden = !diag;
+      if (diag) {
+        wireDiag(q('.diag'), diag.deployId);
+        q('.diag-note').textContent = diag.path ? `Also saved as ${diag.path}` : '';
+      }
+      q('.result.bad').hidden = false;
       $('details').open = true;
+      return false;
     };
 
     try {
-      const res = await post('/deploy', { ip, packed, telemetry });
-      if (!res.ok) {
-        fail(await res.text());
-        return;
-      }
+      const res = await post('/deploy', { ip: p.ip, packed, telemetry });
+      if (!res.ok) return fail(await res.text());
       const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
-      let ended = false;
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -336,34 +527,70 @@
             if (current) states[current] = 'done';
             current = event.id;
             states[current] = 'running';
-            drawSteps(states);
+            drawSteps(q('.steps'), states);
           } else if (event.type === 'log') {
-            const log = $('log');
             log.textContent += event.text;
             log.scrollTop = log.scrollHeight;
           } else if (event.type === 'done') {
-            ended = true;
             if (current) states[current] = 'done';
             current = null;
-            drawSteps(states);
-            $('ok-note').textContent =
+            drawSteps(q('.steps'), states);
+            q('.ok-note').textContent =
               event.served && event.served !== event.version
                 ? `The printer still shows version ${event.served}; reload the console once it opens.`
                 : `Version ${event.version} is on the printer.`;
-            $('open').href = event.url;
-            $('open').textContent = `Open the console at ${event.url}`;
-            $('ok').hidden = false;
+            q('.open').href = event.url;
+            q('.open').textContent = `Open the console at ${event.url}`;
+            q('.result.ok').hidden = false;
+            return true;
           } else if (event.type === 'error') {
-            ended = true;
-            fail(event.message, event.detail, event.log);
+            return fail(event.message, event.detail, event.log);
           }
         }
       }
-      if (!ended) fail('The installer stopped partway through.');
+      return fail('The installer stopped partway through.');
     } catch (err) {
-      fail('The installer is not answering. If you closed its window, run it again.', err.message);
+      return fail('The installer is not answering. If you closed its window, run it again.', err.message);
+    }
+  }
+
+  $('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (stopped || installing) return;
+    const added = await addTyped();
+    // Enter in the address box, or Add: only add.
+    if (e.submitter?.id !== 'go' || !added) return;
+    const targets = selected();
+    if (targets.length === 0) {
+      $('add-note').hidden = false;
+      $('add-note').textContent = 'Tick a printer to install on, or type its address.';
+      return;
+    }
+    const packed = $('packed').checked;
+    const telemetry = $('telemetry').checked;
+    store('printers', JSON.stringify(targets.map((p) => p.ip)));
+    store('packed', packed ? '1' : '');
+    store('telemetry', telemetry ? '1' : '0');
+
+    installing = true;
+    $('go').disabled = $('add').disabled = $('search').disabled = true;
+    $('results').replaceChildren();
+    $('log').textContent = '';
+    $('details').hidden = false;
+    for (const p of printers.values()) p.state = targets.includes(p) ? 'waiting' : '';
+    drawPrinters();
+    try {
+      for (const [i, p] of targets.entries()) {
+        p.state = 'running';
+        drawPrinters();
+        const of = targets.length > 1 ? `${i + 1} of ${targets.length}` : '';
+        p.state = (await installOn(p, { packed, telemetry, of })) ? 'done' : 'failed';
+        drawPrinters();
+      }
     } finally {
-      $('go').disabled = stopped;
+      installing = false;
+      drawPrinters();
+      $('go').disabled = $('add').disabled = $('search').disabled = stopped;
     }
   });
 </script>

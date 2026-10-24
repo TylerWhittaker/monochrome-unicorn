@@ -35,11 +35,17 @@
  * installer's own host, against DNS rebinding.
  *
  *   GET  /?t=<token>   the page (gui.html)
+ *   POST /discover     the printers that answer Zebra's discovery
+ *                      broadcast: { printers }
+ *   POST /scan         { range }: the Zebra printers in it, as NDJSON
+ *                      events -- progress, each printer, then done
  *   POST /deploy       { ip, packed, telemetry }: the deploy, as NDJSON
- *                      events; telemetry is on unless it is false
- *   POST /log          the last failed deploy's diagnostic log, as text
- *   POST /log/send     send it to the telemetry server: { reference } or
- *                      { error }
+ *                      events; telemetry is on unless it is false. One
+ *                      at a time: the page installs on several in turn
+ *   POST /log          { deployId }: a failed deploy's diagnostic log, as
+ *                      text (the last one's, without a deployId)
+ *   POST /log/send     { deployId }: send it to the telemetry server:
+ *                      { reference } or { error }
  *   POST /ping         the page is still open
  *   POST /quit         the page's Quit button
  */
@@ -52,6 +58,11 @@ import {
   writeDiagnosticLog,
   STEPS,
 } from '../deploy.mjs';
+import {
+  discoverPrinters as realDiscover,
+  scanRange as realScan,
+  parseRange,
+} from '../discover.mjs';
 
 /** A printer address: an IPv4 address or a host name, nothing that needs quoting. */
 export function validAddress(ip) {
@@ -84,6 +95,8 @@ export function explainError(err, ip) {
  *   page     gui.html
  *   deploy   tools/deploy.mjs deploy(), replaced in tests
  *   sendLog  tools/deploy.mjs sendDiagnosticLog(), likewise
+ *   discover, scan   tools/discover.mjs discoverPrinters() and
+ *            scanRange(), likewise
  *   logDir   where a failed deploy's diagnostic log is written; null
  *            keeps it in memory only
  *   idleMs   quit this long after the page last pinged
@@ -97,15 +110,19 @@ export async function startGui({
   version,
   deploy = realDeploy,
   sendLog = realSendLog,
+  discover = realDiscover,
+  scan = realScan,
   logDir = null,
   port = 0,
   idleMs = 5 * 60 * 1000,
 }) {
   const token = randomBytes(16).toString('hex');
   let busy = false;
+  let scanning = false;
   let lastPing = Date.now();
-  // The last failed deploy's diagnostic log: { text, deployId }.
-  let failedLog = null;
+  // Failed deploys' diagnostic logs, by deploy id, the latest last; the
+  // page installs on several printers in a row, and each can fail.
+  const failedLogs = new Map();
   let finish;
   const closed = new Promise((resolveClosed) => (finish = resolveClosed));
 
@@ -158,7 +175,58 @@ export async function startGui({
       shutdown();
       return;
     }
+    if (url.pathname === '/discover') {
+      let printers = [];
+      let error;
+      try {
+        printers = await discover();
+      } catch (err) {
+        error = err.message;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(error ? { printers, error } : { printers }));
+      return;
+    }
+    if (url.pathname === '/scan') {
+      let addresses;
+      try {
+        addresses = parseRange(JSON.parse((await readBody(req)) || '{}').range || '');
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' });
+        res.end(err instanceof SyntaxError ? 'That is not a range.' : err.message);
+        return;
+      }
+      if (scanning) {
+        res.writeHead(409, { 'Content-Type': 'text/plain' });
+        res.end('A scan is already running.');
+        return;
+      }
+      scanning = true;
+      res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' });
+      const send = (event) => res.write(JSON.stringify(event) + '\n');
+      try {
+        const printers = await scan(addresses, {
+          onProgress: (p) => send({ type: 'progress', ...p }),
+          onPrinter: (printer) => send({ type: 'printer', printer }),
+        });
+        send({ type: 'done', total: addresses.length, printers });
+      } catch (err) {
+        send({ type: 'error', message: err.message });
+      } finally {
+        scanning = false;
+        lastPing = Date.now();
+        res.end();
+      }
+      return;
+    }
     if (url.pathname === '/log' || url.pathname === '/log/send') {
+      let wanted = '';
+      try {
+        wanted = String(JSON.parse((await readBody(req)) || '{}').deployId || '');
+      } catch {
+        // No body: the latest.
+      }
+      const failedLog = wanted ? failedLogs.get(wanted) : [...failedLogs.values()].at(-1);
       if (!failedLog) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('There is no diagnostic log: no install has failed.');
@@ -205,7 +273,6 @@ export async function startGui({
     }
 
     busy = true;
-    failedLog = null;
     res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' });
     const send = (event) => res.write(JSON.stringify(event) + '\n');
     try {
@@ -225,8 +292,11 @@ export async function startGui({
     } catch (err) {
       let log = null;
       if (err.diagnosticLog) {
-        failedLog = { text: err.diagnosticLog, deployId: err.deployId };
-        log = { bytes: Buffer.byteLength(err.diagnosticLog), path: null };
+        const deployId = err.deployId || randomBytes(8).toString('hex');
+        failedLogs.set(deployId, { text: err.diagnosticLog, deployId });
+        // Enough for a page's worth of failures, not a leak for a long session.
+        if (failedLogs.size > 50) failedLogs.delete(failedLogs.keys().next().value);
+        log = { bytes: Buffer.byteLength(err.diagnosticLog), path: null, deployId };
         try {
           if (logDir) log.path = writeDiagnosticLog(err.diagnosticLog, logDir);
         } catch {

@@ -29,7 +29,8 @@
  *
  *   monochrome-unicorn                      open the installer in the browser
  *   monochrome-unicorn <printer-ip> [...]   install from the command line,
- *                                           as ./deploy.sh does
+ *                                           as ./deploy.sh does: several
+ *                                           addresses, or ranges, too
  *
  * Double-clicked, there are no arguments, so a person gets the page; a
  * script or a terminal passes an address and gets the CLI.
@@ -47,8 +48,18 @@ const HELP = `Monochrome Unicorn installer, version ${assets.staged.version}
 
   monochrome-unicorn                      open the installer in your browser
   monochrome-unicorn <printer-ip> [opts]  install from the command line
+  monochrome-unicorn --discover           list the printers on this network
 
 ${USAGE}
+
+  Several addresses are installed on in turn. A range is scanned for
+  Zebra printers, which are listed and then installed on once you say so:
+  192.168.1.0/24 (or /255.255.255.0), 192.168.1.10-50, a range in any of
+  the four numbers (192.168.1-2.1-254), or a list (192.168.1.5,7).
+
+    --discover    list the Zebra printers that answer a discovery
+                  broadcast (UDP port 4201) on this computer's networks
+    --yes         install on what a scan found without asking
 
     --packed      gzip the page, about 170 KB instead of 440, for a slow
                   link; the browser then needs DecompressionStream

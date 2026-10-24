@@ -26,7 +26,14 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
-import { parseArgs, USAGE, STEPS, telemetryFromPage, sendTelemetry } from '../tools/deploy.mjs';
+import {
+  parseArgs,
+  runCli,
+  USAGE,
+  STEPS,
+  telemetryFromPage,
+  sendTelemetry,
+} from '../tools/deploy.mjs';
 import { assemble, STAGED_PARTS } from '../tools/assemble.mjs';
 import { startGui, validAddress, explainError } from '../tools/installer/server.mjs';
 import {
@@ -55,6 +62,7 @@ async function check(name, fn) {
 await check('the deploy command line keeps deploy.sh options', () => {
   assert.deepEqual(parseArgs(['192.168.1.81']), {
     ip: '192.168.1.81',
+    targets: ['192.168.1.81'],
     fetchSchema: true,
     upload: true,
     clean: true,
@@ -63,6 +71,8 @@ await check('the deploy command line keeps deploy.sh options', () => {
     telemetry: true,
     sendLog: false,
     sendLogFile: null,
+    discover: false,
+    yes: false,
     help: false,
   });
   const o = parseArgs(['--packed', '10.0.0.5', '--no-clean', '--allcv', '--unpacked', '--clean']);
@@ -84,6 +94,62 @@ await check('the deploy command line keeps deploy.sh options', () => {
   } finally {
     delete process.env.MONOCHROME_UNICORN_NO_TELEMETRY;
   }
+});
+
+await check('the command line takes several printers, ranges, --discover and --yes', () => {
+  const o = parseArgs(['10.0.0.5', '10.0.0.6', '192.168.1.0/24', '--yes']);
+  assert.deepEqual(o.targets, ['10.0.0.5', '10.0.0.6', '192.168.1.0/24']);
+  assert.equal(o.ip, '10.0.0.5');
+  assert.equal(o.yes, true);
+  assert.equal(parseArgs(['--discover']).discover, true, 'needs no printer');
+  assert.throws(() => parseArgs(['10.0.0.5', '10.0.0.6', '--no-schema']), /takes one printer/);
+  assert.throws(() => parseArgs(['10.0.0.1-5', '--no-schema']), /takes one printer/);
+});
+
+/** runCli with its output kept rather than printed. */
+async function quietCli(argv, context) {
+  const out = [];
+  const saved = { log: console.log, error: console.error, write: process.stdout.write };
+  console.log = console.error = (...a) => out.push(a.join(' ') + '\n');
+  process.stdout.write = (text) => out.push(String(text)) && true;
+  try {
+    const code = await runCli(argv, context);
+    return { code, out: out.join('') };
+  } finally {
+    Object.assign(console, { log: saved.log, error: saved.error });
+    process.stdout.write = saved.write;
+  }
+}
+
+await check(
+  'several printers are installed on in turn, and any failure fails the run',
+  async () => {
+    const asked = [];
+    const { code, out } = await quietCli(['10.0.0.5', '10.0.0.6', '10.0.0.5', '--no-telemetry'], {
+      deploy: async (opts) => {
+        asked.push(opts.ip);
+        if (opts.ip === '10.0.0.6') throw new Error('connect ECONNREFUSED 10.0.0.6:9100');
+        return { url: `http://${opts.ip}/` };
+      },
+    });
+    assert.deepEqual(asked, ['10.0.0.5', '10.0.0.6'], 'each once, in order');
+    assert.equal(code, 1);
+    assert.match(out, /== 10\.0\.0\.5 \(1 of 2\) ==/);
+    assert.match(out, /Open http:\/\/10\.0\.0\.5\//);
+    assert.match(out, /Installed on 1 of 2 printers\.\nFailed: 10\.0\.0\.6/);
+
+    const one = await quietCli(['10.0.0.5'], { deploy: async () => ({ url: 'http://10.0.0.5/' }) });
+    assert.equal(one.code, 0);
+    assert.doesNotMatch(one.out, /==|Installed on/, 'one printer reads as it always has');
+  },
+);
+
+await check('a range that does not parse is a usage error, before anything is sent', async () => {
+  const { code, out } = await quietCli(['10.0.0.300-310'], {
+    deploy: async () => assert.fail('nothing is installed'),
+  });
+  assert.equal(code, 2);
+  assert.match(out, /"300-310" in the fourth number/);
 });
 
 await check('telemetry reports what the served page says, and only that', () => {
@@ -381,6 +447,93 @@ await check("a failed deploy's log can be saved and sent, with the token", async
   } finally {
     gui.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check("each failed install's log is kept, and asked for by its deploy id", async () => {
+  let n = 0;
+  const sent = [];
+  const gui = await fakeGui(
+    async () => {
+      n++;
+      throw Object.assign(new Error('Nothing in the allcv reply looked like a setting'), {
+        diagnosticLog: `log ${n}\n`,
+        deployId: `${n}`.repeat(16),
+      });
+    },
+    {
+      sendLog: async (text, fields) => {
+        sent.push(text);
+        return { reference: fields.deployId };
+      },
+    },
+  );
+  try {
+    const fail = async (ip) =>
+      (await (await gui.post('/deploy', { ip })).text()).trim().split('\n').map(JSON.parse).at(-1);
+    assert.equal((await fail('10.0.0.1')).log.deployId, '1'.repeat(16));
+    assert.equal((await fail('10.0.0.2')).log.deployId, '2'.repeat(16));
+    assert.equal(await (await gui.post('/log', { deployId: '1'.repeat(16) })).text(), 'log 1\n');
+    assert.equal(await (await gui.post('/log')).text(), 'log 2\n', 'the latest, by default');
+    assert.equal((await gui.post('/log', { deployId: 'f'.repeat(16) })).status, 404);
+    const res = await gui.post('/log/send', { deployId: '1'.repeat(16) });
+    assert.deepEqual(await res.json(), { reference: '1'.repeat(16) });
+    assert.deepEqual(sent, ['log 1\n']);
+  } finally {
+    gui.close();
+  }
+});
+
+await check('the page asks the installer to search the network, and to scan a range', async () => {
+  let scanned = null;
+  const gui = await fakeGui(undefined, {
+    discover: async () => [{ ip: '10.0.0.7', model: 'ZD620', via: 'discovery' }],
+    scan: async (addresses, { onProgress, onPrinter }) => {
+      scanned = addresses;
+      onProgress({ phase: 'discovery', done: addresses.length, total: addresses.length });
+      const printer = { ip: addresses[1], model: 'ZD500R', via: 'discovery' };
+      onPrinter(printer);
+      return [printer];
+    },
+  });
+  try {
+    assert.deepEqual(await (await gui.post('/discover')).json(), {
+      printers: [{ ip: '10.0.0.7', model: 'ZD620', via: 'discovery' }],
+    });
+    const res = await gui.post('/scan', { range: '10.0.0.1-3' });
+    assert.equal(res.headers.get('content-type'), 'application/x-ndjson');
+    const events = (await res.text()).trim().split('\n').map(JSON.parse);
+    assert.deepEqual(scanned, ['10.0.0.1', '10.0.0.2', '10.0.0.3']);
+    assert.deepEqual(
+      events.map((e) => e.type),
+      ['progress', 'printer', 'done'],
+    );
+    assert.equal(events[1].printer.ip, '10.0.0.2');
+    assert.equal(events[2].total, 3);
+
+    const bad = await gui.post('/scan', { range: '10.0.0.1-300' });
+    assert.equal(bad.status, 400);
+    assert.match(await bad.text(), /"1-300" in the fourth number/);
+    const noToken = await fetch(gui.base + '/discover', { method: 'POST' });
+    assert.equal(noToken.status, 404);
+  } finally {
+    gui.close();
+  }
+});
+
+await check('a search that cannot be made says why, rather than failing', async () => {
+  const gui = await fakeGui(undefined, {
+    discover: async () => {
+      throw new Error('bind EACCES');
+    },
+  });
+  try {
+    assert.deepEqual(await (await gui.post('/discover')).json(), {
+      printers: [],
+      error: 'bind EACCES',
+    });
+  } finally {
+    gui.close();
   }
 });
 

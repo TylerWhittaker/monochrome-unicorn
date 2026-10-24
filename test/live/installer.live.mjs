@@ -37,7 +37,7 @@ import { createServer } from 'node:http';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { http } from './lib/printer.mjs';
+import { http, getvar } from './lib/printer.mjs';
 import { skip } from './lib/harness.mjs';
 import { hostTarget, binaryName, assetName } from '../../tools/installer/package.mjs';
 import { readVersion } from '../../tools/version.mjs';
@@ -213,6 +213,39 @@ export default function register(s, ctx) {
   );
 
   s.test(
+    'from the command line, --discover lists the printer',
+    async () => {
+      if (!bin || !existsSync(bin)) skip('no installer was built');
+      const model = (await getvar(cfg.ip, 'device.product_name')).trim();
+      const { code, out } = await runInstaller(bin, ['--discover']);
+      assert.equal(code, 0, out);
+      const line = out.split('\n').find((l) => l.trim().startsWith(`${cfg.ip} `));
+      assert.ok(line, `the printer is listed:\n${out}`);
+      assert.ok(line.includes(model), `as a ${model}: ${line}`);
+    },
+    { timeout: 60000 },
+  );
+
+  s.test(
+    'from the command line, a range is scanned, and nothing installed without a yes',
+    async () => {
+      if (!bin || !existsSync(bin)) skip('no installer was built');
+      const before = await served(cfg.ip);
+      const last = Number(cfg.ip.split('.')[3]);
+      const range = `${cfg.ip.split('.').slice(0, 3).join('.')}.${Math.max(1, last - 2)}-${Math.min(254, last + 2)}`;
+      const { code, out } = await runInstaller(bin, [range]);
+      assert.equal(code, 2, out);
+      assert.ok(
+        out.split('\n').some((l) => l.trim().startsWith(`${cfg.ip} `)),
+        `the printer was found:\n${out}`,
+      );
+      assert.match(out, /without being asked, add --yes/);
+      assert.equal((await served(cfg.ip)).stamp, before.stamp, 'nothing was installed');
+    },
+    { timeout: 60000 },
+  );
+
+  s.test(
     'a failed install from the command line writes its diagnostic log, and sends it if told',
     async () => {
       if (!bin || !existsSync(bin)) skip('no installer was built');
@@ -273,10 +306,17 @@ export default function register(s, ctx) {
         await page.goto(await gui.url);
         await page.locator('#ip').fill(cfg.ip);
         await page.locator('#go').click();
-        await page.locator('#ok').waitFor({ timeout: 240000 });
-        assert.equal(await page.locator('#open').getAttribute('href'), `http://${cfg.ip}/`);
-        assert.match(await page.locator('#ok-note').textContent(), new RegExp(version));
-        assert.equal(await page.locator('#steps li.done').count(), 5, 'every step ticked');
+        const target = page.locator(`.target[data-ip="${cfg.ip}"]`);
+        await target.locator('.result.ok').waitFor({ timeout: 240000 });
+        assert.equal(await target.locator('.open').getAttribute('href'), `http://${cfg.ip}/`);
+        assert.match(await target.locator('.ok-note').textContent(), new RegExp(version));
+        assert.equal(await target.locator('.steps li.done').count(), 5, 'every step ticked');
+        // Printers a search found are listed, not ticked: only this one was installed on.
+        assert.equal(await page.locator('.target').count(), 1);
+        assert.match(
+          await page.locator(`#printers li[data-ip="${cfg.ip}"] .state`).textContent(),
+          /installed/,
+        );
       } finally {
         await context.close();
       }
@@ -296,9 +336,9 @@ export default function register(s, ctx) {
       // Nothing on this computer listens on 9100.
       await page.locator('#ip').fill('127.0.0.1');
       await page.locator('#go').click();
-      await page.locator('#bad').waitFor({ timeout: 60000 });
-      assert.match(await page.locator('#bad-text').textContent(), /refused port 9100/);
-      assert.equal(await page.locator('#steps li.failed').count(), 1);
+      await page.locator('.result.bad').waitFor({ timeout: 60000 });
+      assert.match(await page.locator('.bad-text').textContent(), /refused port 9100/);
+      assert.equal(await page.locator('.steps li.failed').count(), 1);
     } finally {
       await context.close();
     }
@@ -312,28 +352,108 @@ export default function register(s, ctx) {
       await page.goto(await gui.url);
       await page.locator('#ip').fill('127.0.0.1');
       await page.locator('#go').click();
-      await page.locator('#diag').waitFor({ timeout: 60000 });
-      assert.match(await page.locator('#diag-note').textContent(), /Also saved as .*\.log/);
+      await page.locator('.diag').waitFor({ timeout: 60000 });
+      assert.match(await page.locator('.diag-note').textContent(), /Also saved as .*\.log/);
 
       const [download] = await Promise.all([
         page.waitForEvent('download'),
-        page.locator('#save-log').click(),
+        page.locator('.save-log').click(),
       ]);
       const saved = readFileSync(await download.path(), 'utf8');
       assert.match(saved, /^Monochrome Unicorn: diagnostic log of a failed deploy/);
       assert.match(saved, /^failed at step: schema$/m);
 
       const before = telemetry.logs.length;
-      await page.locator('#send-log').click();
-      await page.locator('#diag-note', { hasText: 'Sent, thank you' }).waitFor({ timeout: 20000 });
+      await page.locator('.send-log').click();
+      await page.locator('.diag-note', { hasText: 'Sent, thank you' }).waitFor({ timeout: 20000 });
       assert.equal(telemetry.logs.length, before + 1);
       const sent = telemetry.logs.at(-1);
       assert.equal(sent.log, saved, 'what was sent is what was saved');
-      assert.match(await page.locator('#diag-note').textContent(), new RegExp(sent.deploy_id));
+      assert.match(await page.locator('.diag-note').textContent(), new RegExp(sent.deploy_id));
     } finally {
       await context.close();
     }
   });
+
+  s.test('its page lists the printers that answer a search, unticked', async () => {
+    if (!gui) skip('the page did not start');
+    const model = (await getvar(cfg.ip, 'device.product_name')).trim();
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto(await gui.url);
+      const row = page.locator(`#printers li[data-ip="${cfg.ip}"]`);
+      await row.waitFor({ timeout: 15000 });
+      assert.match(await row.textContent(), new RegExp(model));
+      assert.equal(await row.locator('input[type=checkbox]').isChecked(), false);
+      assert.match(await page.locator('#search-note').textContent(), /answered/);
+    } finally {
+      await context.close();
+    }
+  });
+
+  s.test('its page scans a range typed in, and ticks the printers it finds', async () => {
+    if (!gui) skip('the page did not start');
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto(await gui.url);
+      // A range of one: the printer's own address, as a range.
+      const last = cfg.ip.split('.')[3];
+      await page.locator('#ip').fill(`${cfg.ip}-${last}`);
+      await page.locator('#add').click();
+      await page
+        .locator('#add-note', { hasText: /Zebra printers? in 1 addresses/ })
+        .waitFor({ timeout: 30000 });
+      const row = page.locator(`#printers li[data-ip="${cfg.ip}"]`);
+      assert.equal(await row.locator('input[type=checkbox]').isChecked(), true);
+      assert.equal(await page.locator('#ip').inputValue(), '', 'the box is cleared');
+      assert.equal(await page.locator('.target').count(), 0, 'Add does not install');
+    } finally {
+      await context.close();
+    }
+  });
+
+  s.test(
+    'its page installs on each printer ticked, one after another',
+    async () => {
+      if (!gui) skip('the page did not start');
+      const before = await served(cfg.ip);
+      const context = await browser.newContext();
+      try {
+        const page = await context.newPage();
+        await page.goto(await gui.url);
+        // The printer, and an address with no printer: one works, one fails.
+        for (const ip of [cfg.ip, '127.0.0.1']) {
+          await page.locator('#ip').fill(ip);
+          await page.locator('#add').click();
+        }
+        assert.equal(await page.locator('#go').textContent(), 'Install on 2 printers');
+        await page.locator('#go').click();
+        // In order of address, so the one with no printer goes first.
+        await page
+          .locator(`#printers li[data-ip="${cfg.ip}"] .state`, { hasText: 'installed' })
+          .waitFor({ timeout: 240000 });
+        const ips = await page
+          .locator('.target')
+          .evaluateAll((els) => els.map((e) => e.dataset.ip));
+        assert.deepEqual(ips, ['127.0.0.1', cfg.ip]);
+        const ok = page.locator(`.target[data-ip="${cfg.ip}"]`);
+        assert.equal(await ok.locator('.result.ok').isVisible(), true);
+        const bad = page.locator('.target[data-ip="127.0.0.1"]');
+        assert.match(await bad.locator('.bad-text').textContent(), /refused port 9100/);
+        assert.match(
+          await page.locator('#printers li[data-ip="127.0.0.1"] .state').textContent(),
+          /failed/,
+        );
+      } finally {
+        await context.close();
+      }
+      const after = await served(cfg.ip);
+      assert.ok(after.stamp > before.stamp, `a new build: ${before.stamp} -> ${after.stamp}`);
+    },
+    { timeout: 300000 },
+  );
 
   s.test('its page refuses requests without the installer token', async () => {
     if (!gui) skip('the page did not start');

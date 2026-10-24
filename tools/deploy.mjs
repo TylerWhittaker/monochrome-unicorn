@@ -24,6 +24,15 @@
  *
  *   node tools/deploy.mjs <printer-ip> [options]      (or ./deploy.sh)
  *
+ *     Give several addresses to install on each in turn, or a range to
+ *     scan for Zebra printers and install on those it finds:
+ *     192.168.1.0/24 (or /255.255.255.0), 192.168.1.10-50, a range in any
+ *     of the four numbers (192.168.1-2.1-254), or a list (192.168.1.5,7).
+ *     A scan lists what it found and asks before installing
+ *
+ *     --discover    list the Zebra printers on this computer's networks
+ *                   (Zebra's discovery broadcast, UDP port 4201), and stop
+ *     --yes         install on what a range scan found without asking
  *     --no-schema   reuse dist/sgd-schema.json instead of re-reading the
  *                   printer's SGD catalogue (faster; use when you know the
  *                   target printer matches the captured one)
@@ -70,9 +79,11 @@ import { startTrace, stopTrace, trace, formatTrace, capText } from './diag.mjs';
 import { fetchSchema, writeSchema, readFromPrinter, identifyPrinter } from './fetch-schema.mjs';
 import { assemble } from './assemble.mjs';
 import { sendRaw, uploadFile, deletePayload } from './upload.mjs';
+import { discoverPrinters, scanRange, parseRange, isRange } from './discover.mjs';
 
 export const USAGE =
-  'usage: deploy <printer-ip> [--no-schema] [--no-upload] [--no-clean] [--packed] [--allcv|--allconfig] [--no-telemetry] [--send-log]\n' +
+  'usage: deploy <printer-ip|range>... [--yes] [--no-schema] [--no-upload] [--no-clean] [--packed] [--allcv|--allconfig] [--no-telemetry] [--send-log]\n' +
+  '       deploy --discover\n' +
   '       deploy --send-log-file <file>';
 
 /** Where a deploy is reported; see sendTelemetry(). */
@@ -109,6 +120,7 @@ export const STEPS = [
 export function parseArgs(argv) {
   const opts = {
     ip: '',
+    targets: [],
     fetchSchema: true,
     upload: true,
     clean: true,
@@ -117,6 +129,8 @@ export function parseArgs(argv) {
     telemetry: !process.env.MONOCHROME_UNICORN_NO_TELEMETRY,
     sendLog: false,
     sendLogFile: null,
+    discover: false,
+    yes: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -131,15 +145,22 @@ export function parseArgs(argv) {
     else if (arg === '--allconfig') opts.source = 'allconfig';
     else if (arg === '--no-telemetry') opts.telemetry = false;
     else if (arg === '--send-log') opts.sendLog = true;
+    else if (arg === '--discover') opts.discover = true;
+    else if (arg === '--yes' || arg === '-y') opts.yes = true;
     else if (arg === '--send-log-file') {
       opts.sendLogFile = argv[++i];
       if (!opts.sendLogFile) throw new Error('--send-log-file needs the log to send');
     } else if (arg === '-h' || arg === '--help') opts.help = true;
     else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
-    else opts.ip = arg;
+    else opts.targets.push(arg);
   }
-  if (!opts.help && !opts.sendLogFile && !opts.ip && (opts.upload || opts.fetchSchema)) {
+  opts.ip = opts.targets[0] || '';
+  const asked = opts.help || opts.sendLogFile || opts.discover;
+  if (!asked && !opts.ip && (opts.upload || opts.fetchSchema)) {
     throw new Error(USAGE);
+  }
+  if (!opts.fetchSchema && (opts.targets.length > 1 || opts.targets.some(isRange))) {
+    throw new Error("--no-schema reuses one printer's catalogue, so it takes one printer");
   }
   return opts;
 }
@@ -520,7 +541,11 @@ async function sendLogCli(text, fields) {
  * The CLI: print what deploy() reports, as deploy.sh always has.
  *
  *   logDir    where a failed deploy's diagnostic log is written
- *   command   how to run this again, for the hint to send a log later
+ *   command   how to run this again, for the hints it prints
+ *   deploy    deploy(), replaced in tests
+ *
+ * Several printers are installed on one after another, as deploy() is
+ * one at a time (diag.mjs keeps one trace); 1 if any of them failed.
  */
 export async function runCli(argv, context) {
   let opts;
@@ -544,18 +569,123 @@ export async function runCli(argv, context) {
     }
     return sendLogCli(text, logHeader(text));
   }
+  if (opts.discover) {
+    process.stdout.write('Looking for Zebra printers on this network ... ');
+    const found = await discoverPrinters().catch((err) => {
+      console.log(`could not ask (${err.message})`);
+      return null;
+    });
+    if (!found) return 1;
+    console.log(found.length ? `${found.length} found:\n` : 'none answered.');
+    for (const p of found) console.log(`  ${describePrinter(p)}`);
+    if (found.length) {
+      console.log(
+        `\nTo install on them: ${context.command || 'node tools/deploy.mjs'} ${found.map((p) => p.ip).join(' ')}`,
+      );
+    } else {
+      console.log(
+        'A printer on another network, or with discovery turned off, can be found by\n' +
+          'scanning its range instead, for example 192.168.1.0/24.',
+      );
+    }
+    return found.length ? 0 : 1;
+  }
+
+  let printers;
   try {
-    const { url } = await deploy(opts, {
+    printers = await resolveTargets(opts);
+  } catch (err) {
+    console.error(err.message);
+    return 2;
+  }
+  if (printers === null) return 2;
+  if (printers.length === 0) return 1;
+
+  const deployOne = context.deploy || deploy;
+  const failed = [];
+  for (const [i, ip] of printers.entries()) {
+    if (printers.length > 1) console.log(`\n== ${ip} (${i + 1} of ${printers.length}) ==\n`);
+    const ok = await deployCli({ ...opts, ip }, context, deployOne);
+    if (!ok) failed.push(ip);
+  }
+  if (printers.length > 1) {
+    const worked = printers.length - failed.length;
+    console.log(`\nInstalled on ${worked} of ${printers.length} printers.`);
+    if (failed.length) console.log(`Failed: ${failed.join(' ')}`);
+  }
+  return failed.length ? 1 : 0;
+}
+
+/** One printer as a line of the lists the CLI prints. */
+function describePrinter(p) {
+  return [p.ip.padEnd(15), (p.model || '(model not known)').padEnd(8), p.firmware, p.name]
+    .filter(Boolean)
+    .join('  ');
+}
+
+/**
+ * The addresses to install on: each one given, and what a scan of each
+ * range given found -- after asking, for a scan. Resolves to null when
+ * the answer was no, and throws for a range that does not parse.
+ */
+async function resolveTargets(opts) {
+  const printers = [];
+  let scanned = false;
+  for (const target of opts.targets.length ? opts.targets : ['']) {
+    if (!isRange(target)) {
+      if (!printers.includes(target)) printers.push(target);
+      continue;
+    }
+    scanned = true;
+    const addresses = parseRange(target);
+    const tty = process.stdout.isTTY;
+    let shown = '';
+    const progress = ({ phase, done, total }) => {
+      if (!tty) return;
+      const line =
+        phase === 'discovery'
+          ? `Asking ${total} addresses in ${target} ... ${done}`
+          : `Checking the web pages of ${total} that did not answer ... ${done}`;
+      if (line !== shown) process.stdout.write(`\r${line}\x1b[K`);
+      shown = line;
+    };
+    if (!tty)
+      console.log(`Scanning ${target} (${addresses.length} addresses) for Zebra printers ...`);
+    const found = await scanRange(addresses, { onProgress: progress });
+    if (tty) process.stdout.write('\r\x1b[K');
+    console.log(
+      found.length
+        ? `${target}: ${found.length} Zebra printer${found.length === 1 ? '' : 's'}`
+        : `${target}: no Zebra printers found`,
+    );
+    for (const p of found) {
+      console.log(`  ${describePrinter(p)}`);
+      if (!printers.includes(p.ip)) printers.push(p.ip);
+    }
+  }
+  if (!scanned || printers.length === 0 || opts.yes) return printers;
+  const many = printers.length === 1 ? 'this printer' : `these ${printers.length} printers`;
+  if (!(process.stdin.isTTY && process.stdout.isTTY)) {
+    console.error(`\nTo install on ${many} without being asked, add --yes.`);
+    return null;
+  }
+  return (await confirm(`\nInstall on ${many}? [y/N] `)) ? printers : null;
+}
+
+/** One deploy, printed as deploy.sh always has; true if it worked. */
+async function deployCli(opts, context, deployOne) {
+  try {
+    const { url } = await deployOne(opts, {
       ...context,
       emit: (event) => {
         if (event.type === 'log') process.stdout.write(event.text);
       },
     });
     if (url) console.log(`\nOpen ${url}`);
-    return 0;
+    return true;
   } catch (err) {
     console.error(`\ndeploy failed: ${err.message}`);
-    if (!err.diagnosticLog) return 1;
+    if (!err.diagnosticLog) return false;
     let path = null;
     if (context.logDir) {
       try {
@@ -579,7 +709,7 @@ export async function runCli(argv, context) {
         `To send it to the developer: ${context.command || 'node tools/deploy.mjs'} --send-log-file '${path}'`,
       );
     }
-    return 1;
+    return false;
   }
 }
 

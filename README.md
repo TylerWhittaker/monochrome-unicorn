@@ -135,11 +135,25 @@ installs, so for 0.50.1 the Windows one is
 | Linux, 64-bit PC | `-linux-x64` |
 | Linux, 64-bit ARM (a Raspberry Pi on 64-bit Raspberry Pi OS) | `-linux-arm64` |
 
-Open it. It opens a page in your browser: type the printer's address,
-press **Install**, and when it says so, **Open the console**. The
-installer stops when you press Quit or close its window. Run it again
-for another printer, and after a printer's firmware is updated -- each
+Open it. It opens a page in your browser that lists the Zebra printers
+it found on your network. Tick the ones to install on -- or type a
+printer's address, or a range of addresses to scan for printers, and
+press **Add** -- then press **Install**, and when it says so, **Open the
+console**. Several printers are installed on one after another, each
+with its own result. The installer stops when you press Quit or close
+its window. Run it again after a printer's firmware is updated -- each
 install reads that printer's own catalogue of settings.
+
+It finds printers with Zebra's discovery broadcast (UDP port 4201),
+which every Zebra print server answers but which does not cross a
+router, and which a printer can have turned off. For a printer on
+another network, give its range instead -- `192.168.2.0/24` or
+`192.168.2.0/255.255.255.0`, or a range in any of the four numbers,
+`192.168.2.10-50` or `192.168.1-2.1-254` -- and each address in it is
+asked directly, and one that does not answer has its home page checked
+for "Zebra". Nothing is sent to the port that prints until an address
+is known to be a Zebra: another make of network printer would print
+it. A scan takes up to 4096 addresses, and a /24 about 15 seconds.
 
 The installer is not signed, so the first time, your computer asks
 whether to trust it:
@@ -302,7 +316,20 @@ than checked in: a fresh clone has none until a deploy -- or
 `node tools/fetch-schema.mjs <printer-ip>` -- has fetched one, and
 `make clean` removes it with the rest of `dist/`.
 
+Give several addresses to install on each in turn, or a range to scan
+for Zebra printers, written as on the installer's page; a scan lists
+what it found and asks before installing (`--yes` not to ask). And
+`--discover` lists the printers on the network:
+
+```sh
+./deploy.sh --discover
+./deploy.sh 192.168.1.81 192.168.1.220
+./deploy.sh 192.168.1.0/24
 ```
+
+```
+--discover    list the Zebra printers that answer a discovery broadcast
+--yes         install on what a scan found without asking
 --no-schema   reuse dist/sgd-schema.json instead of re-reading the printer
 --no-upload   build only
 --no-clean    keep previously installed helper files (by default
@@ -534,6 +561,7 @@ install.ps1           and run it; the same for Windows PowerShell
 tools/
   deploy.mjs          catalogue, assemble, upload, verify: the deploy
   diag.mjs            the diagnostic log a failed deploy leaves
+  discover.mjs        find printers: Zebra's discovery, and range scans
   fetch-schema.mjs    read the SGD catalogue over port 9100
   build.mjs           stage: Tailwind, the bundler, prettier
   assemble.mjs        fit a staged build to one printer's catalogue
@@ -594,6 +622,7 @@ node test/filewrite.test.mjs # file.append requests, chunks and text encodings
 node test/syslog.test.mjs   # syslog lines, destinations and alerts
 node test/installer.test.mjs # the deploy's options, the installer's page server
 node test/diag.test.mjs     # a failed deploy's diagnostic log, and sending it
+node test/discover.test.mjs # discovery replies, ranges, and scanning one
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 make binaries               # the standalone installers, in dist/bin/
@@ -741,6 +770,11 @@ a 500).
   setting with no list of choices is tagged `read/write?` -- editable,
   and confirmed by the read-back. The Settings tab leaves out its
   "changed from default" filter, which could match nothing.
+- The installer's search is a broadcast, so it finds only the printers
+  on this computer's own networks: not past a router, not from WSL2's
+  own network (scan a range there instead), and not a printer with
+  discovery turned off (`ip.discovery.enable`). A range scan finds
+  those -- the last by its web page, if its web server is on.
 - The setting catalogue is captured at build time. Deploying a build to
   a different printer model may show settings it does not have; re-run
   `./deploy.sh <ip>` against that printer to recapture.

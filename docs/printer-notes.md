@@ -704,6 +704,35 @@ Measured on both printers, 2026-10-09:
   no `MED`), and `alerts.destinations` has no `MQTT`. The console offers
   what the printer lists.
 
+## Discovery
+
+Every Zebra print server answers Zebra's discovery question on UDP port
+4201: the six bytes `2e 2c 3a 01 00 00`, sent to an address or as a
+broadcast. Both bench printers answer within a few milliseconds, from
+port 4201 to the port the question came from, with 376 bytes (measured
+2026-10-24). A printer answers each copy it hears, so one that is sent
+both a broadcast and a direct question answers twice.
+
+| offset | bytes | ZD620 | ZD500R |
+|---|---|---|---|
+| 0 | 4 | `:,.` and 3, the packet's version | the same |
+| 4 | 8 | `V84` | `V74` |
+| 12 | 20 | `ZTC ZD620-300dpi ZPL` | `ZTC ZD500R-300dpi ZP` (cut at 20) |
+| 32 | 7 | `72221`, a date code | `72221` |
+| 39 | 10 | `V84.20.23Z` | `V74.20.23Z` |
+| 49 | 5 | `ZBR` | `ZBR` |
+| 54 | 6 | MAC `00:07:4d:a3:cc:a7` | `ac:3f:a4:06:f4:e0` |
+| 60 | 10 | `10734759` | `455904`: the print server's serial, not `device.unique_id` |
+| 72 | 12 | IP address, netmask, gateway | the same |
+| 84 | 25 | `ZEBRA-ZD620`, the system name | `ZEBRA-ZD500R` |
+
+Text ends at its first NUL. After the system name come about 260 bytes
+that are mostly zeros, with some binary near offset 170 that is not
+read. tools/discover.mjs takes the model from the product name, the
+part before `-300dpi`, and the address from where the reply came from,
+not offset 72. An older printer's packet may be laid out differently;
+there has been none to look at yet.
+
 ## Rendering
 
 `^PW` and `^LL` both take effect in the preview; width is rounded up to a
