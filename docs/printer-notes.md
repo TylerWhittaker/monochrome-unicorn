@@ -368,7 +368,7 @@ because of what the web server will hand over:
 |                              | ZPL | EPL | CPCL (.FMT/.LBL) |
 |---|---|---|---|
 | listed by `/dir`             | yes | yes | yes, but as type `---` |
-| real extension visible       | `/dir` | `/dir` | only `file.drive_listing` |
+| real extension visible       | `/dir` | `/dir` | `file.drive_listing`, or a `HEAD` per guess |
 | contents readable through `/zpl` | **yes** | no | no |
 | contents readable as `/NAME.EXT` | yes (tokenized) | yes | yes |
 | preview renders it           | **yes** | no | no |
@@ -382,8 +382,17 @@ Three findings worth keeping:
   wearing a misleading message; a `.ZPL` read in the same second works.
 - **`/dir` loses the extension of a type it does not know.** A file
   uploaded as `E:SHELF.FMT` is listed as `E:SHELF.---`. The real name
-  survives in `file.drive_listing`, which is the only way to find CPCL
-  formats from the browser -- and that read takes about nine seconds.
+  survives in `file.drive_listing` -- but that read takes about nine
+  seconds. Quicker, for a short list of likely extensions: the web server
+  serves `/NAME.EXT` and answers 404 for a wrong extension, and it takes
+  `HEAD`, so `HEAD /SHELF.FMT` says yes or no in 0.02-0.1 s without the
+  body (measured on the ZD500R and ZD620). Stored Formats finds CPCL
+  formats that way, trying each `---` name as `.FMT` and `.LBL`.
+- **A slow read cannot be called off.** Abandoning the request for
+  `file.drive_listing` 0.8 s in (the browser aborts the connection) left
+  the printer just as busy: a `/dir` sent straight after waited 10.5 s,
+  as long as the whole read. The preprocessor finishes the `#exec`
+  whether anyone is listening or not.
 - **`file.type` reads any file, but only over port 9100.** Setting it
   through `setvars.cgi` returns an empty body: the contents go to the
   port the command arrived on, and for HTTP that is nowhere. Reading it

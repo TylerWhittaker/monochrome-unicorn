@@ -720,6 +720,31 @@ async function fetchStoredBytes({ oname, otype }, { timeout = 60000 } = {}) {
 }
 
 /**
+ * Whether the printer serves E:NAME.EXT, without fetching it. A HEAD
+ * answers in a few hundredths of a second, 404 for a name that is not
+ * there -- which is how a file /dir lists as "---" has its real
+ * extension tried.
+ */
+export function storedFileExists({ oname, otype }, { timeout = 10000 } = {}) {
+  return printerTurn(async () => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    try {
+      const res = await fetch(`/${encodeURIComponent(`${oname}.${otype}`)}`, {
+        method: 'HEAD',
+        signal: ctrl.signal,
+        cache: 'no-store',
+      });
+      if (res.status === 404) return false;
+      if (res.ok) return true;
+      throw new Error(`HTTP ${res.status} for ${oname}.${otype}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+}
+
+/**
  * Undo the way the printer stores a ZPL format: it tokenizes the file,
  * writing ^ as 0x1E and , as 0x1F and dropping the line breaks. The
  * /zpl form hands back readable text, so this is only needed when a

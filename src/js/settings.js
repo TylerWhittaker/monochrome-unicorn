@@ -850,7 +850,12 @@ async function refresh() {
 
   // Now the printer is free, read the drive listing for the modes that
   // need it: nine seconds spent here is nine seconds they do not wait.
-  // A copy that is still recent is shown rather than re-read.
+  // A copy that is still recent is shown rather than re-read. Not once
+  // the user has moved to another tab, though: there the nine seconds
+  // would hold up whatever they do next, and a read once sent cannot be
+  // called off -- the printer finishes it whether anyone waits or not.
+  // File System reads the listing itself when it is opened.
+  if (listNode && listNode.closest('[data-panel]')?.hidden) return;
   refreshDriveListing()
     .then(paintDriveListing)
     .catch(() => {});

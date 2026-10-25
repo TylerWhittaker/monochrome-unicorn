@@ -30,21 +30,19 @@
  *   EPL   the web server will not hand over the file, so the fields are
  *         described by hand (or by pasting the source); print only.
  *   CPCL  same, and /dir does not even report the real extension, so
- *         these come from the shared drive listing (drives.js), read in
- *         the background.
+ *         each file it lists as "---" has .FMT and .LBL tried in turn.
  */
 
 import { el, toast, confirmPrint, debounce, formatBytes, replaceChildren, modal } from './ui.js';
 import { printer } from './state.js';
-import { listFiles, readScript, sendControl, fetchStoredFile } from './printer.js';
-import { decodeForEditing } from './filewrite.js';
 import {
-  cachedDriveListing,
-  driveListingError,
-  driveListingLoading,
-  onDriveListing,
-  refreshDriveListing,
-} from './drives.js';
+  listFiles,
+  readScript,
+  sendControl,
+  fetchStoredFile,
+  storedFileExists,
+} from './printer.js';
+import { decodeForEditing } from './filewrite.js';
 import {
   LANGUAGES,
   FORMAT_OTYPES,
@@ -72,12 +70,18 @@ import { createStore } from './store.js';
  *   copies  the Copies box
  *   batch   the CSV batch: loaded, a row chosen, printing
  *   unbatch the batch cleared, so the preview is the form's again
- *   list    the list of formats, or the drive listing behind it
+ *   list    the list of formats, or the search for CPCL ones
  */
 const formatStore = createStore({
   formats: [],
-  /** What /dir last listed; the CPCL formats are added from the drive listing. */
+  /** What /dir last listed; the CPCL formats are added to it as they are found. */
   dirFormats: [],
+  /** The CPCL formats the last search found. */
+  cpclFormats: [],
+  /** True while files /dir lists as "---" are being tried as CPCL. */
+  cpclSearching: false,
+  /** Why the last search stopped short, or null. */
+  cpclError: null,
   current: null,
   lang: null,
   source: '',
@@ -468,41 +472,100 @@ function renderFormatOptions() {
 
 /** Formats /dir will admit to, which is everything except CPCL. */
 async function refreshFormats() {
+  let files;
   try {
-    const files = await listFiles({ dev: 'E', otype: '*  ' });
-    formatState.dirFormats = files.filter((f) => FORMAT_OTYPES.includes(f.otype));
+    files = await listFiles({ dev: 'E', otype: '*  ' });
   } catch (err) {
     toast(`Could not list stored formats: ${err.message}`, 'error');
-    return;
+    return null;
   }
-  mergeFormats();
+  // A CPCL format found before stays listed while the search re-runs,
+  // unless /dir no longer has a file of that name.
+  const unknown = new Set(files.filter((f) => f.otype === '---').map((f) => f.oname));
+  formatStore.update('list', (st) => {
+    st.dirFormats = files.filter((f) => FORMAT_OTYPES.includes(f.otype));
+    st.cpclFormats = st.cpclFormats.filter((f) => unknown.has(f.oname));
+    st.formats = [...st.dirFormats, ...st.cpclFormats];
+  });
+  return files;
 }
 
-/**
- * CPCL formats are invisible to /dir: it reports E:SHELF.FMT as type
- * "---", losing the extension. file.drive_listing is the one place the
- * real name survives. Reading it takes about nine seconds, so the list
- * is built from the shared copy (drives.js) and grows or shrinks when a
- * fresh one lands.
+/*
+ * What each name /dir lists as "---" turned out to be, so a tab switch
+ * only tries the names that are new or have changed size: oname ->
+ * { sizes, otypes }.
  */
-function mergeFormats() {
-  const cpclTypes = LANGUAGES.cpcl.otypes.map((t) => t.toUpperCase());
-  const cached = cachedDriveListing();
-  const cpcl = (cached ? cached.files : []).filter(
-    (f) =>
-      f.dev === 'E' &&
-      cpclTypes.includes(f.otype) &&
-      !formatState.dirFormats.some((x) => x.name === f.name),
-  );
+const cpclProbes = new Map();
+/** Bumped by each search, so one overtaken by the next stops. */
+let cpclSearch = 0;
+
+/**
+ * CPCL formats are invisible to /dir: it reports E:SHELF.FMT as
+ * E:SHELF.---, losing the extension. The web server serves a file at
+ * /NAME.EXT and answers 404 for a wrong extension, so each such name is
+ * tried as .FMT and .LBL with a HEAD apiece -- a few hundredths of a
+ * second each, and each its own turn at the printer, so choosing a
+ * format meanwhile waits for one of them at most. (file.drive_listing
+ * has the real names too, but holds the printer for nine seconds.)
+ */
+async function findCpclFormats(files) {
+  const search = ++cpclSearch;
+  const sizes = new Map();
+  for (const f of files) {
+    if (f.dev !== 'E' || f.otype !== '---') continue;
+    sizes.set(f.oname, [...(sizes.get(f.oname) || []), f.bytes]);
+  }
+  const otypes = LANGUAGES.cpcl.otypes.map((t) => t.toUpperCase());
+
   formatStore.update('list', (st) => {
-    st.formats = [...st.dirFormats, ...cpcl];
+    st.cpclSearching = true;
+    st.cpclError = null;
+  });
+  const found = [];
+  try {
+    for (const [oname, bytes] of sizes) {
+      const key = bytes.join(',');
+      let probe = cpclProbes.get(oname);
+      if (!probe || probe.sizes !== key) {
+        const hits = [];
+        for (const otype of otypes) {
+          if (search !== cpclSearch) return;
+          if (await storedFileExists({ oname, otype })) hits.push(otype);
+        }
+        probe = { sizes: key, otypes: hits };
+        cpclProbes.set(oname, probe);
+      }
+      for (const otype of probe.otypes) {
+        found.push({
+          name: `E:${oname}.${otype}`,
+          dev: 'E',
+          oname,
+          otype,
+          // /dir gives each "---" its size; a name with two is ambiguous.
+          bytes: bytes.length === 1 ? bytes[0] : 0,
+        });
+      }
+    }
+  } catch (err) {
+    if (search !== cpclSearch) return;
+    formatStore.update('list', (st) => {
+      st.cpclSearching = false;
+      st.cpclError = err;
+    });
+    return;
+  }
+  if (search !== cpclSearch) return;
+  formatStore.update('list', (st) => {
+    st.cpclSearching = false;
+    st.cpclFormats = found;
+    st.formats = [...st.dirFormats, ...found];
   });
 }
 
-/** The word beside the list while the drive listing is being read. */
+/** The word beside the list while the CPCL formats are being looked for. */
 function renderScanState() {
   if (!scanNode) return;
-  if (driveListingLoading()) {
+  if (formatState.cpclSearching) {
     replaceChildren(scanNode, [
       el('span', {
         class:
@@ -513,29 +576,23 @@ function renderScanState() {
       el('span', { class: 'text-[11px] text-ink-500' }, ['looking for CPCL formats…']),
     ]);
     scanNode.title =
-      'CPCL formats are not listed under their real extension, so the full drive listing ' +
-      'is being read to find them. This takes a few seconds.';
+      'CPCL formats are not listed under their real extension, so each file listed ' +
+      'without one is being tried as .FMT and .LBL.';
     return;
   }
-  const err = driveListingError();
+  const err = formatState.cpclError;
   replaceChildren(
     scanNode,
     err ? [el('span', { class: 'text-[11px] text-amber-700' }, ['CPCL formats not checked'])] : [],
   );
-  scanNode.title = err ? `The drive listing could not be read: ${err.message}` : '';
+  scanNode.title = err ? `Looking for CPCL formats failed: ${err.message}` : '';
 }
 
-function syncDriveListing() {
-  mergeFormats();
-}
-
-/** List the formats, then read the drive listing for the CPCL ones. */
+/** List the formats, then look for the CPCL ones among what /dir could not name. */
 async function loadFormats() {
-  await refreshFormats();
+  const files = await refreshFormats();
   drainPendingFormat();
-  // After /dir, not beside it: the listing holds the printer for nine
-  // seconds. Failure shows in renderScanState.
-  refreshDriveListing().catch(() => {});
+  if (files) await findCpclFormats(files);
 }
 
 /* ------------------------------------------------------------------ *
@@ -975,14 +1032,13 @@ export function mountFormat(panel) {
 
   subscribeFormatViews();
   formatStore.update('format');
-  onDriveListing(syncDriveListing);
   formatStore.update('list');
   loadFormats();
 }
 
 /**
  * Stored formats can change from the Label Editor, so re-read the list.
- * The drive listing is re-read too, unless the shared copy is recent.
+ * Only names that are new, or have changed size, are tried as CPCL again.
  */
 export function onFormatShown() {
   loadFormats();

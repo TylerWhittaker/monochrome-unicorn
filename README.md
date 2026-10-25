@@ -725,7 +725,12 @@ a 500).
   with the real names, sizes, dates and all three drives, during which
   the printer answers nothing else. Any other request the console makes
   meanwhile waits for it to finish instead of failing with the printer's
-  "busy processing another request".
+  "busy processing another request" -- and a read once sent cannot be
+  called off, so the console starts one only where it is wanted: File
+  System, and Settings once its sweep is done, if Settings is still on
+  screen. Stored Formats does without it: a file `/dir` lists as `---`
+  is tried as `.FMT` and `.LBL`, a `HEAD` apiece, to find the CPCL
+  formats.
 - What the console can put **on** the printer: a `.ZPL` through the
   label form, a picture as a `.GRF` (reduced to one bit here in the
   browser), and anything else that has no NUL byte through `file.append`

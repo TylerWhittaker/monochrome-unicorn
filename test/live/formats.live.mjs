@@ -62,6 +62,19 @@ const CPCL_SOURCE = [
   '',
 ].join('\r\n');
 
+/** Note each read of a slow setting's helper file -- file.drive_listing's among them. */
+async function watchListingReads(page) {
+  const reads = [];
+  const slowFiles = await page.evaluate(() =>
+    Object.values(JSON.parse(document.getElementById('sgd-schema').textContent).slowFiles || {}),
+  );
+  page.on('request', (req) => {
+    const stem = new URL(req.url()).pathname.replace(/^\/|\.SHTML$/gi, '');
+    if (slowFiles.includes(stem)) reads.push(stem);
+  });
+  return reads;
+}
+
 export default function register(s, ctx) {
   const { cfg } = ctx;
   let con;
@@ -70,6 +83,8 @@ export default function register(s, ctx) {
   let zpl;
   let panel;
   let languages;
+  /** The page's reads of file.drive_listing, which hold the printer nine seconds. */
+  let listingReads = [];
 
   const select = () => panel.locator('select').first();
   const inputs = () => panel.locator('label input[type="text"]');
@@ -90,6 +105,7 @@ export default function register(s, ctx) {
     con = await openConsole(ctx.browser, cfg, 'format');
     ({ page, ui } = con);
     zpl = watchZpl(page);
+    listingReads = await watchListingReads(page);
     panel = ui.panel('format');
     await waitFor(
       async () => (await select().locator(`option[value="E:${ZPL_FORMAT}.ZPL"]`).count()) === 1,
@@ -105,6 +121,10 @@ export default function register(s, ctx) {
     const since = Date.now();
     await select().selectOption(`E:${ZPL_FORMAT}.ZPL`);
     await waitFor(async () => (await inputs().count()) === 3, { what: 'three fields' });
+    // Chosen while the CPCL formats are still being looked for, it waits
+    // for one HEAD at most -- not for a nine-second drive listing.
+    const took = Date.now() - since;
+    assert.ok(took < 6000, `the fields took ${took} ms to arrive`);
     const captions = await panel.locator('label .label-text').allTextContents();
     assert.deepEqual(
       captions.map((c) => c.replace(/\s+/g, ' ').trim()),
@@ -306,17 +326,18 @@ export default function register(s, ctx) {
     }
   });
 
-  s.test('the CPCL format joins the list once the drive listing is read', async () => {
-    // It is listed by /dir as "---", so only the drive listing names it.
+  s.test('the CPCL format joins the list, found without the drive listing', async () => {
+    // /dir lists it as "---"; its real extension is found by trying it.
     await waitFor(
       async () => (await select().locator(`option[value="E:${CPCL_FORMAT}.FMT"]`).count()) === 1,
-      { timeout: 90000, what: `E:${CPCL_FORMAT}.FMT in the list` },
+      { timeout: 30000, what: `E:${CPCL_FORMAT}.FMT in the list` },
     );
     assert.match(
       await select().locator(`option[value="E:${CPCL_FORMAT}.FMT"]`).textContent(),
       /— CPCL/,
     );
     assert.equal(await panel.getByText('looking for CPCL formats…').count(), 0);
+    assert.deepEqual(listingReads, [], 'Stored Formats read the drive listing');
   });
 
   s.test('a CPCL format’s fields are read from the file itself; there is no preview', async () => {
@@ -364,5 +385,22 @@ export default function register(s, ctx) {
     });
     assert.equal(await select().inputValue(), `E:${CPCL_FORMAT}.FMT`);
     ui.assertNoErrors();
+  });
+
+  s.test('leaving Settings before its sweep ends spares the drive listing', async () => {
+    // Settings reads the listing once its sweep is done, for File System's
+    // sake; on another tab by then, those nine seconds would hold up
+    // choosing a format, and a read once sent cannot be called off.
+    const other = await openConsole(ctx.browser, cfg, 'settings');
+    try {
+      const reads = await watchListingReads(other.page);
+      await other.ui.showTab('format');
+      await other.ui.toast(/Read \d+ SGD values|before the read failed/, { timeout: 90000 });
+      await other.page.waitForTimeout(2000);
+      assert.deepEqual(reads, [], 'the drive listing was read with Settings off screen');
+      other.ui.assertNoErrors();
+    } finally {
+      await other.close();
+    }
   });
 }
