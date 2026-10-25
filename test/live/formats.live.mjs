@@ -143,6 +143,32 @@ export default function register(s, ctx) {
     });
   });
 
+  s.test('a spinner turns while the preview is rendering', async () => {
+    const spinner = panel.getByRole('status', { name: 'Rendering' });
+    assert.equal(await spinner.isVisible(), false);
+    // Hold the printer's answer, so the render is caught in progress.
+    let release;
+    const held = new Promise((resolve) => (release = resolve));
+    const passed = [];
+    await page.route('**/zpl', (route) => {
+      const through = held.then(() => route.continue());
+      passed.push(through);
+      return through;
+    });
+    try {
+      await panel.getByRole('button', { name: 'Refresh', exact: true }).click();
+      await panel.getByText('rendering…').waitFor();
+      assert.equal(await spinner.isVisible(), true);
+    } finally {
+      release();
+      // Taken down only once what it held has gone on to the printer.
+      await Promise.all(passed);
+      await page.unroute('**/zpl');
+    }
+    await panel.getByText('up to date').waitFor();
+    assert.equal(await spinner.isVisible(), false);
+  });
+
   s.test('Enter walks the fields; Clear fields empties them', async () => {
     await inputs().nth(0).focus();
     await page.keyboard.press('Enter');

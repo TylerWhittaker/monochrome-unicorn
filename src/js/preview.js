@@ -132,6 +132,16 @@ export function createPreview({ onPrinted, onPrint, zoom: offerZoom = false } = 
   );
 
   const status = el('span', { class: 'text-[11px] text-ink-400' });
+  // Turns while the printer is drawing, beside the word that says so.
+  const spinner = el('span', {
+    class: 'hidden h-3 w-3 animate-spin rounded-full border-2 border-ink-300 border-t-ink-700',
+    role: 'status',
+    'aria-label': 'Rendering',
+  });
+  const setBusy = (on) => {
+    spinner.classList.toggle('hidden', !on);
+    spinner.classList.toggle('inline-block', on);
+  };
 
   const refreshBtn = el(
     'button',
@@ -190,7 +200,12 @@ export function createPreview({ onPrinted, onPrint, zoom: offerZoom = false } = 
             zoomSelect,
           ])
         : null,
-      el('div', { class: 'ml-auto flex items-center gap-2' }, [status, refreshBtn, printBtn]),
+      el('div', { class: 'ml-auto flex items-center gap-2' }, [
+        spinner,
+        status,
+        refreshBtn,
+        printBtn,
+      ]),
     ]),
     imageHost,
   ]);
@@ -261,6 +276,15 @@ export function createPreview({ onPrinted, onPrint, zoom: offerZoom = false } = 
   async function run(mode) {
     if (!lastZpl.trim()) return;
     const token = ++inFlight;
+    setBusy(true);
+    try {
+      await request(mode, token);
+    } finally {
+      if (token === inFlight) setBusy(false);
+    }
+  }
+
+  async function request(mode, token) {
     // htmx copies any <title> in a response into the document, and every
     // reply from the printer carries its own; keep ours.
     const pageTitle = document.title;
@@ -352,6 +376,7 @@ export function createPreview({ onPrinted, onPrint, zoom: offerZoom = false } = 
     /** Show a placeholder without asking the printer for anything. */
     idle(text) {
       inFlight++;
+      setBusy(false);
       lastZpl = '';
       status.textContent = '';
       showMessage(text);
