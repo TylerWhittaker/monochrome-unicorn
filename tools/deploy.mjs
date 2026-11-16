@@ -946,6 +946,21 @@ async function resolveTargets(opts) {
   return (await confirm(`\nInstall on ${many}? [y/N] `)) ? printers : null;
 }
 
+/** Where to report a deploy that failed: GitHub first, email for anyone not on it. */
+export const ISSUES_URL = 'https://github.com/TylerWhittaker/monochrome-unicorn/issues/new';
+export const CONTACT_EMAIL = 'tylerwhittaker@gmail.com';
+
+/** What a failed deploy ends with: a request for help, and where to send it. */
+export function helpWanted() {
+  return (
+    '\nThis is likely a bug that can be fixed. Installing on printers the developer does\n' +
+    'not have is still being worked out, and people with one are wanted to help.\n' +
+    `Please open an issue at ${ISSUES_URL}\n` +
+    `or, if you would rather not use GitHub, email ${CONTACT_EMAIL}.\n` +
+    'Give the printer model, and the log reference if you send the log.'
+  );
+}
+
 /** One deploy, printed as deploy.sh always has; true if it worked. */
 async function deployCli(opts, context, deployOne) {
   try {
@@ -967,7 +982,10 @@ async function deployCli(opts, context, deployOne) {
     return true;
   } catch (err) {
     console.error(`\ndeploy failed: ${err.message}`);
-    if (!err.diagnosticLog) return false;
+    if (!err.diagnosticLog) {
+      console.error(helpWanted());
+      return false;
+    }
     let path = null;
     if (context.logDir) {
       try {
@@ -991,6 +1009,7 @@ async function deployCli(opts, context, deployOne) {
         `To send it to the developer: ${context.command || 'node tools/deploy.mjs'} --send-log-file '${path}'`,
       );
     }
+    console.error(helpWanted());
     return false;
   }
 }

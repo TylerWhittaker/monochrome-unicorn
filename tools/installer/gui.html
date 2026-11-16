@@ -30,6 +30,8 @@
     --bad-bg: #fef2f2;
     --ok-bg: #f0fdf4;
     --log: #f6f7f8;
+    --note-bg: #fffbeb;
+    --note-line: #d97706;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
@@ -47,6 +49,8 @@
       --bad-bg: #2a1215;
       --ok-bg: #0f2417;
       --log: #0a0c0f;
+      --note-bg: #241a06;
+      --note-line: #f59e0b;
     }
   }
   * { box-sizing: border-box; }
@@ -138,6 +142,12 @@
   ul.printers .state.done { color: var(--ok); }
   ul.printers .state.failed { color: var(--bad); }
   #search-note { margin: 0 0 16px; }
+  .notice { margin: 0 0 20px; padding: 12px 14px; border-radius: 8px; font-size: 14px;
+    background: var(--note-bg); border: 1px solid var(--note-line); }
+  .notice p { margin: 0 0 8px; }
+  .notice p:last-child { margin: 0; }
+  .notice a { color: inherit; font-weight: 600; }
+  .result .notice { margin: 12px 0 0; }
   .target { margin-top: 20px; }
   .target h2 { font-size: 15px; margin: 0; }
   .target ol.steps { margin-top: 8px; }
@@ -152,6 +162,17 @@
   <div class="card">
     <p>This puts the Monochrome Unicorn console on a Zebra printer. Afterwards, anything on the
       network with a browser can open it at the printer's address.</p>
+
+    <div class="notice" role="note">
+      <p><strong>Help wanted with printers I don't have.</strong> I am still working out bugs
+        in installing on Zebra models I have no access to: it is tested on a ZD500R and a
+        ZD620, and other models and firmware can fail in ways I can only fix with help from
+        someone who has one. If you do, I would love to hear from you, whether the install
+        works or not.</p>
+      <p>Please <a href="https://github.com/TylerWhittaker/monochrome-unicorn/issues/new"
+        target="_blank" rel="noopener">open an issue on GitHub</a>, or if you would rather not
+        use GitHub, email <a href="mailto:tylerwhittaker@gmail.com?subject=Monochrome%20Unicorn">tylerwhittaker@gmail.com</a>.</p>
+    </div>
 
     <form id="form">
       <div class="list-head">
@@ -212,6 +233,15 @@
             </div>
             <p class="muted diag-note"></p>
           </div>
+          <div class="notice help" role="note">
+            <p><strong>This is likely a bug I can fix, and I would like to.</strong> I am working
+              out installing on printers I do not have, and I am looking for people with one to
+              help: telling me about this failure is how it gets fixed for your printer.</p>
+            <p>Please <a class="issue-link" href="#" target="_blank" rel="noopener">open an
+              issue on GitHub</a> (it is filled in with what the installer knows), or email
+              <a class="mail-link" href="#">tylerwhittaker@gmail.com</a>.<span class="help-log">
+              Sending the log above first, and quoting its reference, helps most.</span></p>
+          </div>
         </div>
       </div>
     </template>
@@ -233,6 +263,32 @@
 <script>
   const TOKEN = '{{TOKEN}}';
   const STEPS = {{STEPS}};
+  const VERSION = '{{VERSION}}';
+  const ISSUES = 'https://github.com/TylerWhittaker/monochrome-unicorn/issues/new';
+  const EMAIL = 'tylerwhittaker@gmail.com';
+
+  /**
+   * Point a failed install's GitHub and email links at a report filled
+   * in with what is known: the model, this version, the step and cause,
+   * and the log's reference once it is sent. Never the address.
+   */
+  function helpLinks(section, facts) {
+    const title = `Install fails on ${facts.model || 'my printer'}` + (facts.cause ? ` (${facts.cause})` : '');
+    const body = [
+      `Printer model: ${facts.model || ''}`,
+      'Printer firmware (on its configuration label): ',
+      `Installer version: ${VERSION}`,
+      `Failed at: ${facts.step || ''}${facts.cause ? ` (${facts.cause})` : ''}`,
+      `What the installer said: ${facts.message || ''}`,
+      `Log reference, if you sent the log: ${facts.reference || ''}`,
+      '',
+      'Anything else you noticed:',
+      '',
+    ].join('\n');
+    const query = (q) => Object.entries(q).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+    section.querySelector('.issue-link').href = `${ISSUES}?${query({ title, body })}`;
+    section.querySelector('.mail-link').href = `mailto:${EMAIL}?${query({ subject: title, body })}`;
+  }
   const $ = (id) => document.getElementById(id);
   const post = (path, body) =>
     fetch(path, {
@@ -458,6 +514,11 @@
         const outcome = res.ok ? await res.json() : { error: await res.text() };
         if (outcome.reference) {
           note.textContent = `Sent, thank you. If you ask about it, quote reference ${outcome.reference}.`;
+          const section = box.closest('.target');
+          if (section && section.helpFacts) {
+            section.helpFacts.reference = outcome.reference;
+            helpLinks(section, section.helpFacts);
+          }
         } else {
           q('.send-log').disabled = false;
           note.textContent = `It was not sent (${outcome.error}). Save it instead, and attach it to an issue on GitHub.`;
@@ -499,12 +560,16 @@
     const log = $('log');
     log.textContent += `${log.textContent ? '\n' : ''}== ${p.ip} ==\n`;
 
-    const fail = (message, detail, diag, fix) => {
+    const fail = (message, detail, diag, fix, cause) => {
+      const facts = { model: p.model, step: current, cause, message };
+      helpLinks(section, facts);
+      section.helpFacts = facts;
       if (current) states[current] = 'failed';
       drawSteps(q('.steps'), states);
       q('.bad-text').textContent = message;
       q('.bad-detail').textContent = detail || '';
       q('.diag').hidden = !diag;
+      q('.help-log').hidden = !diag;
       if (diag) {
         wireDiag(q('.diag'), diag.deployId);
         q('.diag-note').textContent = diag.path ? `Also saved as ${diag.path}` : '';
@@ -566,7 +631,7 @@
             q('.result.ok').hidden = false;
             return true;
           } else if (event.type === 'error') {
-            return fail(event.message, event.detail, event.log, event.fix);
+            return fail(event.message, event.detail, event.log, event.fix, event.cause);
           }
         }
       }

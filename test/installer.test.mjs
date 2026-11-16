@@ -406,6 +406,41 @@ await check('a failed deploy ends in a plain error, with the detail', async () =
   }
 });
 
+await check('a failure carries its cause, for the report the page offers to file', async () => {
+  const gui = await fakeGui(async () => {
+    throw Object.assign(new Error('web server off'), {
+      code: 'http-off',
+      failureCause: 'http-off',
+    });
+  });
+  try {
+    const events = (await (await gui.post('/deploy', { ip: '10.0.0.9' })).text())
+      .trim()
+      .split('\n')
+      .map(JSON.parse);
+    assert.equal(events.at(-1).cause, 'http-off');
+    assert.equal(events.at(-1).fix, 'enable-http');
+  } finally {
+    gui.close();
+  }
+});
+
+await check('the page and a failed deploy ask for help, by GitHub issue or by email', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { helpWanted, ISSUES_URL, CONTACT_EMAIL } = await import('../tools/deploy.mjs');
+  const page = readFileSync(new URL('../tools/installer/gui.html', import.meta.url), 'utf8');
+  assert.equal(ISSUES_URL, 'https://github.com/TylerWhittaker/monochrome-unicorn/issues/new');
+  // At the top of the page, and under every failed install.
+  assert.match(page, /Help wanted with printers I don't have/);
+  assert.match(page, /This is likely a bug I can fix/);
+  assert.ok(page.includes(`href="${ISSUES_URL}"`), 'the GitHub link');
+  assert.ok(page.includes(`mailto:${CONTACT_EMAIL}`), 'the email link');
+  assert.match(page, /class="issue-link"/);
+  assert.match(page, /class="mail-link"/);
+  const cli = helpWanted();
+  assert.ok(cli.includes(ISSUES_URL) && cli.includes(CONTACT_EMAIL));
+});
+
 await check("a failed deploy's log can be saved and sent, with the token", async () => {
   const dir = mkdtempSync(join(tmpdir(), 'mu-gui-'));
   const sent = [];

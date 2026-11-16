@@ -319,6 +319,8 @@ export async function startGui({
         log,
         // One the page can offer to put right, with a button.
         fix: err.code === 'http-off' ? 'enable-http' : null,
+        // diag.mjs's word for why: for the report the page offers to file.
+        cause: err.failureCause || null,
       });
     } finally {
       busy = false;
