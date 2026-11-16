@@ -199,6 +199,9 @@
           <p><strong>That did not work.</strong></p>
           <p class="bad-text"></p>
           <p class="muted bad-detail"></p>
+          <div class="actions fix" hidden>
+            <button class="enable-http" type="button">Turn on its web server, restart it and install</button>
+          </div>
           <div class="diag" hidden>
             <p>The installer kept a log of what the printer said. Sending it to the developer helps
               fix this for your printer. It holds the printer's model, serial number, address and
@@ -482,20 +485,21 @@
   }
 
   /** Install on one printer, drawn in its own section of the results; true if it worked. */
-  async function installOn(p, { packed, telemetry, of }) {
+  async function installOn(p, { packed, telemetry, of, enableHttp = false, replace = null }) {
     const section = $('target-template').content.firstElementChild.cloneNode(true);
     section.dataset.ip = p.ip;
     const q = (cls) => section.querySelector(cls);
     q('h2').textContent =
       (p.model ? `${p.model} at ${p.ip}` : p.ip) + (of ? ` (${of})` : '');
-    $('results').append(section);
+    if (replace) replace.replaceWith(section);
+    else $('results').append(section);
     const states = {};
     let current = null;
     drawSteps(q('.steps'), states);
     const log = $('log');
     log.textContent += `${log.textContent ? '\n' : ''}== ${p.ip} ==\n`;
 
-    const fail = (message, detail, diag) => {
+    const fail = (message, detail, diag, fix) => {
       if (current) states[current] = 'failed';
       drawSteps(q('.steps'), states);
       q('.bad-text').textContent = message;
@@ -505,13 +509,31 @@
         wireDiag(q('.diag'), diag.deployId);
         q('.diag-note').textContent = diag.path ? `Also saved as ${diag.path}` : '';
       }
+      // A printer whose web server is off: offer to turn it on, and
+      // install again in this same section.
+      q('.fix').hidden = fix !== 'enable-http';
+      q('.enable-http').onclick = async () => {
+        if (installing || stopped) return;
+        installing = true;
+        $('go').disabled = $('add').disabled = $('search').disabled = true;
+        p.state = 'running';
+        drawPrinters();
+        try {
+          const ok = await installOn(p, { packed, telemetry, of, enableHttp: true, replace: section });
+          p.state = ok ? 'done' : 'failed';
+        } finally {
+          installing = false;
+          drawPrinters();
+          $('go').disabled = $('add').disabled = $('search').disabled = stopped;
+        }
+      };
       q('.result.bad').hidden = false;
       $('details').open = true;
       return false;
     };
 
     try {
-      const res = await post('/deploy', { ip: p.ip, packed, telemetry });
+      const res = await post('/deploy', { ip: p.ip, packed, telemetry, enableHttp });
       if (!res.ok) return fail(await res.text());
       const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
@@ -544,7 +566,7 @@
             q('.result.ok').hidden = false;
             return true;
           } else if (event.type === 'error') {
-            return fail(event.message, event.detail, event.log);
+            return fail(event.message, event.detail, event.log, event.fix);
           }
         }
       }

@@ -38,6 +38,25 @@ half-close its own side and wait a while, as `nc -q` did. Bash's
 to the length its header gives -- plus one byte: the printer sends one
 more than the BMP's size field says -- and then the closing quote.
 
+**The web server can be off from the factory.** A ZD621R on V93.21.48Z
+(two failed deploys, from the field) reports `ip.http.enable` "off"
+with a default of "off", and `ip.https.enable` "on" on 443: port 80
+refuses the connection while 9100 takes the whole upload. Turning it
+on takes effect only after a restart: `! U1 setvar "ip.http.enable"
+"on"` then `! U1 do "device.reset" ""`. Measured on the ZD500R with it
+turned off for the purpose: 9100 answers again about 45 s after the
+reset, port 80 a little after, and `deploy.sh --enable-http` from
+"off" to served took 77 s. HTTPS is no way round it here: the ZD500R
+(V74.20.23Z) says `ip.https.enable` "on" but refuses port 443.
+
+**Listing a drive over 9100:** `^XA^HWE:*.*^XZ` answers, between STX
+and ETX, `- DIR E:*.*`, a line `* E:NAME   <bytes>` per file (`P` after
+the size for a protected one) and `-  <n> bytes free E: ONBOARD FLASH`.
+The sizes are exactly the bytes a CISDFCRC16 upload sent, which is how
+a deploy checks its files arrived. The pattern's extension must be one
+the printer knows: `^HWE:*.SHTML` becomes `*.---` and lists nothing.
+(`getvar "file.dir"` with `"E:"` answers nothing on the ZD500R.)
+
 A query string on `/` is a 500; on `/INDEX.SHTML` it is fine. Useful for
 cache-busting during development, since the printer sends `Expires: 0`
 but no `Cache-Control` and Chrome will still serve a stale copy.

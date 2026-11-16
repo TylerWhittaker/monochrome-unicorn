@@ -73,6 +73,7 @@ await check('the deploy command line keeps deploy.sh options', () => {
     sendLogFile: null,
     discover: false,
     yes: false,
+    enableHttp: false,
     help: false,
   });
   const o = parseArgs(['--packed', '10.0.0.5', '--no-clean', '--allcv', '--unpacked', '--clean']);

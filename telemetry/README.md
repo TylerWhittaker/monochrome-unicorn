@@ -5,12 +5,18 @@ that uploads -- `tools/deploy.mjs`, so `./deploy.sh` and the standalone
 installer -- POSTs two JSON reports to
 `https://www.grizzlor.org/monochrome-unicorn/telemetry`, sharing a
 random `deploy_id`: one as it starts, and one as it ends, saying whether
-it worked and, if not, the step that failed:
+it worked and, if not, the step that failed and (since 0.56) its cause,
+a word from `CAUSES` in `tools/diag.mjs`:
 
 ```json
 {"model": "ZM400", "serial": "40J0001", "firmware": "V53.17.11Z", "version": "0.53.0", "event": "start", "deploy_id": "612fdd60fc96a70e"}
 {"model": "ZM400", "serial": "40J0001", "firmware": "V53.17.11Z", "version": "0.53.0", "event": "end", "deploy_id": "612fdd60fc96a70e", "ok": false, "step": "schema"}
+{"model": "ZD621R", "serial": "DBJ0000001", "firmware": "V93.21.48Z", "version": "0.56.0", "event": "end", "deploy_id": "19df847f916e0aeb", "ok": false, "step": "web", "cause": "http-off"}
 ```
+
+The server must take `cause` before a client that sends it is
+released: the client sends a report the server answers 422 again
+without it, so an older server still counts the failure, but not why.
 
 Before 0.53 a deploy sent one report, with only the first four fields,
 and only once it had worked; those are still taken, and count as
@@ -116,7 +122,11 @@ worked by version, model, firmware and month, and the latest 50 of all
 of them, each with its outcome (`?recent=200` for more). **Failed**
 (`?view=failed`) has only the ones that did not work -- failed at a
 step, or never finished (no end within 15 minutes) -- counted by model
-and firmware, by step and by version, and listed.
+and firmware, by step, by cause and by version, and listed. A failure
+reported without a cause whose diagnostic log was sent has its cause
+read from the log: the log's own `likely cause:` line, or for an older
+log, a refused web request from a printer whose settings say
+`ip.http.enable` is off.
 It asks for a user name, `admin`, and the password in
 `/etc/mu-telemetry.env`, which only root can read:
 
@@ -171,6 +181,7 @@ jq -r "$WORKED | .version" $LOG | sort | uniq -c | sort -rn    # by version
 jq -r "$WORKED | .model" $LOG | sort | uniq -c | sort -rn      # by model
 jq -r "$WORKED | .serial" $LOG | sort -u | wc -l               # distinct printers
 jq -r "$FAILED | \"\(.model) \(.firmware) \(.step)\"" $LOG | sort | uniq -c   # failures
+jq -r "$FAILED | .cause // \"?\"" $LOG | sort | uniq -c | sort -rn    # by cause
 tail -f $LOG                                                   # as they come in
 ```
 

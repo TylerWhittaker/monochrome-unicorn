@@ -50,6 +50,11 @@
  *                   By default they (E:V_*, E:S_* and E:LCD .SHTML) are
  *                   removed before the new set goes up, so a build that
  *                   packs the settings differently leaves nothing stale
+ *     --enable-http  if the printer's web server is turned off
+ *                   (ip.http.enable, off from the factory on some newer
+ *                   firmware), turn it on and restart the printer
+ *                   without asking. In a terminal it asks; otherwise a
+ *                   deploy to such a printer stops before uploading
  *     --no-telemetry  do not report the deploy. A deploy that uploads
  *                   tells www.grizzlor.org when it starts and how it
  *                   ended (and at which step, if it failed), with the
@@ -65,7 +70,8 @@
  *
  * The printer is reached two ways: port 9100 for the catalogue and raw
  * file writes (CISDFCRC16 header, tools/upload.mjs), and port 80 to
- * verify what it now serves. Needs nothing but node.
+ * check that its web server answers before anything is uploaded, and to
+ * verify what it then serves. Needs nothing but node.
  *
  * deploy() is also what the standalone installer runs (tools/installer/),
  * which carries a staged build instead of building one, and keeps the
@@ -75,14 +81,22 @@
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { startTrace, stopTrace, trace, formatTrace, capText } from './diag.mjs';
+import {
+  startTrace,
+  stopTrace,
+  trace,
+  formatTrace,
+  capText,
+  failureCause,
+  tracedReplies,
+} from './diag.mjs';
 import { fetchSchema, writeSchema, readFromPrinter, identifyPrinter } from './fetch-schema.mjs';
 import { assemble } from './assemble.mjs';
 import { sendRaw, uploadFile, deletePayload } from './upload.mjs';
 import { discoverPrinters, scanRange, parseRange, isRange } from './discover.mjs';
 
 export const USAGE =
-  'usage: deploy <printer-ip|range>... [--yes] [--no-schema] [--no-upload] [--no-clean] [--packed] [--allcv|--allconfig] [--no-telemetry] [--send-log]\n' +
+  'usage: deploy <printer-ip|range>... [--yes] [--no-schema] [--no-upload] [--no-clean] [--packed] [--allcv|--allconfig] [--enable-http] [--no-telemetry] [--send-log]\n' +
   '       deploy --discover\n' +
   '       deploy --send-log-file <file>';
 
@@ -110,6 +124,7 @@ export const CLEAN_PATTERNS = [
 /** The steps a deploy goes through, in order, as the installer lists them. */
 export const STEPS = [
   { id: 'schema', label: "Read the printer's settings" },
+  { id: 'web', label: "Check the printer's web server" },
   { id: 'build', label: 'Build the console' },
   { id: 'clean', label: 'Remove the old helper files' },
   { id: 'upload', label: 'Upload' },
@@ -131,6 +146,7 @@ export function parseArgs(argv) {
     sendLogFile: null,
     discover: false,
     yes: false,
+    enableHttp: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -147,6 +163,7 @@ export function parseArgs(argv) {
     else if (arg === '--send-log') opts.sendLog = true;
     else if (arg === '--discover') opts.discover = true;
     else if (arg === '--yes' || arg === '-y') opts.yes = true;
+    else if (arg === '--enable-http') opts.enableHttp = true;
     else if (arg === '--send-log-file') {
       opts.sendLogFile = argv[++i];
       if (!opts.sendLogFile) throw new Error('--send-log-file needs the log to send');
@@ -330,11 +347,21 @@ export async function deploy(opts, context) {
     );
   } catch (err) {
     err.deployId = deployId;
-    err.diagnosticLog = formatTrace(stopTrace(), { error: err, step: current });
+    const cause = causeOf(err);
+    err.diagnosticLog = formatTrace(stopTrace(), { error: err, step: current, cause });
     throw err;
   } finally {
     stopTrace();
   }
+}
+
+/**
+ * Why a deploy failed, as one of diag.mjs's CAUSES codes: worked out
+ * once, while the trace is still being recorded, and kept on the error.
+ */
+function causeOf(err) {
+  err.failureCause ??= failureCause(err, tracedReplies());
+  return err.failureCause;
 }
 
 /** deploy(), with its start and end reported. */
@@ -349,7 +376,12 @@ async function reportedDeploy(opts, context, { deployId, version, step }) {
     deploy_id: deployId,
   };
   const send = async (fields) => {
-    const outcome = await sendTelemetry({ ...report, ...fields });
+    let outcome = await sendTelemetry({ ...report, ...fields });
+    // A server from before 0.56 refuses a field it does not know.
+    if (outcome === 'the server answered 422' && fields.cause) {
+      const { cause, ...older } = fields;
+      outcome = await sendTelemetry({ ...report, ...older });
+    }
     if (outcome !== 'sent') log(`Telemetry: not sent (${outcome})\n`);
   };
   const printer = [report.model, report.serial, report.firmware].filter(Boolean).join(' ');
@@ -373,7 +405,7 @@ async function reportedDeploy(opts, context, { deployId, version, step }) {
     });
     return result;
   } catch (err) {
-    await send({ event: 'end', ok: false, step: step() || '' });
+    await send({ event: 'end', ok: false, step: step() || '', cause: causeOf(err) });
     throw err;
   }
 }
@@ -431,10 +463,239 @@ export function writeDiagnosticLog(text, dir) {
   return path;
 }
 
+/*
+ * Whether the printer will serve the page
+ * ------------------------------------------------------------------
+ * Everything goes up over port 9100, but the console is only any use if
+ * port 80 serves it, so that is asked before anything is uploaded. When
+ * it does not answer, the printer is asked why over 9100:
+ *
+ *   ip.http.enable           off: the web server is turned off -- the
+ *                            factory setting on some newer firmware
+ *                            (a ZD621R on V93.21.48Z). It can be turned
+ *                            on, but takes effect only once the printer
+ *                            restarts (docs/printer-notes.md)
+ *   ip.http.port             not 80: serve, and verify, on that port
+ *   ip.firewall.whitelist_in addresses the printer answers; this
+ *                            computer may not be one of them
+ */
+
+/** The settings that say why a web server does not answer, asked in one go. */
+export const WEB_QUERY = ['ip.http.enable', 'ip.http.port', 'ip.firewall.whitelist_in']
+  .map((name) => `! U1 getvar "${name}"\r\n`)
+  .join('');
+
+/** The answers to WEB_QUERY; '' for one the printer does not know. */
+export function parseWebSettings(reply) {
+  const [enable = '', port = '', whitelist = ''] = [...String(reply).matchAll(/"([^"]*)"/g)].map(
+    (m) => (m[1] === '?' ? '' : m[1].trim()),
+  );
+  return { enable: enable.toLowerCase(), port, whitelist };
+}
+
+/** The base URL of a web server on `port`, the way a person would type it. */
+export function webBase(ip, port = 80) {
+  return Number(port) === 80 ? `http://${ip}` : `http://${ip}:${port}`;
+}
+
+/** Whether anything answers HTTP at `base`: any status will do. */
+async function answers(base, timeoutMs) {
+  try {
+    await probe(`${base}/`, timeoutMs);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * An error a person can act on: `code` is one of diag.mjs's CAUSES,
+ * which the installer explains and the telemetry reports.
+ */
+function codedError(code, message) {
+  return Object.assign(new Error(message), { code });
+}
+
+const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+
+/**
+ * Turn the web server on and restart the printer, then wait for it: for
+ * port 9100 to answer again (about a minute), then for port 80.
+ */
+async function enableWebServer(ip, httpPort, { port, log, pause = 5000, waitMs = 180000 }) {
+  log('  turning the web server on and restarting the printer ... ');
+  await sendRaw(
+    ip,
+    Buffer.from('! U1 setvar "ip.http.enable" "on"\r\n! U1 do "device.reset" ""\r\n'),
+    { quiet: 1, port },
+  );
+  const until = Date.now() + waitMs;
+  await sleep(pause);
+  while (Date.now() < until) {
+    const back = await readFromPrinter(ip, '! U1 getvar "ip.http.enable"\r\n', {
+      idleMs: 800,
+      timeout: 4000,
+      port,
+    }).catch(() => null);
+    if (back) {
+      if (!/"on"/.test(back)) {
+        throw codedError('http-off', `${ip} restarted, but its web server is still turned off`);
+      }
+      break;
+    }
+    await sleep(Math.min(2000, pause));
+  }
+  while (Date.now() < until) {
+    if (await answers(webBase(ip, httpPort), 5000)) {
+      log('back, and serving\n');
+      return;
+    }
+    await sleep(Math.min(2000, pause));
+  }
+  throw codedError('http-unreachable', `${ip} did not come back serving its web pages`);
+}
+
+/**
+ * Make sure the printer's web server answers before anything is put on
+ * it, and resolve to the base URL it answers at. A printer that serves
+ * costs one GET; one that does not is asked why, and either fixed (the
+ * web server turned on, with leave), worked around (another port), or
+ * the deploy stops here with what to do about it.
+ *
+ *   opts.enableHttp    turn the web server on without asking
+ *   opts.httpPort      the port to try first (80; the tests' fake)
+ *   confirmEnableHttp  asked whether to, when opts.enableHttp is not
+ *                      set; resolves true or false. Without it, no
+ */
+export async function checkWebServer(
+  ip,
+  opts,
+  { log, confirmEnableHttp = null, pause, waitMs } = {},
+) {
+  const first = opts.httpPort || 80;
+  log(`Checking that ${ip} serves web pages ... `);
+  if (await answers(webBase(ip, first), 15000)) {
+    log('it does\n');
+    return webBase(ip, first);
+  }
+  log('no answer on port ' + first + '; asking it why\n');
+  const settings = parseWebSettings(
+    await readFromPrinter(ip, WEB_QUERY, { idleMs: 1000, timeout: 10000, port: opts.port }).catch(
+      () => '',
+    ),
+  );
+  log(
+    `  ip.http.enable "${settings.enable}", ip.http.port "${settings.port}", ` +
+      `ip.firewall.whitelist_in "${settings.whitelist}"\n`,
+  );
+  const httpPort = /^\d+$/.test(settings.port) ? Number(settings.port) : first;
+
+  if (settings.enable === 'off') {
+    const yes = opts.enableHttp || (confirmEnableHttp ? await confirmEnableHttp(ip) : false);
+    if (!yes) {
+      throw codedError(
+        'http-off',
+        `${ip}'s web server is turned off (ip.http.enable), so it could not serve the console. ` +
+          'Turning it on needs the printer restarted: --enable-http does both',
+      );
+    }
+    await enableWebServer(ip, httpPort, { port: opts.port, log, pause, waitMs });
+    return webBase(ip, httpPort);
+  }
+  if (httpPort !== first && (await answers(webBase(ip, httpPort), 15000))) {
+    log(`  it serves on port ${httpPort}\n`);
+    return webBase(ip, httpPort);
+  }
+  if (settings.whitelist) {
+    throw codedError(
+      'http-firewall',
+      `${ip} answers web requests only from the addresses in ip.firewall.whitelist_in ` +
+        `(${settings.whitelist}); add this computer's, or clear it`,
+    );
+  }
+  throw codedError(
+    'http-unreachable',
+    `${ip}'s web server is turned on, but did not answer on port ${httpPort} from this computer: ` +
+      'something between the two, a firewall or the network, may be in the way',
+  );
+}
+
+/*
+ * Whether the files arrived
+ * ------------------------------------------------------------------
+ * A CISDFCRC16 upload is never answered: the printer takes the bytes
+ * and closes the connection, so the upload alone cannot tell a file
+ * stored from one dropped. ^HW, which every ZPL printer knows, lists a
+ * drive over the same port, which tells "did not land" apart from
+ * "landed, but is not served" -- and still works when port 80 is the
+ * trouble. (^HWE:*.SHTML would not do: the printer lists an extension
+ * it does not know as *.---, and finds nothing.)
+ */
+
+/** Ask for the listing of every file on E:. */
+export const LIST_E = '^XA^HWE:*.*^XZ\r\n';
+
+/**
+ * A ^HW listing as a Map of name to size, or null if `reply` is not one:
+ *
+ *   - DIR E:*.*
+ *   * E:INDEX.SHTML    538999
+ *   * E:TT0003M_.TTF    169188  P
+ *   -  56822272 bytes free E: ONBOARD FLASH
+ */
+export function parseListing(reply) {
+  const text = String(reply);
+  if (!/^- DIR /m.test(text)) return null;
+  const files = new Map();
+  for (const m of text.matchAll(/^\* ([A-Z]:\S+)\s+(\d+)/gm)) files.set(m[1], Number(m[2]));
+  return files;
+}
+
+/**
+ * Throw (upload-missing) if any of `sent` is not on the printer at the
+ * size it was sent; a printer that will not list E: is let through,
+ * for the web server to have the last word.
+ */
+export async function checkUploaded(ip, sent, { log, port } = {}) {
+  log('Checking the files arrived ... ');
+  const listing = parseListing(
+    await readFromPrinter(ip, LIST_E, { idleMs: 1500, timeout: 20000, port }).catch(() => ''),
+  );
+  if (!listing) {
+    log('the printer would not list E:, so not checked\n');
+    return;
+  }
+  const wrong = sent.filter((f) => listing.get(f.name) !== f.bytes);
+  if (!wrong.length) {
+    log(`all ${sent.length} there\n`);
+    return;
+  }
+  for (const f of wrong) {
+    const there = listing.get(f.name);
+    log(
+      `  ${f.name}: sent ${f.bytes} bytes, ${there === undefined ? 'not there' : `${there} there`}\n`,
+    );
+  }
+  throw codedError(
+    'upload-missing',
+    `${wrong.length} of the ${sent.length} files sent to ${ip} did not arrive whole: ` +
+      wrong.map((f) => f.name).join(', '),
+  );
+}
+
 /** deploy() without the telemetry. */
 async function runDeploy(
   opts,
-  { staged, schemaPath = null, outDir = null, readSchema = null, writeBuild = null, emit },
+  {
+    staged,
+    schemaPath = null,
+    outDir = null,
+    readSchema = null,
+    writeBuild = null,
+    emit,
+    confirmEnableHttp = null,
+    webWait = {},
+  },
 ) {
   const log = (text) => emit({ type: 'log', text });
   const step = (id) => emit({ type: 'step', ...STEPS.find((s) => s.id === id) });
@@ -449,6 +710,13 @@ async function runDeploy(
     if (!readSchema) throw new Error('--no-schema needs a catalogue from an earlier deploy');
     log(`Using cached ${schemaPath}\n`);
     schema = readSchema(schemaPath);
+  }
+
+  // Before the build, which a printer that cannot serve the page would waste.
+  let base = null;
+  if (opts.upload) {
+    step('web');
+    base = await checkWebServer(ip, opts, { log, confirmEnableHttp, ...webWait });
   }
 
   step('build');
@@ -485,20 +753,26 @@ async function runDeploy(
   step('upload');
   log(`Uploading to ${ip} ...\n`);
   const files = [{ dest: 'E:INDEX.SHTML', contents: result.html }, ...result.helpers];
+  const sent = [];
   for (const file of files) {
     const bytes = await uploadFile(ip, file.contents, file.dest);
+    sent.push({ name: file.dest, bytes });
     log(`  ${file.dest.padEnd(22)} ${bytes} bytes\n`);
   }
+  await checkUploaded(ip, sent, { log, port: opts.port });
 
   step('verify');
   log('Verifying...\n');
   await new Promise((resolveWait) => setTimeout(resolveWait, 1000));
-  const page = await probe(`http://${ip}/INDEX.SHTML`);
-  log(`  http://${ip}/INDEX.SHTML -> ${page.status} ${page.bytes}\n`);
-  const root = await probe(`http://${ip}/`);
-  log(`  http://${ip}/            -> ${root.status} ${root.bytes}\n`);
+  const page = await probe(`${base}/INDEX.SHTML`);
+  log(`  ${base}/INDEX.SHTML -> ${page.status} ${page.bytes}\n`);
+  const root = await probe(`${base}/`);
+  log(`  ${base}/            -> ${root.status} ${root.bytes}\n`);
   if (page.status !== 200) {
-    throw new Error(`The printer answered ${page.status} for INDEX.SHTML after the upload`);
+    throw codedError(
+      'http-status',
+      `The printer answered ${page.status} for INDEX.SHTML after the upload`,
+    );
   }
   // The footer is plain text in a packed page too.
   const footer = /Version (\d+\.\d+\.\d+) &middot; Built/.exec(page.body.toString('latin1'));
@@ -507,7 +781,7 @@ async function runDeploy(
     log(`  but it serves version ${served || '(none found)'}, not ${result.version}\n`);
   }
   return {
-    url: `http://${ip}/`,
+    url: `${base}/`,
     version: result.version,
     served,
     printer: telemetryFromPage(page.body.toString('latin1'), result.version),
@@ -675,11 +949,19 @@ async function resolveTargets(opts) {
 /** One deploy, printed as deploy.sh always has; true if it worked. */
 async function deployCli(opts, context, deployOne) {
   try {
+    const tty = process.stdin.isTTY && process.stdout.isTTY;
     const { url } = await deployOne(opts, {
       ...context,
       emit: (event) => {
         if (event.type === 'log') process.stdout.write(event.text);
       },
+      confirmEnableHttp: tty
+        ? (ip) =>
+            confirm(
+              `\n${ip}'s web server is turned off, so it cannot serve the console. Turn it on?\n` +
+                'That restarts the printer, which takes about a minute. [y/N] ',
+            )
+        : null,
     });
     if (url) console.log(`\nOpen ${url}`);
     return true;

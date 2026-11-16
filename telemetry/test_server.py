@@ -128,6 +128,8 @@ def test_a_start_and_its_end_are_logged_as_sent(client):
         {"deploy_id": "not-hex"},
         {"step": "Upload; DROP"},
         {"ok": "perhaps"},
+        {"cause": "Refused: <script>"},
+        {"cause": "x" * 25},
     ],
 )
 def test_the_new_fields_take_only_what_a_deploy_sends(client, fields):
@@ -240,3 +242,34 @@ def test_the_failed_view_links_the_log(client):
     # A log is not a deploy.
     summary = client.get("/telemetry/summary", auth=("admin", "s3cret")).text
     assert "Deploys<b>1</b>" in summary
+
+
+def test_a_failure_is_counted_by_its_cause(client):
+    client.post("/telemetry", json=START)
+    end = {**START, "event": "end", "ok": False, "step": "web", "cause": "http-off"}
+    assert client.post("/telemetry", json=end).status_code == 204
+    assert lines(client)[-1]["cause"] == "http-off"
+    failed = client.get("/telemetry/summary?view=failed", auth=("admin", "s3cret")).text
+    assert "<td>http-off</td><td class=n>1</td>" in failed
+    assert "failed at web: http-off" in failed
+
+
+def test_a_cause_is_read_from_the_log(client):
+    import server
+
+    assert server.cause_from_log("failed at step: verify\nlikely cause: upload-missing -- x\n") == "upload-missing"
+    # 0.55.3's log of a ZD621R, in miniature: no verdict of its own.
+    old = (
+        'reply:\n  | {"ip.http.enable":{"value":"off","type":"bool"},\n'
+        "error:\nTypeError: Unable to connect. Is the computer able to access the url?\ncode: ConnectionRefused\n"
+    )
+    assert server.cause_from_log(old) == "http-off"
+    assert server.cause_from_log(old.replace('"off"', '"on"')) == ""
+    assert server.cause_from_log("error:\nError: Nothing in the allcv reply\n") == ""
+
+    client.post("/telemetry", json=START)
+    client.post("/telemetry", json={**START, "event": "end", "ok": False, "step": "verify"})
+    client.post("/telemetry/log", json={**UPLOAD, "log": old})
+    failed = client.get("/telemetry/summary?view=failed", auth=("admin", "s3cret")).text
+    assert "<td>http-off</td><td class=n>1</td>" in failed
+    assert "failed at verify: http-off" in failed

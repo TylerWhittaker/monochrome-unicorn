@@ -140,7 +140,8 @@ await check('a deploy that fails reports its start, and the step it failed at', 
     },
   );
   assert.match(start.deploy_id, /^[0-9a-f]{16}$/);
-  assert.deepEqual(end, { ...start, event: 'end', ok: false, step: 'schema' });
+  // It answered neither the JSON question nor allcv: not a Zebra, by its replies.
+  assert.deepEqual(end, { ...start, event: 'end', ok: false, step: 'schema', cause: 'not-zebra' });
   assert.match(log.join(''), /Telemetry: reporting this deploy's start and end, for ZM400/);
 });
 

@@ -31,13 +31,14 @@ import { join } from 'node:path';
 // Telemetry and logs from this file go to a server of its own.
 const received = [];
 let answer = (res) => res.writeHead(200, { 'Content-Type': 'application/json' }).end('{}');
+let answerReport = (res) => res.writeHead(204).end();
 const collector = http.createServer((req, res) => {
   let body = '';
   req.on('data', (d) => (body += d));
   req.on('end', () => {
     received.push({ url: req.url, body: JSON.parse(body) });
     if (req.url.endsWith('/log')) answer(res, JSON.parse(body));
-    else res.writeHead(204).end();
+    else answerReport(res, JSON.parse(body));
   });
 });
 await new Promise((resolve) => collector.listen(0, '127.0.0.1', resolve));
@@ -45,8 +46,18 @@ process.env.MONOCHROME_UNICORN_TELEMETRY_URL = `http://127.0.0.1:${collector.add
 
 const { deploy, parseArgs, sendDiagnosticLog, logHeader, writeDiagnosticLog, LOG_LIMIT } =
   await import('../tools/deploy.mjs');
-const { escapeBytes, redact, capText, formatTrace, startTrace, stopTrace, traceConnection } =
-  await import('../tools/diag.mjs');
+const {
+  escapeBytes,
+  redact,
+  capText,
+  formatTrace,
+  startTrace,
+  stopTrace,
+  traceConnection,
+  failureCause,
+  CAUSES,
+} = await import('../tools/diag.mjs');
+const { parseListing, checkUploaded, LIST_E } = await import('../tools/deploy.mjs');
 const { uploadFile } = await import('../tools/upload.mjs');
 
 let failures = 0;
@@ -151,6 +162,7 @@ await check('a failed deploy against an old printer leaves a log of every exchan
   assert.equal(logHeader(log).deployId, error.deployId);
   assert.equal(logHeader(log).version, '9.8.7');
   assert.match(log, /^failed at step: schema$/m);
+  assert.match(log, /^likely cause: other -- none of the known causes$/m);
   assert.match(log, /^os: /m);
   assert.match(log, /\| Asking 127\.0\.0\.1 what it is \.\.\./);
   // ~HI's answer, byte for byte, and how its read ended.
@@ -258,6 +270,174 @@ await check('--send-log and --send-log-file are options; the second needs no pri
   assert.equal(parseArgs(['--send-log-file', 'x.log']).sendLogFile, 'x.log');
   assert.throws(() => parseArgs(['--send-log-file']), /needs the log/);
 });
+
+await check(
+  'a failure is given a cause: from its code, its message, or what the printer said',
+  () => {
+    const coded = (code) => Object.assign(new Error('x'), { code });
+    const fetchFailed = (code) => Object.assign(new TypeError('fetch failed'), { cause: { code } });
+    assert.equal(failureCause(coded('http-off')), 'http-off');
+    assert.equal(failureCause(coded('upload-missing')), 'upload-missing');
+    // Port 9100's errors.
+    assert.equal(
+      failureCause(new Error('Could not reach 10.0.0.5:9100: connect ECONNREFUSED 10.0.0.5:9100')),
+      'printer-refused',
+    );
+    assert.equal(
+      failureCause(new Error('Could not reach 10.0.0.5:9100: connect EHOSTUNREACH 10.0.0.5:9100')),
+      'printer-unreachable',
+    );
+    assert.equal(
+      failureCause(new Error('Could not reach nope:9100: getaddrinfo ENOTFOUND nope')),
+      'printer-unknown',
+    );
+    assert.equal(failureCause(new Error('No response from 10.0.0.5:9100')), 'printer-silent');
+    assert.equal(failureCause(new Error('Timed out waiting for 10.0.0.5:9100')), 'printer-silent');
+    // fetch()'s, as node and as bun put them.
+    assert.equal(failureCause(fetchFailed('ECONNREFUSED')), 'http-refused');
+    const bun = Object.assign(
+      new TypeError('Unable to connect. Is the computer able to access the url?'),
+      { code: 'ConnectionRefused' },
+    );
+    assert.equal(failureCause(bun), 'http-refused');
+    assert.equal(
+      failureCause(Object.assign(new Error('t'), { name: 'TimeoutError' })),
+      'http-timeout',
+    );
+    // A refusal on port 80 from a printer whose settings say its web
+    // server is off: the 0.55.3 log of a ZD621R, in miniature.
+    const listing =
+      '{"allconfig":\r\n{"ip.http.enable":{"value":"off","type":"bool","default":"off"},\r\n';
+    assert.equal(failureCause(bun, listing), 'http-off');
+    assert.equal(failureCause(bun, '"off""80"'), 'http-refused', 'only the named setting counts');
+    assert.equal(
+      failureCause(new Error('anything else'), listing),
+      'other',
+      'not for a non-HTTP failure',
+    );
+    for (const code of Object.keys(CAUSES)) {
+      assert.match(code, /^[a-z-]{1,24}$/, 'what the server takes');
+    }
+  },
+);
+
+await check("the log's header says the likely cause", () => {
+  startTrace({ version: '1.2.3' });
+  const log = formatTrace(stopTrace(), {
+    error: new Error('x'),
+    step: 'verify',
+    cause: 'http-off',
+  });
+  assert.match(
+    log,
+    /^failed at step: verify\nlikely cause: http-off -- the printer's web server is turned off \(ip\.http\.enable\)$/m,
+  );
+});
+
+await check('a ^HW listing is read as names and sizes; anything else is not one', () => {
+  const files = parseListing(
+    '\x02\r\n- DIR E:*.* \r\n* E:INDEX.SHTML    538999          \r\n' +
+      '* E:TT0003M_.TTF    169188  P       \r\n\r\n-  56822272 bytes free E: ONBOARD FLASH \r\n\x03',
+  );
+  assert.deepEqual(
+    [...files],
+    [
+      ['E:INDEX.SHTML', 538999],
+      ['E:TT0003M_.TTF', 169188],
+    ],
+  );
+  assert.deepEqual([...parseListing('\x02\r\n- DIR E:*.* \r\n\r\n-  1 bytes free\r\n\x03')], []);
+  assert.equal(parseListing(''), null);
+  assert.equal(parseListing('Unknown command'), null);
+});
+
+await check('after the upload, each file is looked for on E: at the size it was sent', async () => {
+  const fake = await fakePrinter({
+    '^XA^HWE:':
+      '\x02\r\n- DIR E:*.* \r\n* E:INDEX.SHTML    500          \r\n* E:V_1.SHTML    40\r\n\x03',
+  });
+  const logged = [];
+  const log = (t) => logged.push(t);
+  try {
+    assert.equal(LIST_E, '^XA^HWE:*.*^XZ\r\n');
+    await checkUploaded('127.0.0.1', [{ name: 'E:INDEX.SHTML', bytes: 500 }], {
+      log,
+      port: fake.port,
+    });
+    assert.match(logged.join(''), /all 1 there/);
+    const err = await checkUploaded(
+      '127.0.0.1',
+      [
+        { name: 'E:INDEX.SHTML', bytes: 500 },
+        { name: 'E:V_1.SHTML', bytes: 41 },
+        { name: 'E:V_2.SHTML', bytes: 9 },
+      ],
+      { log, port: fake.port },
+    ).catch((e) => e);
+    assert.equal(err.code, 'upload-missing');
+    assert.match(err.message, /2 of the 3 files .* E:V_1\.SHTML, E:V_2\.SHTML/);
+    assert.match(logged.join(''), /E:V_1\.SHTML: sent 41 bytes, 40 there/);
+    assert.match(logged.join(''), /E:V_2\.SHTML: sent 9 bytes, not there/);
+  } finally {
+    fake.close();
+  }
+  // A printer that will not list is let through.
+  const deaf = await fakePrinter({});
+  try {
+    await checkUploaded('127.0.0.1', [{ name: 'E:X', bytes: 1 }], { log, port: deaf.port });
+    assert.match(logged.join(''), /would not list E:, so not checked/);
+  } finally {
+    deaf.close();
+  }
+});
+
+await check(
+  "a failed deploy's end report carries its cause, and an older server still gets one",
+  async () => {
+    // Nothing listens on this port: the web server is "off".
+    const s = net.createServer();
+    await new Promise((r) => s.listen(0, '127.0.0.1', r));
+    const httpPort = s.address().port;
+    await new Promise((r) => s.close(r));
+    const fake = await fakePrinter({
+      '! U1 getvar "device.product_name"': '"ZD621R""DBJ0001""V93.21.48Z"',
+      '! U1 getvar "ip.http.enable"': `"off""${httpPort}"""`,
+    });
+    const run = () =>
+      deploy(
+        { ...parseArgs(['127.0.0.1', '--no-schema']), port: fake.port, httpPort },
+        {
+          staged: () => assert.fail('nothing is built'),
+          readSchema: () => ({}),
+          version: '9.8.7',
+          emit: () => {},
+        },
+      ).catch((e) => e);
+    try {
+      received.length = 0;
+      const err = await run();
+      assert.equal(err.code, 'http-off');
+      assert.match(err.diagnosticLog, /^likely cause: http-off -- /m);
+      const end = received.find((r) => r.body.event === 'end');
+      assert.deepEqual(
+        { ok: end.body.ok, step: end.body.step, cause: end.body.cause },
+        { ok: false, step: 'web', cause: 'http-off' },
+      );
+      // A server from before causes refuses the field: sent again without it.
+      received.length = 0;
+      answerReport = (res, body) => res.writeHead('cause' in body ? 422 : 204).end();
+      await run();
+      const ends = received.filter((r) => r.body.event === 'end');
+      assert.equal(ends.length, 2);
+      assert.equal(ends[0].body.cause, 'http-off');
+      assert.ok(!('cause' in ends[1].body));
+      assert.equal(ends[1].body.step, 'web');
+    } finally {
+      answerReport = (res) => res.writeHead(204).end();
+      fake.close();
+    }
+  },
+);
 
 collector.close();
 console.log(failures ? `\n${failures} failing` : '\nall passing');

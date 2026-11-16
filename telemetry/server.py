@@ -20,7 +20,7 @@
 server.py -- receive the deploy telemetry tools/deploy.mjs sends.
 
     POST /telemetry         {"model", "serial", "firmware", "version",
-                             "event", "deploy_id", "ok", "step"}
+                             "event", "deploy_id", "ok", "step", "cause"}
     POST /telemetry/log     {"deploy_id", "version", "log"}: a failed
                             deploy's diagnostic log, which the user chose
                             to send; answers {"reference": deploy_id}
@@ -34,8 +34,11 @@ server.py -- receive the deploy telemetry tools/deploy.mjs sends.
 
 A deploy since 0.53 reports twice, sharing a deploy_id: event "start"
 before it touches the printer, and "end" with ok, and the step it
-failed at when it did not. Before that, a deploy reported once, only
-when it had worked, with none of those four fields.
+failed at when it did not; since 0.56 a failure also carries a cause,
+one of tools/diag.mjs's CAUSES codes ("http-off", "upload-missing",
+...). Before 0.53, a deploy reported once, only when it had worked,
+with none of those fields. A failure reported without a cause, but
+whose diagnostic log was sent, has the cause read from its log.
 
 Each report becomes one JSON line in $TELEMETRY_LOG, with the time and
 the sender's address added here: the client never sends them, so it
@@ -95,6 +98,7 @@ class Report(BaseModel):
     deploy_id: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{16}$")] | None = None
     ok: bool | None = None
     step: Annotated[str, StringConstraints(pattern=r"^[a-z]{0,16}$")] | None = None
+    cause: Annotated[str, StringConstraints(pattern=r"^[a-z-]{0,24}$")] | None = None
 
 
 class LogUpload(BaseModel):
@@ -227,7 +231,7 @@ def deploys(reports: list[dict], now: datetime | None = None) -> list[dict]:
                 d["outcome"] = "ok" if r.get("ok") else "failed"
         else:
             d = by_id[deploy_id]
-            for key in ("model", "serial", "firmware", "version", "step"):
+            for key in ("model", "serial", "firmware", "version", "step", "cause"):
                 d[key] = r.get(key) or d.get(key, "")
             d["ended"] = r.get("ts")
             d["outcome"] = "ok" if r.get("ok") else "failed"
@@ -241,6 +245,40 @@ def deploys(reports: list[dict], now: datetime | None = None) -> list[dict]:
                 started = now - UNFINISHED_AFTER
             d["outcome"] = "running" if now - started < UNFINISHED_AFTER else "unfinished"
     return out
+
+
+# A log's own verdict (0.56 and later), and what an earlier one shows.
+LOG_CAUSE = re.compile(r"^likely cause: ([a-z-]{1,24})\b", re.M)
+HTTP_OFF = re.compile(r'"ip\.http\.enable"\s*:\s*(?:\{\s*"value"\s*:\s*)?"off"')
+HTTP_FAILED = re.compile(r"ConnectionRefused|ECONNREFUSED|Unable to connect")
+
+
+def cause_from_log(text: str) -> str:
+    """The cause a diagnostic log gives, or that its contents show; "" if neither."""
+    m = LOG_CAUSE.search(text)
+    if m:
+        return m.group(1)
+    # Before 0.56: a web request refused by a printer whose settings say
+    # its web server is off.
+    tail = text[text.rfind("\nerror:\n") :] if "\nerror:\n" in text else ""
+    if tail and HTTP_FAILED.search(tail) and HTTP_OFF.search(text):
+        return "http-off"
+    return ""
+
+
+def fill_causes(rows: list[dict]) -> None:
+    """Give a failed deploy reported without a cause the one its log shows."""
+    for d in rows:
+        if d.get("cause") or not d.get("log") or not LOG_NAME.match(d["log"]):
+            continue
+        try:
+            with open(os.path.join(LOGS_DIR, d["log"]), encoding="utf-8", errors="replace") as f:
+                found = cause_from_log(f.read(LOG_MAX))
+        except OSError:
+            continue
+        if found:
+            d["cause"] = found
+            d["cause_from_log"] = True
 
 
 def count_table(title: str, column: str, counts: Counter, unit: str = "Deploys") -> str:
@@ -257,7 +295,8 @@ def count_table(title: str, column: str, counts: Counter, unit: str = "Deploys")
 
 def outcome_text(d: dict) -> str:
     if d["outcome"] == "failed":
-        return f"failed at {d.get('step') or 'an unknown step'}"
+        cause = f": {d['cause']}" if d.get("cause") else ""
+        return f"failed at {d.get('step') or 'an unknown step'}{cause}"
     return {"ok": "ok", "unfinished": "never finished", "running": "running"}[d["outcome"]]
 
 
@@ -365,6 +404,7 @@ async def summary(view: Literal["summary", "failed"] = "summary", recent: int = 
     newest = lambda rows: rows[len(rows) - min(recent, len(rows)) :]
     outcomes = Counter(d["outcome"] for d in all_deploys)
     failed = [d for d in all_deploys if d["outcome"] in ("failed", "unfinished")]
+    fill_causes(failed)
     known = {d.get("deploy_id") for d in all_deploys}
     lone_logs = [r for r in reports if r.get("event") == "log" and r.get("deploy_id") not in known]
 
@@ -379,7 +419,9 @@ async def summary(view: Literal["summary", "failed"] = "summary", recent: int = 
             "<p>A deploy that failed says at which step: schema (reading the printer's "
             "settings), build, clean, upload or verify. One that never finished started "
             f"and did not report back within {int(UNFINISHED_AFTER.total_seconds() // 60)} "
-            "minutes: stopped, or crashed. Deploys before 0.53 reported only success, so "
+            "minutes: stopped, or crashed. Since 0.56 a failure also says why (By cause; "
+            "for an earlier one, worked out from its log where one was sent). "
+            "Deploys before 0.53 reported only success, so "
             "their failures are not here. Where the user sent the deploy's diagnostic log "
             "(0.54 and later), its outcome links to it.</p>"
             + totals_html(totals)
@@ -394,6 +436,15 @@ async def summary(view: Literal["summary", "failed"] = "summary", recent: int = 
                 "By step",
                 "Step",
                 Counter(d.get("step") or "never finished" for d in failed),
+                "Failures",
+            )
+            + count_table(
+                "By cause",
+                "Cause",
+                Counter(
+                    d.get("cause") or ("never finished" if d["outcome"] == "unfinished" else "not known")
+                    for d in failed
+                ),
                 "Failures",
             )
             + count_table("By version", "Version", Counter(d.get("version", "") for d in failed), "Failures")

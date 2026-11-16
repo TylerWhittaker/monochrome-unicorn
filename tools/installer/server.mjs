@@ -75,6 +75,14 @@ export function validAddress(ip) {
  */
 export function explainError(err, ip) {
   const message = String(err && err.message ? err.message : err);
+  if (err && err.code === 'http-off')
+    return `The printer's web server is turned off, so it cannot show the console. Nothing was installed. The installer can turn it on, which restarts the printer (about a minute).`;
+  if (err && err.code === 'http-firewall')
+    return `The printer only answers web pages for certain addresses (ip.firewall.whitelist_in), and this computer is not one of them. Nothing was installed.`;
+  if (err && err.code === 'http-unreachable')
+    return `The printer's web server is on, but this computer could not reach it. Nothing was installed. A firewall, or the network between the two, may be blocking web traffic to the printer.`;
+  if (err && err.code === 'upload-missing')
+    return `The files were sent, but not all of them are on the printer now: its flash may be full, or the connection dropped part-way. Try again; if it keeps happening, restart the printer and try once more.`;
   if (/ENOTFOUND|EAI_AGAIN/.test(message))
     return `There is no computer called "${ip}" on this network. Check the printer's address: it is on its configuration label, and most printers show it on the front panel.`;
   if (/ECONNREFUSED/.test(message))
@@ -283,6 +291,7 @@ export async function startGui({
           upload: true,
           clean: true,
           packed: Boolean(body.packed),
+          enableHttp: body.enableHttp === true,
           source: null,
           telemetry: body.telemetry !== false && !process.env.MONOCHROME_UNICORN_NO_TELEMETRY,
         },
@@ -303,7 +312,14 @@ export async function startGui({
           // Still in memory, for Save log and Send.
         }
       }
-      send({ type: 'error', message: explainError(err, ip), detail: err.message, log });
+      send({
+        type: 'error',
+        message: explainError(err, ip),
+        detail: err.message,
+        log,
+        // One the page can offer to put right, with a button.
+        fix: err.code === 'http-off' ? 'enable-http' : null,
+      });
     } finally {
       busy = false;
       lastPing = Date.now();

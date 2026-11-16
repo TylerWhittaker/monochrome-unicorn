@@ -185,6 +185,76 @@ function formatHttp(trace, e) {
   return lines.join('\n');
 }
 
+/*
+ * Why a deploy failed, as a code
+ * ------------------------------------------------------------------
+ * The step a deploy failed at says where, not why: "verify" covers a
+ * web server turned off, a firewall and a page served wrong alike. So a
+ * failure is also given one of these codes -- in the log's header, for
+ * whoever reads it, and in the telemetry's end report, where it is a
+ * word from this list and never an error message.
+ */
+export const CAUSES = {
+  'http-off': "the printer's web server is turned off (ip.http.enable)",
+  'http-firewall':
+    'the printer answers web requests only from the addresses in ip.firewall.whitelist_in',
+  'http-unreachable': "the printer's web server is on, but did not answer this computer",
+  'http-refused': 'nothing on the printer took the connection to its web server',
+  'http-timeout': "the printer's web server did not answer in time",
+  'http-status': 'the web server answered, but not with the page',
+  'upload-missing': 'files sent over port 9100 were not on the printer afterwards',
+  'printer-unknown': 'no computer by that name on the network',
+  'printer-unreachable': 'nothing answered at that address',
+  'printer-refused': 'something at that address refused port 9100',
+  'printer-silent': 'port 9100 took the connection, but nothing came back in time',
+  'not-zebra': 'port 9100 did not answer as a Zebra printer does',
+  other: 'none of the known causes',
+};
+
+/** What an error's message and its causes say, as one string to match. */
+function errorText(err) {
+  const parts = [];
+  for (let e = err, depth = 0; e && depth < 5; e = e.cause, depth++) {
+    parts.push(String(e.message || e), String(e.code || ''), String(e.name || ''));
+  }
+  return parts.join(' ');
+}
+
+/**
+ * The CAUSES code for a deploy's failure: from the error, or failing
+ * that from what the printer said along the way (`replies`, the text
+ * of every reply on port 9100) -- a web server that is off says so in
+ * the settings listing, before anything fails.
+ */
+export function failureCause(err, replies = '') {
+  if (err && Object.hasOwn(CAUSES, err.code)) return err.code;
+  const text = errorText(err);
+  // Port 9100's own errors name the address and port they were for.
+  if (/ENOTFOUND|EAI_AGAIN/.test(text)) return 'printer-unknown';
+  if (/^Could not reach /.test(text)) {
+    return /ECONNREFUSED/.test(text) ? 'printer-refused' : 'printer-unreachable';
+  }
+  if (/^(No response from|Timed out (waiting for|sending to)) /.test(text)) return 'printer-silent';
+  if (/answered neither the JSON question nor allcv/.test(text)) return 'not-zebra';
+  // The rest are fetch()'s, which only the web server is asked with.
+  let http = null;
+  if (/ECONNREFUSED|ConnectionRefused/.test(text)) http = 'http-refused';
+  else if (/TimeoutError|ETIMEDOUT|timed out/i.test(text)) http = 'http-timeout';
+  else if (/EHOSTUNREACH|ENETUNREACH|Unable to connect/.test(text)) http = 'http-unreachable';
+  if (!http) return 'other';
+  // Whatever fetch() said, a web server that is off is why.
+  return /"ip\.http\.enable"\s*:\s*(?:\{\s*"value"\s*:\s*)?"off"/.test(replies) ? 'http-off' : http;
+}
+
+/** Every reply on port 9100 in the trace being recorded, as one text. */
+export function tracedReplies() {
+  if (!current) return '';
+  return current.entries
+    .filter((e) => e.kind === 'tcp')
+    .map((e) => Buffer.concat(e.chunks.map((c) => c.bytes)).toString('latin1'))
+    .join('\n');
+}
+
 /** The causes of an error, then its stack, as Node would print them. */
 function formatError(err) {
   const lines = [];
@@ -201,7 +271,7 @@ function formatError(err) {
  * the order it happened -- the deploy's own output line by line, each
  * step, each exchange with the printer -- then the error.
  */
-export function formatTrace(trace, { error = null, step = null } = {}) {
+export function formatTrace(trace, { error = null, step = null, cause = null } = {}) {
   const out = [
     'Monochrome Unicorn: diagnostic log of a failed deploy',
     '',
@@ -213,6 +283,7 @@ export function formatTrace(trace, { error = null, step = null } = {}) {
   }
   out.push(`started: ${new Date(trace.started).toISOString()}`);
   out.push(`failed at step: ${step || '(before the first step)'}`);
+  if (cause) out.push(`likely cause: ${cause} -- ${CAUSES[cause] || CAUSES.other}`);
   out.push('');
 
   let pending = '';

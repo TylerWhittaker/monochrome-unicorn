@@ -113,8 +113,10 @@ You install it once, from any computer on the same network as the
 printer; after that, anything with a browser uses it at
 `http://<printer>/`.
 
-**The printer:** a Zebra Link-OS printer with its web server on (the
-factory setting). Built and tested against a ZD500R (firmware
+**The printer:** a Zebra Link-OS printer with its web server on.
+That is the factory setting on most, but not all: a ZD621R on
+V93.21.48Z comes with it off, and the installer offers to turn it on,
+which restarts the printer. Built and tested against a ZD500R (firmware
 V74.20.23Z) and a ZD620 (V84.20.23Z); older printers (firmware below
 V68) work with fewer details -- see [Known limits](#known-limits).
 
@@ -280,8 +282,11 @@ npm install                      # once, for the Tailwind CLI
 ./deploy.sh 192.168.1.81
 ```
 
-That reads the printer's setting catalogue, builds `dist/INDEX.SHTML`,
-uploads it plus its helper files, and checks what the printer now serves.
+That reads the printer's setting catalogue, checks that the printer's
+web server answers (and, if not, asks the printer why), builds
+`dist/INDEX.SHTML`, uploads it plus its helper files, lists the
+printer's `E:` drive over port 9100 to check each file arrived whole,
+and checks what the printer now serves.
 
 The catalogue it captures (`dist/sgd-schema.json`) is a property of the
 printer in front of you, not of this project, so it is generated rather
@@ -308,6 +313,9 @@ what it found and asks before installing (`--yes` not to ask). And
 --no-clean    keep previously installed helper files (by default
               they are removed before the new set is uploaded)
 --packed      gzip the page, about 170 KB instead of 440; below
+--enable-http if the printer's web server is turned off, turn it on
+              and restart the printer without asking (a terminal asks;
+              otherwise the deploy stops before uploading anything)
 --no-telemetry  do not report the deploy; see Telemetry, below
 --send-log    if it fails, send its diagnostic log without asking; below
 ```
@@ -353,7 +361,9 @@ twice to `https://www.grizzlor.org/monochrome-unicorn/telemetry`: when
 it starts, and when it ends. Each report carries the printer's model,
 serial number and firmware version and the console's version; the end
 adds whether the deploy worked and, if not, which step failed (`schema`,
-`build`, `clean`, `upload` or `verify`). A random ID ties the two
+`web`, `build`, `clean`, `upload` or `verify`) and a word for why, from
+a fixed list (`http-off`, `upload-missing`, `printer-unreachable`, ...;
+`CAUSES` in `tools/diag.mjs`). A random ID ties the two
 together. The serial number counts distinct printers. The server logs
 each report with the time and the address it came from. Nothing else
 is sent -- no settings, labels, files, network details or error
@@ -376,7 +386,10 @@ on a printer they do not have: every exchange with the printer -- what
 went out on port 9100, each piece of the reply and when it came, how the
 read ended, and the reply itself byte for byte -- each request on port
 80, what the deploy printed, the options, the operating system and
-runtime, and the error with its stack. It is written to
+runtime, and the error with its stack. Its header names the likely
+cause, the same word the telemetry sends, and what it means: `likely
+cause: http-off -- the printer's web server is turned off
+(ip.http.enable)`. It is written to
 `dist/deploy-failed-<time>-<id>.log` (by the installer, to its folder's
 `logs/`), and the deploy says where. A deploy that works writes
 nothing.
@@ -606,6 +619,7 @@ node test/syslog.test.mjs   # syslog lines, destinations and alerts
 node test/installer.test.mjs # the deploy's options, the installer's page server
 node test/diag.test.mjs     # a failed deploy's diagnostic log, and sending it
 node test/discover.test.mjs # discovery replies, ranges, and scanning one
+node test/webserver.test.mjs # the web-server check before a deploy uploads
 npm test                    # all of the above
 node tools/build.mjs        # build without touching a printer
 make binaries               # the standalone installers, in dist/bin/
@@ -761,6 +775,13 @@ a 500).
   setting with no list of choices is tagged `read/write?` -- editable,
   and confirmed by the read-back. The Settings tab leaves out its
   "changed from default" filter, which could match nothing.
+- The console needs the printer's web server on port 80. Some newer
+  firmware -- a ZD621R on V93.21.48Z -- ships with it off
+  (`ip.http.enable`) and HTTPS on; a deploy checks before uploading
+  anything, and with leave (`--enable-http`, or the installer's button)
+  turns it on, which takes a restart, about a minute. Serving the
+  console over HTTPS instead is untried: on the ZD500R here, port 443
+  refuses connections although `ip.https.enable` says on.
 - The installer's search is a broadcast, so it finds only the printers
   on this computer's own networks: not past a router, not from WSL2's
   own network (scan a range there instead), and not a printer with
